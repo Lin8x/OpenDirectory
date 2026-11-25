@@ -72,6 +72,8 @@ pub enum Setting {
     /// account with a random password, rotates it, and escrows it (encrypted)
     /// on the Management Server.
     LocalAdminPassword { account: String, length: u32, rotate_days: u32 },
+    /// Add a certificate authority to the computer's trusted roots.
+    TrustedRootCertificate { name: String, pem: String },
     /// Run a library script at startup, at sign-in, on a schedule or once
     /// (GPO Scripts). Parameter values are passed as environment variables.
     RunScript {
@@ -95,6 +97,7 @@ impl Setting {
             Setting::InstallPackages { .. } => "install_packages",
             Setting::RunScript { .. } => "run_script",
             Setting::LocalAdminPassword { .. } => "local_admin_password",
+            Setting::TrustedRootCertificate { .. } => "trusted_root_certificate",
             Setting::AccountLockout { .. } => "account_lockout",
             Setting::PasswordMaxAge { .. } => "password_max_age",
             Setting::PasswordHistory { .. } => "password_history",
@@ -119,7 +122,13 @@ impl Setting {
     /// Settings of these kinds add up across policies instead of the
     /// highest-priority one winning.
     pub fn accumulates(&self) -> bool {
-        matches!(self, Setting::LocalAccounts { .. } | Setting::InstallPackages { .. } | Setting::RunScript { .. })
+        matches!(
+            self,
+            Setting::LocalAccounts { .. }
+                | Setting::InstallPackages { .. }
+                | Setting::RunScript { .. }
+                | Setting::TrustedRootCertificate { .. }
+        )
     }
 
     pub fn describe(&self) -> String {
@@ -157,6 +166,7 @@ impl Setting {
             Setting::LoginBanner { title, .. } => format!("Login notice: {title}"),
             Setting::InstallPackages { packages } => format!("Install {}", packages.join(", ")),
             Setting::RunScript { trigger, .. } => format!("Run a script {}", trigger.describe()),
+            Setting::TrustedRootCertificate { name, .. } => format!("Trust the {name} certificate authority"),
             Setting::LocalAdminPassword { account, rotate_days, .. } => {
                 format!("Rotate {account}'s password every {rotate_days} days (LAPS)")
             }
@@ -398,6 +408,13 @@ pub fn catalog() -> Vec<CatalogEntry> {
             choices: vec![],
             default: Setting::RunScript { script_id: Uuid::nil(), trigger: crate::scripts::ScriptTrigger::Startup, params: Default::default() },
         },
+        e(
+            "trusted_root_certificate", "Trusted root certificate", "Security",
+            "Adds a certificate authority, such as this domain's own CA, to every computer's trusted roots, so internal websites and services using its certificates are trusted.",
+            "Public Key Policies: Trusted Root Certification Authorities",
+            [(Enforced, "certutil -addstore Root"), (Enforced, "security add-trusted-cert (System keychain)"), (Enforced, "update-ca-certificates or update-ca-trust")],
+            Setting::TrustedRootCertificate { name: "Organization Root CA".into(), pem: String::new() },
+        ),
         e(
             "local_admin_password", "Local admin password rotation (LAPS)", "Accounts",
             "Keeps a local administrator account on every endpoint with its own random password, rotates it on a schedule, and stores it encrypted on the Management Server. Admins can look it up (audited) when they need to sign in locally.",

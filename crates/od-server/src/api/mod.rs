@@ -4,6 +4,7 @@
 mod agent;
 pub mod backups;
 mod branding;
+mod ca;
 mod directory;
 mod endpoints;
 pub mod integrations;
@@ -87,6 +88,12 @@ pub fn router(state: AppState) -> Router {
         .route("/dns", get(netsvc::get_dns))
         .route("/dns/config", put(netsvc::set_dns_config))
         .route("/dns/records", put(netsvc::set_dns_records))
+        .route("/ca", get(ca::get).post(ca::init))
+        .route("/ca/issue", post(ca::issue))
+        .route("/ca/certificates/{id}", get(ca::download))
+        .route("/ca/certificates/{id}/revoke", post(ca::revoke))
+        .route("/ca/root.pem", get(ca::root_pem))
+        .route("/ca/crl.pem", get(ca::crl))
         .route("/dhcp", get(netsvc::get_dhcp).put(netsvc::set_dhcp))
         .route("/lab/designs", get(lab::get).put(lab::set))
         .route("/integrations", get(integrations::list).post(integrations::create))

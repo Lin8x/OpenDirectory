@@ -21,6 +21,16 @@ fn ok_or_failed(s: &Setting, ok: bool, good: impl Into<String>, err: impl Into<S
     }
 }
 
+/// A file-name-safe version of a display name.
+#[allow(dead_code)]
+fn slug(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
 /// Set `key<sep>value` in a simple config file, replacing an existing (or
 /// commented-out) line for the key, or appending one. Returns true if changed.
 #[allow(dead_code)]
@@ -385,6 +395,22 @@ pub async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             }
         }
         Setting::UpdateDeferral { .. } => item(s, Unsupported, "Use a scheduled script from the Script Library to stage Linux updates"),
+        Setting::TrustedRootCertificate { name, pem } => {
+            let file = format!("opendirectory-{}.crt", slug(name));
+            let (dir, cmd) = if Path::new("/usr/local/share/ca-certificates").exists() || which("update-ca-certificates") {
+                ("/usr/local/share/ca-certificates", "update-ca-certificates")
+            } else {
+                ("/etc/pki/ca-trust/source/anchors", "update-ca-trust")
+            };
+            let c = ensure_file(&Path::new(dir).join(file), pem)?;
+            if c {
+                let o = run(cmd, &[]).await?;
+                if !o.ok() {
+                    return Ok(item(s, Failed, o.message()));
+                }
+            }
+            item(s, st(c), format!("{name} is a trusted root"))
+        }
         _ => item(s, Unsupported, "Not supported by this agent version"),
     })
 }
@@ -505,6 +531,17 @@ pub async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
         }
         Setting::SecurityAuditing { .. } => item(s, Compliant, "The unified log records sign-ins and account changes"),
         Setting::UpdateDeferral { .. } => item(s, Unsupported, "Deferring macOS updates needs an MDM profile"),
+        Setting::TrustedRootCertificate { name, pem } => {
+            let path = crate::state::data_dir().join(format!("opendirectory-{}.crt", slug(name)));
+            let changed = ensure_file(&path, pem)?;
+            let p = path.to_string_lossy().to_string();
+            let present = run("security", &["verify-cert", "-c", &p]).await.map(|o| o.ok()).unwrap_or(false);
+            if present && !changed {
+                return Ok(item(s, Compliant, format!("{name} is a trusted root")));
+            }
+            let o = run("security", &["add-trusted-cert", "-d", "-r", "trustRoot", "-k", "/Library/Keychains/System.keychain", &p]).await?;
+            ok_or_failed(s, o.ok(), format!("{name} added to the System keychain as a trusted root"), o.message())
+        }
         _ => item(s, Unsupported, "Not supported by this agent version"),
     })
 }

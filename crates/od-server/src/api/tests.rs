@@ -785,3 +785,42 @@ async fn laps_escrow_read_and_rotate() {
     let (_, audit) = call(&app, Method::GET, "/audit?limit=50", auth, None).await;
     assert!(audit.to_string().contains("laps.read"));
 }
+
+#[tokio::test]
+async fn certificate_authority_issues_verifiable_certs() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (st, _) = call(&app, Method::POST, "/ca/issue", auth, Some(json!({"common_name":"x.corp.contoso.com"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "no CA yet");
+    let (st, ca) = call(&app, Method::POST, "/ca", auth, Some(json!({}))).await;
+    assert_eq!(st, StatusCode::CREATED, "{ca}");
+    assert!(ca["root_pem"].as_str().unwrap().contains("BEGIN CERTIFICATE"));
+    let (st, r) =
+        call(&app, Method::POST, "/ca/issue", auth, Some(json!({"common_name":"intranet.corp.contoso.com","sans":["10.0.0.9"]}))).await;
+    assert_eq!(st, StatusCode::CREATED, "{r}");
+    assert!(r["private_key_pem"].as_str().unwrap().contains("PRIVATE KEY"));
+
+    // Verify the chain with OpenSSL when it's installed.
+    if std::process::Command::new("openssl").arg("version").output().is_ok() {
+        let dir = std::env::temp_dir().join(format!("od-ca-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("root.pem"), ca["root_pem"].as_str().unwrap()).unwrap();
+        std::fs::write(dir.join("leaf.pem"), r["certificate"]["cert_pem"].as_str().unwrap()).unwrap();
+        let out = std::process::Command::new("openssl")
+            .args(["verify", "-CAfile"])
+            .arg(dir.join("root.pem"))
+            .arg(dir.join("leaf.pem"))
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    let id = r["certificate"]["id"].as_str().unwrap();
+    let (st, _) = call(&app, Method::POST, &format!("/ca/certificates/{id}/revoke"), auth, None).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let resp = app.clone().oneshot(Request::builder().uri("/api/v1/ca/crl.pem").body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("BEGIN X509 CRL"));
+}
