@@ -91,6 +91,10 @@ CREATE TABLE IF NOT EXISTS password_history (
 CREATE TABLE IF NOT EXISTS reset_codes (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, code_hash TEXT NOT NULL, expires_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS laps (
+  endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE, account TEXT NOT NULL,
+  password_sealed BLOB NOT NULL, previous_sealed BLOB, rotated_at TEXT NOT NULL, rotate_requested INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -854,6 +858,31 @@ impl Db {
     }
     pub fn delete_integration(&self, id: Uuid) -> Result<bool> {
         Ok(self.lock().execute("DELETE FROM integrations WHERE id = ?", [id.to_string()])? > 0)
+    }
+
+    // ---------- LAPS ----------
+    pub fn store_laps(&self, endpoint: Uuid, account: &str, sealed: &[u8]) -> Result<()> {
+        self.lock().execute(
+            "INSERT INTO laps(endpoint_id, account, password_sealed, previous_sealed, rotated_at, rotate_requested) VALUES (?1, ?2, ?3, NULL, ?4, 0)
+             ON CONFLICT(endpoint_id) DO UPDATE SET previous_sealed = password_sealed, account = ?2, password_sealed = ?3, rotated_at = ?4, rotate_requested = 0",
+            params![endpoint.to_string(), account, sealed, ts(Utc::now())],
+        )?;
+        Ok(())
+    }
+    /// (account, current sealed, previous sealed, rotated_at, rotate_requested)
+    #[allow(clippy::type_complexity)]
+    pub fn get_laps(&self, endpoint: Uuid) -> Result<Option<(String, Vec<u8>, Option<Vec<u8>>, DateTime<Utc>, bool)>> {
+        Ok(self
+            .lock()
+            .query_row(
+                "SELECT account, password_sealed, previous_sealed, rotated_at, rotate_requested FROM laps WHERE endpoint_id = ?",
+                [endpoint.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, req_ts(r.get(3)?), r.get::<_, i64>(4)? != 0)),
+            )
+            .optional()?)
+    }
+    pub fn request_laps_rotation(&self, endpoint: Uuid, on: bool) -> Result<bool> {
+        Ok(self.lock().execute("UPDATE laps SET rotate_requested = ? WHERE endpoint_id = ?", params![on as i64, endpoint.to_string()])? > 0)
     }
 
     // ---------- recycle bin ----------

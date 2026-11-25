@@ -126,6 +126,7 @@ pub async fn checkin(
         accounts,
         want_inventory: auth.want_inventory,
         scripts,
+        laps_rotate: s.db.get_laps(auth.id)?.map(|l| l.4).unwrap_or(false),
     }))
 }
 
@@ -175,5 +176,20 @@ pub async fn script_run(
         finished_at: Some(Utc::now()),
     };
     s.db.insert_finished_job(&job)?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// The agent escrows a new LAPS password before setting it locally.
+pub async fn laps_escrow(
+    State(s): State<AppState>,
+    EndpointCaller(auth): EndpointCaller,
+    Json(e): Json<od_core::protocol::LapsEscrow>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if e.password.len() < 14 || e.password.len() > 128 || e.account.is_empty() || e.account.len() > 20 {
+        return Err(ApiError::bad_request("Invalid LAPS password or account"));
+    }
+    s.db.store_laps(auth.id, &e.account, &s.sealer.seal(e.password.as_bytes())?)?;
+    let host = s.db.get_endpoint(auth.id)?.map(|x| x.hostname).unwrap_or_default();
+    s.db.audit("Endpoint Agent", "laps.rotated", &host, &format!("Account {}", e.account));
     Ok(Json(serde_json::json!({ "ok": true })))
 }

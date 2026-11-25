@@ -82,6 +82,22 @@ fn validate(s: &AppState, inp: &PolicyInput) -> ApiResult<()> {
                     }
                 }
             }
+            Setting::LocalAdminPassword { account, length, rotate_days } => {
+                let a = account.trim().to_lowercase();
+                let ok = !a.is_empty()
+                    && a.len() <= 20
+                    && a.starts_with(|c: char| c.is_ascii_lowercase())
+                    && a.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c));
+                if !ok || ["administrator", "admin", "root", "guest"].contains(&a.as_str()) {
+                    return Err(ApiError::bad_request("Choose a LAPS account name such as odadmin (not a built-in account)"));
+                }
+                if s.db.get_user_by_username(&a)?.is_some() {
+                    return Err(ApiError::bad_request("A directory user has that name; choose another LAPS account name"));
+                }
+                if !(14..=64).contains(length) || !(1..=365).contains(rotate_days) {
+                    return Err(ApiError::bad_request("LAPS passwords are 14 to 64 characters and rotate every 1 to 365 days"));
+                }
+            }
             Setting::AccountLockout { threshold, duration_minutes }
                 if !(1..=999).contains(threshold) || !(1..=99999).contains(duration_minutes) =>
             {

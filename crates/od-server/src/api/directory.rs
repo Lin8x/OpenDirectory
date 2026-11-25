@@ -111,6 +111,17 @@ pub async fn setup(State(s): State<AppState>, Json(req): Json<SetupRequest>) -> 
         od_core::baselines::Baseline::Custom
     });
     let plan = od_core::baselines::plan(baseline, &req.modifiers);
+    // The first admin's password must already meet the baseline's rules.
+    if let Some(min) = plan.policies.iter().flat_map(|p| &p.settings).find_map(|st| match st {
+        Setting::PasswordMinLength { length } => Some(*length),
+        _ => None,
+    }) {
+        if (req.admin_password.chars().count() as u32) < min {
+            return Err(ApiError::bad_request(format!(
+                "This baseline requires passwords of at least {min} characters; choose a longer admin password"
+            )));
+        }
+    }
     let (admin_ou, admin_groups) = apply_plan(&s, &plan)?;
 
     let user = User {
@@ -208,6 +219,24 @@ fn apply_plan(s: &AppState, plan: &od_core::baselines::Plan) -> ApiResult<(Optio
     }
     for p in &policies {
         s.db.upsert_policy(p)?;
+    }
+    // Directory passwords follow the same rules the baseline sets for endpoints.
+    if let Some(def) = plan.policies.iter().find(|p| p.name == "Default Endpoint Policy") {
+        let mut r = super::passwords::Rules::default();
+        for st in &def.settings {
+            match st {
+                Setting::PasswordMinLength { length } => r.min_length = *length,
+                Setting::PasswordComplexity { required } => r.complexity = *required,
+                Setting::PasswordHistory { count } => r.history = *count,
+                Setting::PasswordMaxAge { days } => r.max_age_days = *days,
+                Setting::AccountLockout { threshold, duration_minutes } => {
+                    r.lockout_threshold = *threshold;
+                    r.lockout_minutes = *duration_minutes;
+                }
+                _ => {}
+            }
+        }
+        s.db.meta_set("password_policy", &serde_json::to_string(&r).map_err(anyhow::Error::from)?)?;
     }
     let tag = |v: serde_json::Result<serde_json::Value>| v.ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
     s.db.meta_set("baseline", &tag(serde_json::to_value(plan.baseline)))?;

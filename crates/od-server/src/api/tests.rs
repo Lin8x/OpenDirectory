@@ -97,9 +97,14 @@ async fn users_groups_and_guards() {
     let (st, v) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"root"}))).await;
     assert_eq!(st, StatusCode::BAD_REQUEST, "{v}");
 
-    let (st, alice) =
-        call(&app, Method::POST, "/users", auth, Some(json!({"username":"Alice","display_name":"Alice Smith","password":"password123"})))
-            .await;
+    let (st, alice) = call(
+        &app,
+        Method::POST,
+        "/users",
+        auth,
+        Some(json!({"username":"Alice","display_name":"Alice Smith","password":"password-123456"})),
+    )
+    .await;
     assert_eq!(st, StatusCode::CREATED, "{alice}");
     assert_eq!(alice["username"], "alice");
     assert_eq!(alice["group_ids"].as_array().unwrap().len(), 1, "auto-added to Domain Users");
@@ -118,7 +123,7 @@ async fn users_groups_and_guards() {
     assert_eq!(st, StatusCode::CONFLICT);
 
     // Non-admins can't sign in to the Admin Center.
-    let (st, _) = call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"alice","password":"password123"}))).await;
+    let (st, _) = call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"alice","password":"password-123456"}))).await;
     assert_eq!(st, StatusCode::FORBIDDEN);
 
     let (st, res) = call(&app, Method::GET, "/search?q=smith", auth, None).await;
@@ -149,7 +154,7 @@ async fn endpoint_enrollment_checkin_accounts_and_jobs() {
     let auth = Some(tok.as_str());
 
     // A group whose members get sign-in accounts on every endpoint.
-    let (_, bob) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"bob","password":"bobpassword"}))).await;
+    let (_, bob) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"bob","password":"bob-password-123"}))).await;
     let (_, g) = call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Laptop Users","member_ids":[bob["id"]]}))).await;
     let (st, v) = call(
         &app,
@@ -193,7 +198,7 @@ async fn endpoint_enrollment_checkin_accounts_and_jobs() {
     let accounts = ci["accounts"].as_array().unwrap();
     assert_eq!(accounts.len(), 1);
     assert_eq!(accounts[0]["username"], "bob");
-    assert_eq!(accounts[0]["password"], "bobpassword");
+    assert_eq!(accounts[0]["password"], "bob-password-123");
     // Default policy (priority 1000) loses screen lock to ours (priority 10).
     assert!(ci["settings"].as_array().unwrap().iter().any(|s| s["kind"] == "screen_lock" && s["minutes"] == 5));
 
@@ -452,7 +457,7 @@ async fn onboarding_with_a_baseline_and_modifiers() {
         None,
         Some(json!({
             "organization": "Contoso", "domain": "corp.contoso.com", "admin_username": "dan",
-            "admin_display_name": "Dan", "admin_password": "s3cure-pass!",
+            "admin_display_name": "Dan", "admin_password": "s3cure-enterprise-pass",
             "baseline": "enterprise", "modifiers": body["modifiers"]
         })),
     )
@@ -597,7 +602,7 @@ async fn webhook_integration_receives_signed_events() {
     assert_eq!(t["ok"], true, "{t}");
 
     // A matching event is delivered; a non-matching one isn't.
-    call(&app, Method::POST, "/users", auth, Some(json!({"username":"zoe","display_name":"Zoe","password":"password123"}))).await;
+    call(&app, Method::POST, "/users", auth, Some(json!({"username":"zoe","display_name":"Zoe","password":"password-123456"}))).await;
     call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Ignored"}))).await;
     for _ in 0..50 {
         if got.lock().unwrap().len() >= 2 {
@@ -617,7 +622,8 @@ async fn recycle_bin_restores_users_with_password_and_groups() {
     let tok = setup(&app).await;
     let auth = Some(tok.as_str());
     let (_, u) =
-        call(&app, Method::POST, "/users", auth, Some(json!({"username":"carol","display_name":"Carol","password":"password123"}))).await;
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"carol","display_name":"Carol","password":"password-123456"})))
+            .await;
     let uid = u["id"].as_str().unwrap().to_string();
     let (_, g) = call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Finance","member_ids":[uid]}))).await;
     let gid = g["id"].as_str().unwrap().to_string();
@@ -740,4 +746,38 @@ async fn password_policies_psos_history_and_self_service() {
     )
     .await;
     assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn laps_escrow_read_and_rotate() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (eid, ep_auth) = enroll(&app, auth, "linux", "srv-01", None).await;
+    let (st, _) = call(&app, Method::POST, "/policies", auth, Some(json!({"name":"LAPS","targets":{"all_endpoints":true},"settings":[{"kind":"local_admin_password","account":"root","length":20,"rotate_days":30}]}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "built-in names refused");
+    let (st, _) = call(&app, Method::POST, "/policies", auth, Some(json!({"name":"LAPS","targets":{"all_endpoints":true},"settings":[{"kind":"local_admin_password","account":"odadmin","length":20,"rotate_days":30}]}))).await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (_, ci) =
+        call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(json!({"agent_version":"0.5.0","inventory":null,"compliance":[]})))
+            .await;
+    assert!(ci["settings"].as_array().unwrap().iter().any(|s| s["kind"] == "local_admin_password"));
+    assert_eq!(ci["laps_rotate"], false);
+
+    let (st, _) = call(&app, Method::GET, &format!("/endpoints/{eid}/laps"), auth, None).await;
+    assert_eq!(st, StatusCode::NOT_FOUND, "nothing escrowed yet");
+    call(&app, Method::POST, "/agent/laps", Some(&ep_auth), Some(json!({"account":"odadmin","password":"First-Random-Pw-123"}))).await;
+    call(&app, Method::POST, "/agent/laps", Some(&ep_auth), Some(json!({"account":"odadmin","password":"Second-Random-Pw-456"}))).await;
+    let (st, v) = call(&app, Method::GET, &format!("/endpoints/{eid}/laps"), auth, None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(v["password"], "Second-Random-Pw-456");
+    assert_eq!(v["previous_password"], "First-Random-Pw-123");
+
+    call(&app, Method::POST, &format!("/endpoints/{eid}/laps/rotate"), auth, None).await;
+    let (_, ci) =
+        call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(json!({"agent_version":"0.5.0","inventory":null,"compliance":[]})))
+            .await;
+    assert_eq!(ci["laps_rotate"], true);
+    let (_, audit) = call(&app, Method::GET, "/audit?limit=50", auth, None).await;
+    assert!(audit.to_string().contains("laps.read"));
 }

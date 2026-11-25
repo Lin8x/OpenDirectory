@@ -173,3 +173,40 @@ pub async fn delete_token(State(s): State<AppState>, admin: Admin, Path(token): 
     s.db.audit(admin.name(), "enrollment_token.revoke", &token[..4.min(token.len())], "");
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[derive(serde::Serialize)]
+pub struct LapsView {
+    account: String,
+    password: String,
+    previous_password: Option<String>,
+    rotated_at: chrono::DateTime<Utc>,
+    rotation_pending: bool,
+}
+
+/// Read the endpoint's LAPS password. Every read is audited.
+pub async fn laps(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<LapsView>> {
+    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    let (account, cur, prev, rotated_at, pending) = s
+        .db
+        .get_laps(id)?
+        .ok_or_else(|| ApiError::not_found("LAPS password (no GPO with the LAPS setting applies yet, or the agent hasn't rotated it)"))?;
+    let open = |b: &[u8]| -> ApiResult<String> { Ok(String::from_utf8(s.sealer.open(b)?).unwrap_or_default()) };
+    let view = LapsView {
+        account,
+        password: open(&cur)?,
+        previous_password: prev.as_deref().map(open).transpose()?,
+        rotated_at,
+        rotation_pending: pending,
+    };
+    s.db.audit(admin.name(), "laps.read", &e.hostname, &format!("Viewed the password for {}", view.account));
+    Ok(Json(view))
+}
+
+pub async fn laps_rotate(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
+    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    if !s.db.request_laps_rotation(id, true)? {
+        return Err(ApiError::not_found("LAPS password"));
+    }
+    s.db.audit(admin.name(), "laps.rotate_requested", &e.hostname, "");
+    Ok(Json(serde_json::json!({ "ok": true, "message": "The endpoint rotates the password at its next check-in." })))
+}

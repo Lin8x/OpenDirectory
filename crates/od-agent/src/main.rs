@@ -4,6 +4,7 @@ mod accounts;
 mod agent;
 mod inventory;
 mod jobs;
+mod laps;
 mod policy;
 mod policy_ext;
 mod policy_scripts;

@@ -9,7 +9,7 @@ use od_core::{ComplianceItem, JobKind, OsFamily};
 use tokio::sync::watch;
 
 use crate::state::AgentState;
-use crate::{accounts, inventory, jobs, policy, policy_scripts};
+use crate::{accounts, inventory, jobs, laps, policy, policy_scripts};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const INVENTORY_EVERY: Duration = Duration::from_secs(60 * 60);
@@ -29,6 +29,7 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
         enrolled_at: chrono::Utc::now(),
         accounts: Default::default(),
         script_runs: Default::default(),
+        laps: None,
     };
     state.save()?;
     Ok(state)
@@ -45,6 +46,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut last_settings = String::new();
     let mut compliance: Vec<ComplianceItem> = Vec::new();
     let mut account_item: Option<ComplianceItem> = None;
+    let mut laps_item: Option<ComplianceItem> = None;
     let mut backoff = Duration::from_secs(5);
     let mut force_inventory = false;
     let mut logons = policy_scripts::LogonWatcher::default();
@@ -53,6 +55,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
         let send_inventory = force_inventory || last_inventory.map(|t| t.elapsed() > INVENTORY_EVERY).unwrap_or(true);
         let mut all_compliance = compliance.clone();
         all_compliance.extend(account_item.clone());
+        all_compliance.extend(laps_item.clone());
         let req = CheckinRequest {
             agent_version: VERSION.into(),
             inventory: if send_inventory { Some(inventory::collect().await) } else { None },
@@ -84,6 +87,15 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                     compliance = policy::apply_all(&resp.settings).await;
                     last_settings = fingerprint;
                     last_apply = Some(Instant::now());
+                }
+
+                // LAPS: rotate the local admin password when due or requested.
+                let (item, changed) = laps::maintain(&resp.settings, resp.laps_rotate, &mut state, &client).await;
+                laps_item = item;
+                if changed {
+                    if let Err(e) = state.save() {
+                        tracing::error!("saving agent state: {e:#}");
+                    }
                 }
 
                 // GPO startup, sign-in and scheduled scripts.

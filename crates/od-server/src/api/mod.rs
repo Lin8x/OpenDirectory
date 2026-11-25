@@ -60,6 +60,8 @@ pub fn router(state: AppState) -> Router {
         .route("/endpoints/{id}", get(endpoints::get).patch(endpoints::update).delete(endpoints::remove))
         .route("/endpoints/{id}/jobs", get(endpoints::list_endpoint_jobs).post(endpoints::create_job))
         .route("/endpoints/{id}/rsop", get(policies::rsop))
+        .route("/endpoints/{id}/laps", get(endpoints::laps))
+        .route("/endpoints/{id}/laps/rotate", post(endpoints::laps_rotate))
         .route("/jobs", get(endpoints::list_jobs))
         .route("/jobs/{id}", get(endpoints::get_job))
         .route("/jobs/{id}/cancel", post(endpoints::cancel_job))
@@ -88,7 +90,8 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))
-        .route("/agent/script-runs", post(agent::script_run));
+        .route("/agent/script-runs", post(agent::script_run))
+        .route("/agent/laps", post(agent::laps_escrow));
 
     let mut router = Router::new().nest("/api/v1", api);
     // Only for running the Admin Center UI in a browser during development.

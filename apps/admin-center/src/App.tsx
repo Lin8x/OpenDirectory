@@ -15,6 +15,8 @@ import Policies from "./pages/Policies";
 import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
 import Backups from "./pages/Backups";
+import RecycleBin from "./pages/RecycleBin";
+import PasswordPolicies from "./pages/PasswordPolicies";
 import Integrations from "./pages/Integrations";
 import Lab, { LiveTopology } from "./pages/Lab";
 import ScriptEditor from "./pages/ScriptEditor";
@@ -50,6 +52,8 @@ function Gate() {
             <Route path="/scripts" element={<Scripts />} />
             <Route path="/scripts/:id" element={<ScriptEditor />} />
             <Route path="/audit" element={<Audit />} />
+            <Route path="/recycle-bin" element={<RecycleBin />} />
+            <Route path="/password-policies" element={<PasswordPolicies />} />
             <Route path="/backups" element={<Backups />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/lab" element={<Lab />} />
