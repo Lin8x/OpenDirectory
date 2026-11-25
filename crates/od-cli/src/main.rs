@@ -25,6 +25,46 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Create a new domain on a freshly installed Management Server (headless
+    /// onboarding). Asks for anything not given as a flag.
+    Init {
+        /// e.g. https://10.0.0.4:8443
+        #[arg(long)]
+        server: String,
+        #[arg(long)]
+        fingerprint: Option<String>,
+        #[arg(long)]
+        organization: Option<String>,
+        /// DNS-style domain name, e.g. corp.contoso.com
+        #[arg(long)]
+        domain: Option<String>,
+        /// First Domain Admin's username.
+        #[arg(long)]
+        admin: Option<String>,
+        #[arg(long)]
+        admin_name: Option<String>,
+        /// custom, minimal, home, small_business, enterprise, education or high_security
+        #[arg(long)]
+        baseline: Option<String>,
+        /// relaxed, balanced, strict or maximum
+        #[arg(long)]
+        security_level: Option<String>,
+        /// Compliance packs, comma separated: hipaa, pci_dss, soc2, cmmc, gdpr, ferpa, cipa
+        #[arg(long, value_delimiter = ',')]
+        compliance: Vec<String>,
+        /// everyone, pilot or review
+        #[arg(long)]
+        rollout: Option<String>,
+        /// Show the plan and stop without creating anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Don't ask for confirmation.
+        #[arg(long, short)]
+        yes: bool,
+    },
+    /// Script Library: list, show and run saved scripts and templates.
+    #[command(subcommand)]
+    Script(ScriptCmd),
     /// Sign in to a Management Server.
     Login {
         /// e.g. https://10.0.0.4:8443
@@ -75,6 +115,40 @@ enum Cmd {
     },
     /// Explain a directory term in plain language (e.g. `od explain gpo`).
     Explain { term: Option<String> },
+}
+
+#[derive(Subcommand)]
+enum ScriptCmd {
+    /// List scripts in the library.
+    List,
+    /// List built-in templates.
+    Templates,
+    /// Add a template to the library.
+    AddTemplate { key: String },
+    /// Show a script.
+    Show { name: String },
+    /// Run a script. Combine targets freely.
+    Run {
+        name: String,
+        /// Endpoint hostnames.
+        #[arg(long = "endpoint", short = 'e')]
+        endpoints: Vec<String>,
+        /// Security groups (their computer members).
+        #[arg(long = "group", short = 'g')]
+        groups: Vec<String>,
+        /// OUs (including child OUs).
+        #[arg(long = "ou")]
+        ous: Vec<String>,
+        /// Every endpoint.
+        #[arg(long)]
+        all: bool,
+        /// Parameter values, NAME=value.
+        #[arg(long = "param", short = 'p')]
+        params: Vec<String>,
+        /// Show which endpoints would run it.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -270,6 +344,124 @@ async fn main() {
 async fn run(cli: Cli) -> Result<()> {
     let json_out = cli.json;
     match cli.command {
+        Cmd::Init {
+            server,
+            fingerprint,
+            organization,
+            domain,
+            admin,
+            admin_name,
+            baseline,
+            security_level,
+            compliance,
+            rollout,
+            dry_run,
+            yes,
+        } => {
+            let target = ServerTarget { url: server.trim_end_matches('/').into(), fingerprint };
+            let c = Client::new(&target)?;
+            let st: Value = c.get("/setup").await?;
+            if st["needs_setup"] == false && !dry_run {
+                bail!("This Management Server already has a domain ({}). Use `od login` instead.", st["domain"].as_str().unwrap_or("?"));
+            }
+            let organization = match organization {
+                Some(o) => o,
+                None => ask("Organization name", None)?,
+            };
+            let suggested =
+                format!("corp.{}.local", organization.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>());
+            let domain = match domain {
+                Some(d) => d,
+                None => ask("Domain name", Some(&suggested))?,
+            };
+            let admin_name = match admin_name {
+                Some(n) => n,
+                None => ask("Your full name", None)?,
+            };
+            let first = admin_name.split_whitespace().next().unwrap_or("admin").to_lowercase();
+            let admin = match admin {
+                Some(a) => a,
+                None => ask("Admin username", Some(&first))?,
+            };
+            let cat: Value = c.get("/baselines").await?;
+            let baseline = match baseline {
+                Some(b) => b,
+                None => {
+                    println!("\nSecurity baselines:");
+                    for b in cat["baselines"].as_array().into_iter().flatten() {
+                        println!(
+                            "  {:<15} {}: {}",
+                            b["id"].as_str().unwrap_or(""),
+                            b["name"].as_str().unwrap_or(""),
+                            b["tagline"].as_str().unwrap_or("")
+                        );
+                    }
+                    ask("Baseline", Some("small_business"))?
+                }
+            };
+            let mut modifiers = json!({ "compliance": compliance });
+            if let Some(l) = security_level {
+                modifiers["security_level"] = json!(l);
+            }
+            if let Some(r) = rollout {
+                modifiers["rollout"] = json!(r);
+            }
+            let plan: Value = c.post("/baselines/preview", &json!({ "baseline": baseline, "modifiers": modifiers })).await?;
+            if json_out && dry_run {
+                return print_json(&plan);
+            }
+            println!("\nPlan for {organization} ({domain}), {baseline} baseline:");
+            let names = |k: &str, f: &str| {
+                plan[k]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|x| x[f].as_str().map(str::to_string)).collect::<Vec<_>>().join(", "))
+                    .unwrap_or_default()
+            };
+            println!("  OUs:     {}", names("ous", "name"));
+            println!(
+                "  Groups:  Domain Admins, Domain Users{}",
+                plan["groups"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|g| g["name"].as_str()).map(|n| format!(", {n}")).collect::<String>())
+                    .unwrap_or_default()
+            );
+            for p in plan["policies"].as_array().into_iter().flatten() {
+                println!(
+                    "  GPO:     {} ({} settings)",
+                    p["name"].as_str().unwrap_or(""),
+                    p["settings"].as_array().map(|a| a.len()).unwrap_or(0)
+                );
+            }
+            for n in plan["notes"].as_array().into_iter().flatten() {
+                println!("  note:    {}", n["text"].as_str().unwrap_or(""));
+            }
+            if dry_run {
+                return Ok(());
+            }
+            let password = prompt_password(&format!("Password for {admin} (8+ characters): "))?;
+            if std::env::var("OD_PASSWORD").is_err() && prompt_password("Confirm password: ")? != password {
+                bail!("The passwords don't match");
+            }
+            if !yes && !ask("Create this domain? (yes/no)", Some("yes"))?.to_lowercase().starts_with('y') {
+                bail!("Cancelled; nothing was created");
+            }
+            let resp: Value = c
+                .post(
+                    "/setup",
+                    &json!({ "organization": organization, "domain": domain, "admin_username": admin, "admin_display_name": admin_name,
+                             "admin_password": password, "baseline": baseline, "modifiers": modifiers }),
+                )
+                .await?;
+            let token = resp["token"].as_str().context("no token in response")?.to_string();
+            let name = resp["user"]["username"].as_str().unwrap_or(&admin).to_string();
+            save_config(&Config { server: target, token, username: name.clone() })?;
+            println!("\nDomain {domain} created. Signed in as {name}.");
+            println!("Next: `od enroll` prints the command to enroll a computer.");
+        }
+        Cmd::Script(cmd) => {
+            let c = client()?;
+            run_script_cmd(&c, cmd, json_out).await?;
+        }
         Cmd::Login { server, fingerprint, username } => {
             let target = ServerTarget { url: server.trim_end_matches('/').into(), fingerprint };
             let c = Client::new(&target)?;
@@ -683,6 +875,135 @@ async fn endpoint(cmd: EndpointCmd, json_out: bool) -> Result<()> {
             let e = find_endpoint(&c, &hostname).await?;
             c.delete(&format!("/endpoints/{}", e.id)).await?;
             println!("Retired {}.", e.hostname);
+        }
+    }
+    Ok(())
+}
+
+/// Ask on the terminal, with an optional default.
+fn ask(label: &str, default: Option<&str>) -> Result<String> {
+    use std::io::Write;
+    loop {
+        match default {
+            Some(d) => print!("{label} [{d}]: "),
+            None => print!("{label}: "),
+        }
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line)? == 0 {
+            bail!("No input (use flags to run non-interactively; see `od init --help`)");
+        }
+        let v = line.trim();
+        if !v.is_empty() {
+            return Ok(v.to_string());
+        }
+        if let Some(d) = default {
+            return Ok(d.to_string());
+        }
+    }
+}
+
+async fn find_script(c: &Client, name: &str) -> Result<od_core::scripts::Script> {
+    let all: Vec<od_core::scripts::Script> = c.get("/scripts").await?;
+    all.into_iter().find(|s| s.name.eq_ignore_ascii_case(name) || s.id.to_string() == name).ok_or_else(|| anyhow!("No script named {name}"))
+}
+
+async fn run_script_cmd(c: &Client, cmd: ScriptCmd, json_out: bool) -> Result<()> {
+    match cmd {
+        ScriptCmd::List => {
+            let all: Vec<od_core::scripts::Script> = c.get("/scripts").await?;
+            if json_out {
+                return print_json(&all);
+            }
+            table(
+                &["name", "category", "shell", "os", "params"],
+                all.iter()
+                    .map(|s| {
+                        vec![
+                            s.name.clone(),
+                            s.category.clone(),
+                            format!("{:?}", s.shell).to_lowercase(),
+                            if s.os.is_empty() { "any".into() } else { s.os.iter().map(|o| o.label()).collect::<Vec<_>>().join(",") },
+                            s.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(","),
+                        ]
+                    })
+                    .collect(),
+            );
+        }
+        ScriptCmd::Templates => {
+            let t: Value = c.get("/scripts/templates").await?;
+            if json_out {
+                return print_json(&t);
+            }
+            table(
+                &["key", "name", "os"],
+                t.as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|x| {
+                        vec![
+                            x["key"].as_str().unwrap_or("").into(),
+                            x["name"].as_str().unwrap_or("").into(),
+                            x["os"]
+                                .as_array()
+                                .map(|a| a.iter().filter_map(|o| o.as_str()).collect::<Vec<_>>().join(","))
+                                .unwrap_or_default(),
+                        ]
+                    })
+                    .collect(),
+            );
+        }
+        ScriptCmd::AddTemplate { key } => {
+            let s: od_core::scripts::Script = c.post("/scripts", &json!({ "template": key })).await?;
+            println!("Added \"{}\" to the library.", s.name);
+        }
+        ScriptCmd::Show { name } => {
+            let s = find_script(c, &name).await?;
+            if json_out {
+                return print_json(&s);
+            }
+            println!("{}  ({}, {:?})\n{}\n", s.name, s.category, s.shell, s.description);
+            for p in &s.params {
+                println!("  param {} = {:?}{}  {}", p.name, p.default, if p.required { " (required)" } else { "" }, p.label);
+            }
+            println!("\n{}", s.body);
+        }
+        ScriptCmd::Run { name, endpoints, groups, ous, all, params, dry_run } => {
+            let s = find_script(c, &name).await?;
+            let mut eids = vec![];
+            for e in &endpoints {
+                eids.push(find_endpoint(c, e).await?.id);
+            }
+            let mut gids = vec![];
+            for g in &groups {
+                gids.push(find_group(c, g).await?.id);
+            }
+            let mut oids = vec![];
+            for o in &ous {
+                oids.push(find_ou(c, o).await?.id);
+            }
+            let mut pv = serde_json::Map::new();
+            for kv in &params {
+                let (k, v) = kv.split_once('=').ok_or_else(|| anyhow!("Parameters look like NAME=value"))?;
+                pv.insert(k.trim().to_uppercase(), json!(v));
+            }
+            let body = json!({ "targets": { "all_endpoints": all, "endpoint_ids": eids, "group_ids": gids, "ou_ids": oids }, "params": pv, "dry_run": dry_run });
+            let r: Value = c.post(&format!("/scripts/{}/run", s.id), &body).await?;
+            if json_out {
+                return print_json(&r);
+            }
+            let hosts = |k: &str| {
+                r[k].as_array().map(|a| a.iter().filter_map(|t| t["hostname"].as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default()
+            };
+            if dry_run {
+                println!("Would run on: {}", hosts("targets"));
+            } else {
+                println!("Queued on: {}", hosts("targets"));
+                println!("See results with `od endpoint show <hostname>` or in the Admin Center's Script Library.");
+            }
+            if r["skipped"].as_array().map(|a| !a.is_empty()).unwrap_or(false) {
+                println!("Skipped (wrong OS): {}", hosts("skipped"));
+            }
         }
     }
     Ok(())

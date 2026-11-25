@@ -432,3 +432,51 @@ async fn script_library_targets_and_gpo_scripts() {
     assert_eq!(hist.as_array().unwrap().len(), 1);
     assert_eq!(hist[0]["status"], "succeeded");
 }
+
+#[tokio::test]
+async fn onboarding_with_a_baseline_and_modifiers() {
+    let app = app();
+    let (st, cat) = call(&app, Method::GET, "/baselines", None, None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(cat["baselines"].as_array().unwrap().len(), 7);
+
+    let body = json!({"baseline":"enterprise","modifiers":{"compliance":["soc2"],"usb":"block","time_server":"time.corp.contoso.com"}});
+    let (st, plan) = call(&app, Method::POST, "/baselines/preview", None, Some(body.clone())).await;
+    assert_eq!(st, StatusCode::OK, "{plan}");
+    assert!(plan["ous"].as_array().unwrap().iter().any(|o| o["name"] == "Finance" && o["parent"] == "Departments"));
+
+    let (st, v) = call(
+        &app,
+        Method::POST,
+        "/setup",
+        None,
+        Some(json!({
+            "organization": "Contoso", "domain": "corp.contoso.com", "admin_username": "dan",
+            "admin_display_name": "Dan", "admin_password": "s3cure-pass!",
+            "baseline": "enterprise", "modifiers": body["modifiers"]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{v}");
+    let tok = format!("Bearer {}", v["token"].as_str().unwrap());
+    let auth = Some(tok.as_str());
+
+    let (_, ous) = call(&app, Method::GET, "/ous", auth, None).await;
+    let names: Vec<&str> = ous.as_array().unwrap().iter().map(|o| o["name"].as_str().unwrap()).collect();
+    for n in ["Departments", "Finance", "Workstations", "Laptops", "Admin", "Tier 0", "Pilot"] {
+        assert!(names.contains(&n), "missing OU {n}: {names:?}");
+    }
+    let (_, gpos) = call(&app, Method::GET, "/policies", auth, None).await;
+    let gpos = gpos.as_array().unwrap();
+    let def = gpos.iter().find(|p| p["name"] == "Default Endpoint Policy").unwrap();
+    let kinds: Vec<&str> = def["settings"].as_array().unwrap().iter().map(|s| s["kind"].as_str().unwrap()).collect();
+    assert!(kinds.contains(&"usb_storage") && kinds.contains(&"time_server") && kinds.contains(&"security_auditing"), "{kinds:?}");
+    assert!(gpos.iter().any(|p| p["name"] == "Patch Ring: Pilot"));
+    assert!(gpos.iter().any(|p| p["name"] == "Sign-in Accounts"));
+
+    // The admin is a Domain Admin and in Tier 0.
+    let (_, me) = call(&app, Method::GET, "/auth/me", auth, None).await;
+    let (_, groups) = call(&app, Method::GET, "/groups", auth, None).await;
+    let t0 = groups.as_array().unwrap().iter().find(|g| g["name"] == "Tier 0 Admins").unwrap();
+    assert!(t0["member_ids"].as_array().unwrap().contains(&me["user"]["id"]));
+}

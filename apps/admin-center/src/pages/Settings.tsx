@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { RefreshCw, Server } from "lucide-react";
+import { autostartEnabled, setAutostart } from "../lib/autostart";
 import { friendlyUpdateError, useUpdates } from "../lib/updates";
 import { ago } from "../lib/format";
 import { desktop, isDesktop } from "../lib/api";
 import { useLearnMode, useSession } from "../lib/session";
-import { Button, Card, CodeBlock, Explain, Field, PageHeader, Select, Switch } from "../components/ui";
+import { Button, Card, CodeBlock, Explain, Field, PageHeader, Select, Switch, useToast } from "../components/ui";
 
 export default function Settings() {
   const { me, connection, setConnection } = useSession();
@@ -42,8 +44,29 @@ export default function Settings() {
           </div>
         </Card>
         <UpdatesCard />
+        <StartupCard hosting={connection?.mode === "local"} />
       </div>
     </>
+  );
+}
+
+function StartupCard({ hosting }: { hosting: boolean }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const toast = useToast();
+  useEffect(() => { void autostartEnabled().then(setOn); }, []);
+  if (!isDesktop) return null;
+  return (
+    <Card title="Startup">
+      <div className="space-y-3">
+        <Switch checked={!!on} disabled={on === null} onChange={async (v) => {
+          try { await setAutostart(v); setOn(v); toast("good", v ? "The Admin Center will start when you sign in" : "Launch at startup turned off"); } catch (e) { toast("bad", String(e)); }
+        }} label="Launch the Admin Center at startup (in the tray)" />
+        {hosting && !on && <p className="text-xs text-warn">This computer hosts the directory. Without launch at startup, endpoints can't check in after a restart until someone opens the app.</p>}
+        <p className="text-xs text-ink-3">On a server that runs with nobody signed in, install the Management Server as a system service instead:</p>
+        <CodeBlock code="sudo opendirectory-server install-service" />
+        <p className="text-xs text-ink-3">Windows: run <code className="font-mono">opendirectory-server.exe install-service</code> from an elevated prompt. Then create the domain with <code className="font-mono">od init</code> or connect this Admin Center to it.</p>
+      </div>
+    </Card>
   );
 }
 

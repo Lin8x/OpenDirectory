@@ -126,6 +126,8 @@ Installed on each managed computer as a Windows Service, a launchd daemon on mac
 - `policy.rs`: applies GPO settings using each OS's native tools (`netsh`, `pwpolicy`, `ufw` and so on) and reports compliance.
 - `accounts.rs`: creates and disables the local sign-in accounts that GPOs assign.
 - `jobs.rs`: runs remote scripts and other queued jobs.
+- `policy_scripts.rs`: runs GPO startup, sign-in, scheduled and run-once scripts and reports each run.
+- `policy_ext.rs`: the v0.3 settings (lockout, USB, RDP, SSH, NTP and other hardening) for each OS.
 - `state.rs`: remembers its enrollment and which local accounts it created, so it never touches accounts it didn't make.
 
 ### `crates/od-client` and `crates/od-cli`
@@ -309,7 +311,7 @@ From [ROADMAP.md](ROADMAP.md), in order:
 8. **Agent self-update** from GitHub Releases, rolled out by OU.
 9. **High availability.** Server replication, and backup and restore from the Admin Center.
 
-Known limitations today: no LDAP/Kerberos yet, settings removed from a GPO aren't reverted, disk encryption is reported but not enforced, remote scripts aren't interactive, and mobile devices aren't managed.
+Known limitations today: no LDAP/Kerberos yet, sign-in scripts run as SYSTEM/root (with the user's name in `OD_LOGON_USER`) rather than as the user, settings removed from a GPO aren't reverted, disk encryption is reported but not enforced, remote scripts aren't interactive, and mobile devices aren't managed.
 
 ---
 

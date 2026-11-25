@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Building2, Check, KeyRound, Laptop, Network, Server, ShieldCheck, WifiOff } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, Check, KeyRound, Laptop, ListChecks, Network, Server, ShieldCheck, SlidersHorizontal, WifiOff } from "lucide-react";
+import { BaselineStep, ModifiersStep, ReviewStep, useBaselineCatalog, type BaselineId, type Modifiers } from "../components/Baselines";
 import { ApiError, desktop, isDesktop, post } from "../lib/api";
 import { useSession } from "../lib/session";
+import { setAutostart } from "../lib/autostart";
 import { Button, Callout, Field, Input, Switch, cx } from "../components/ui";
 
 function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
@@ -108,7 +110,7 @@ export function UnreachablePage() {
 }
 
 // -------------------------------------------------------------- first-run setup
-const STEPS = ["Organization", "Domain Admin", "Defaults"] as const;
+const STEPS = ["Organization", "Domain Admin", "Baseline", "Customize", "Review"] as const;
 
 export function SetupWizard() {
   const { signIn } = useSession();
@@ -120,7 +122,10 @@ export function SetupWizard() {
   const [userTouched, setUserTouched] = useState(false);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
-  const [defaults, setDefaults] = useState(true);
+  const catalog = useBaselineCatalog();
+  const [baseline, setBaseline] = useState<BaselineId>("small_business");
+  const [mods, setMods] = useState<Modifiers>({ compliance: [] });
+  const [launch, setLaunch] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -130,12 +135,14 @@ export function SetupWizard() {
   };
   const domainOk = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/i.test(domain.trim());
   const userOk = /^[a-z][a-z0-9._-]{0,19}$/i.test(username.trim());
-  const canNext = [org.trim() && domainOk, name.trim() && userOk && pw.length >= 8 && pw === pw2, true][step];
+  const canNext = [org.trim() && domainOk, name.trim() && userOk && pw.length >= 8 && pw === pw2, !!catalog, true, true][step];
+  const last = STEPS.length - 1;
 
   const finish = async () => {
     setBusy(true); setErr(null);
     try {
-      const r = await post<{ token: string }>("/setup", { organization: org, domain, admin_username: username, admin_display_name: name, admin_password: pw, create_defaults: defaults });
+      const r = await post<{ token: string }>("/setup", { organization: org, domain, admin_username: username, admin_display_name: name, admin_password: pw, baseline, modifiers: mods });
+      if (isDesktop && launch) await setAutostart(true).catch(() => {});
       await signIn(r.token);
     } catch (e) { setErr((e as ApiError).message); setBusy(false); }
   };
@@ -178,26 +185,34 @@ export function SetupWizard() {
               </div>
             </div>
           )}
-          {step === 2 && (
+          {step === 2 && catalog && (
             <div className="space-y-4">
-              <Header icon={<ShieldCheck className="size-5" />} title="Start with sensible defaults" body="Recommended for most organizations. It creates a familiar structure you can rename or delete." />
-              <div className="rounded-xl border border-line p-4">
-                <Switch checked={defaults} onChange={setDefaults} label={<span className="font-medium">Create default OUs, groups and a baseline GPO</span>} />
-                {defaults && (
-                  <ul className="mt-3 space-y-1.5 pl-11 text-sm text-ink-2">
-                    <li><b className="text-ink">OUs:</b> Staff, Workstations, Servers, IT</li>
-                    <li><b className="text-ink">Security groups:</b> Domain Admins, Domain Users</li>
-                    <li><b className="text-ink">Default Endpoint Policy:</b> firewall on, screen lock after 15 minutes, disk encryption check, automatic updates</li>
-                  </ul>
-                )}
-              </div>
-              <Callout tone="info" title="What happens next">You'll land on the Overview with a short checklist: add users, enroll your first computer and create a policy.</Callout>
+              <Header icon={<ShieldCheck className="size-5" />} title="Choose a security baseline" body="A starting point of OUs, groups and GPOs, like Microsoft Security Baselines or CIS Benchmarks. Everything stays editable." />
+              <BaselineStep catalog={catalog} value={baseline} onChange={(b) => { setBaseline(b); setMods({ compliance: [] }); }} />
+            </div>
+          )}
+          {step === 3 && catalog && (
+            <div className="space-y-4">
+              <Header icon={<SlidersHorizontal className="size-5" />} title="Customize it" body="Adjust the baseline to fit. Anything you leave on its default follows the baseline." />
+              <ModifiersStep catalog={catalog} baseline={baseline} value={mods} onChange={setMods} />
+            </div>
+          )}
+          {step === 4 && (
+            <div className="space-y-4">
+              <Header icon={<ListChecks className="size-5" />} title="Review" body="This is exactly what will be created. Nothing changes on any computer until it enrolls." />
+              <ReviewStep baseline={baseline} modifiers={mods} />
+              {isDesktop && (
+                <div className="rounded-xl border border-line p-3">
+                  <Switch checked={launch} onChange={setLaunch} label={<span><b>Launch at startup</b> (recommended)</span>} />
+                  <p className="mt-1 pl-11 text-xs text-ink-3">Starts the Admin Center in the tray when you sign in to this computer, so the directory it hosts is available after a restart. For a server that runs with nobody signed in, install the Management Server as a service instead.</p>
+                </div>
+              )}
               {err && <Callout tone="warn">{err}</Callout>}
             </div>
           )}
           <div className="mt-7 flex justify-between">
             <Button variant="ghost" icon={<ArrowLeft className="size-4" />} onClick={() => setStep((s) => s - 1)} disabled={step === 0}>Back</Button>
-            {step < 2
+            {step < last
               ? <Button variant="primary" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>Continue<ArrowRight className="size-4" /></Button>
               : <Button variant="primary" loading={busy} onClick={finish}>Create domain</Button>}
           </div>

@@ -171,6 +171,12 @@ impl Db {
             params![ts(Utc::now()), actor, action, target, details],
         );
     }
+    /// Delete audit entries older than `days`. Returns how many were removed.
+    pub fn prune_audit(&self, days: u32) -> Result<usize> {
+        let cutoff = ts(Utc::now() - chrono::Duration::days(days as i64));
+        Ok(self.lock().execute("DELETE FROM audit WHERE at < ?", [cutoff])?)
+    }
+
     pub fn list_audit(&self, limit: u32, query: Option<&str>) -> Result<Vec<AuditEntry>> {
         let c = self.lock();
         let like = format!("%{}%", query.unwrap_or(""));

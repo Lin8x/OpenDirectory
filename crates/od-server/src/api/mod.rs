@@ -18,6 +18,8 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(directory::health))
         .route("/setup", get(directory::setup_status).post(directory::setup))
+        .route("/baselines", get(directory::baselines))
+        .route("/baselines/preview", post(directory::preview_baseline))
         .route("/auth/login", post(directory::login))
         .route("/auth/logout", post(directory::logout))
         .route("/auth/me", get(directory::me))

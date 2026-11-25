@@ -23,20 +23,26 @@ It ships as a native desktop app (the **Admin Center**) that works fully offline
 ./scripts/build.sh --app  # also the Admin Center installer (needs Node 20+ and, on Linux, webkit2gtk 4.1)
 ```
 
-1. Open the Admin Center and pick **Host the directory on this computer**. The setup wizard creates your domain, the first Domain Admin, default OUs (Staff, Workstations, Servers, IT), the Domain Admins / Domain Users groups and a Default Endpoint Policy.
+1. Open the Admin Center and pick **Host the directory on this computer**. The setup wizard creates your domain and the first Domain Admin, then asks you to pick a **security baseline** (Custom, Minimal, Home/Homelab, Small Business, Enterprise, Education or High Security) and layer modifiers on top: security level, patch rings, device ownership, admin model, USB policy, remote access, compliance packs (HIPAA, PCI DSS, SOC 2, CMMC, GDPR, FERPA, CIPA) and rollout (everyone, a Pilot OU first, or review first). A review screen shows every OU, group and GPO before anything is created. Turn on **Launch at startup** so the directory comes back after a reboot.
 2. Go to **Enrollment**, create a token, and run the command it shows on each computer (as Administrator / root):
    ```bash
    opendirectory-agent enroll --server https://<host>:8443 --token XXXX-XXXX-XXXX-XXXX --fingerprint <sha256> --install
    ```
 3. Create users and add them to a group, then add a **Sign-in accounts** setting to a GPO. The agent creates matching local accounts on each endpoint, so those people can log in.
 
-Or run a standalone server:
+Or run a headless server with no GUI at all:
 
 ```bash
-opendirectory-server --data-dir /var/lib/opendirectory --listen 0.0.0.0:8443
-od login --server https://<host>:8443 --fingerprint <sha256> -u admin
+sudo opendirectory-server install-service     # systemd, launchd or a Windows Service; starts at boot
+od init --server https://<host>:8443 --fingerprint <sha256>   # interactive wizard, or pass --baseline, --organization, ... flags
 od status
 ```
+
+`od init --help` lists every flag, so setup can be fully scripted (`OD_PASSWORD` supplies the password). `od init --dry-run` prints the plan without creating anything.
+
+### Script Library and GPO scripts
+
+Save scripts with parameters (passed as `OD_PARAM_<NAME>` environment variables, never pasted into the script), start from 20 built-in templates for Windows, macOS and Linux, and run them against any mix of endpoints, security groups (computer members) and OUs. Attach a script to a GPO to run it **at startup, at sign-in, on a schedule or once**; it inherits through OU links like GPO Scripts in AD. From the CLI: `od script list`, `od script run "Disk usage report" --ou Servers -p PATH=/var`.
 
 ## Repository layout
 

@@ -9,6 +9,15 @@
 - Admin Center desktop app with embedded server, onboarding wizard, Learn mode and glossary, command palette, tray icon, light/dark theme.
 - `od` CLI covering the same features.
 
+## Done (v0.3)
+
+- Script Library with 20 templates, parameters, and runs against endpoints, security groups (computer members) and OUs.
+- GPO scripts: startup, sign-in, scheduled and run-once scripts that inherit through OU links.
+- 18 more GPO settings: account lockout, password age, history and complexity, USB storage, Guest account, Remote Desktop, SSH server, automatic sign-in, NTP, hide last user name, AutoRun, SMBv1, LLMNR, antivirus, SmartScreen/Gatekeeper, security auditing, update deferral (patch rings).
+- Onboarding with 7 security baselines, modifiers, compliance packs, staged rollout and a full preview.
+- Launch at startup for the Admin Center; `opendirectory-server install-service`; headless `od init`.
+- Clear "You're up to date" status for in-app updates.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 Home and Pro and on macOS 14+. Ship signed installers (MSI, pkg, deb/rpm).
