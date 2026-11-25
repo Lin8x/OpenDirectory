@@ -175,6 +175,7 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let state = build_state(&config.data_dir, info)?;
     let info = state.info.clone();
     spawn_housekeeping(state.clone());
+    api::integrations::spawn_dispatcher(state.clone());
     let app = router(state);
 
     let mut tasks = Vec::new();

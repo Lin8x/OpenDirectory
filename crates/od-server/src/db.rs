@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS scripts (
 CREATE TABLE IF NOT EXISTS backup_plans (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, sealed BLOB NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS integrations (
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, sealed BLOB NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -90,6 +93,8 @@ pub const ONLINE_WINDOW_SECS: i64 = 90;
 #[derive(Clone)]
 pub struct Db {
     conn: Arc<Mutex<Connection>>,
+    /// Receives every audit entry, for webhooks and chat alerts.
+    events: Arc<std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<AuditEntry>>>,
 }
 
 fn ts(t: DateTime<Utc>) -> String {
@@ -144,13 +149,13 @@ impl Db {
     pub fn open(path: &Path) -> Result<Db> {
         let conn = Connection::open(path).with_context(|| format!("open database {}", path.display()))?;
         migrate(&conn)?;
-        Ok(Db { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Db { conn: Arc::new(Mutex::new(conn)), events: Default::default() })
     }
 
     pub fn open_in_memory() -> Result<Db> {
         let conn = Connection::open_in_memory()?;
         migrate(&conn)?;
-        Ok(Db { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Db { conn: Arc::new(Mutex::new(conn)), events: Default::default() })
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
@@ -178,10 +183,24 @@ impl Db {
 
     // ---------- audit ----------
     pub fn audit(&self, actor: &str, action: &str, target: &str, details: &str) {
-        let _ = self.lock().execute(
-            "INSERT INTO audit(at, actor, action, target, details) VALUES (?, ?, ?, ?, ?)",
-            params![ts(Utc::now()), actor, action, target, details],
-        );
+        let at = Utc::now();
+        let id = {
+            let c = self.lock();
+            let _ = c.execute(
+                "INSERT INTO audit(at, actor, action, target, details) VALUES (?, ?, ?, ?, ?)",
+                params![ts(at), actor, action, target, details],
+            );
+            c.last_insert_rowid()
+        };
+        if let Some(tx) = self.events.get() {
+            let _ =
+                tx.send(AuditEntry { id, at, actor: actor.into(), action: action.into(), target: target.into(), details: details.into() });
+        }
+    }
+    /// Subscribe to audit entries as they're written (one subscriber).
+    pub fn subscribe(&self) -> Option<tokio::sync::mpsc::UnboundedReceiver<AuditEntry>> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.events.set(tx).ok().map(|_| rx)
     }
     /// Delete audit entries older than `days`. Returns how many were removed.
     pub fn prune_audit(&self, days: u32) -> Result<usize> {
@@ -761,6 +780,25 @@ impl Db {
     }
     pub fn delete_backup_plan(&self, id: Uuid) -> Result<bool> {
         Ok(self.lock().execute("DELETE FROM backup_plans WHERE id = ?", [id.to_string()])? > 0)
+    }
+
+    // ---------- integrations (sealed: credentials inside) ----------
+    pub fn list_integrations(&self) -> Result<Vec<(Uuid, Vec<u8>)>> {
+        let c = self.lock();
+        let mut st = c.prepare("SELECT id, sealed FROM integrations")?;
+        let rows = st.query_map([], |r| Ok((uid(r.get(0)?), r.get::<_, Vec<u8>>(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn upsert_integration(&self, id: Uuid, kind: &str, sealed: &[u8]) -> Result<()> {
+        self.lock().execute(
+            "INSERT INTO integrations(id, kind, sealed, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET kind = ?2, sealed = ?3, updated_at = ?4",
+            params![id.to_string(), kind, sealed, ts(Utc::now())],
+        )?;
+        Ok(())
+    }
+    pub fn delete_integration(&self, id: Uuid) -> Result<bool> {
+        Ok(self.lock().execute("DELETE FROM integrations WHERE id = ?", [id.to_string()])? > 0)
     }
 
     // ---------- scripts ----------

@@ -6,6 +6,7 @@ pub mod backups;
 mod branding;
 mod directory;
 mod endpoints;
+pub mod integrations;
 mod policies;
 mod scripts;
 
@@ -64,6 +65,10 @@ pub fn router(state: AppState) -> Router {
         .route("/backups/plans/{id}/test", post(backups::test_plan))
         .route("/backups/plans/{id}/files", get(backups::files))
         .route("/backups/plans/{id}/restore", post(backups::restore_from_plan))
+        .route("/integrations", get(integrations::list).post(integrations::create))
+        .route("/integrations/{id}", put(integrations::update).delete(integrations::remove))
+        .route("/integrations/{id}/test", post(integrations::test))
+        .route("/integrations/{id}/import", post(integrations::import))
         .route("/backups/test", post(backups::test_new))
         .route("/backups/download", post(backups::download_now))
         .route("/backups/restore", post(backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)))

@@ -558,3 +558,55 @@ async fn backup_plan_to_a_folder_with_retention_and_restore() {
     assert!(!list.to_string().contains("a long backup passphrase"));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn webhook_integration_receives_signed_events() {
+    use std::sync::{Arc as A, Mutex};
+    let got: A<Mutex<Vec<(String, String)>>> = Default::default();
+    let g2 = got.clone();
+    let recv = axum::Router::new().route(
+        "/hook",
+        axum::routing::post(move |headers: axum::http::HeaderMap, body: String| {
+            let g = g2.clone();
+            async move {
+                let sig = headers.get("x-opendirectory-signature").map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
+                g.lock().unwrap().push((sig, body));
+                "ok"
+            }
+        }),
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = l.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(l, recv).await.unwrap() });
+
+    let state = AppState {
+        db: Db::open_in_memory().unwrap(),
+        sealer: Sealer::from_key([1u8; 32]),
+        info: Arc::new(ServerInfo { version: "test", endpoint_url: "http://test".into(), tls_fingerprint: None, data_dir: "mem".into() }),
+        login_failures: Default::default(),
+    };
+    super::integrations::spawn_dispatcher(state.clone());
+    let app = super::router(state).layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 5], 5555))));
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (st, x) = call(&app, Method::POST, "/integrations", auth, Some(json!({"name":"SIEM","connector":{"type":"webhook","url":format!("http://127.0.0.1:{port}/hook"),"secret":"s3cret","events":["user."]}}))).await;
+    assert_eq!(st, StatusCode::CREATED, "{x}");
+    assert!(!x.to_string().contains("s3cret"));
+    let id = x["id"].as_str().unwrap();
+    let (_, t) = call(&app, Method::POST, &format!("/integrations/{id}/test"), auth, None).await;
+    assert_eq!(t["ok"], true, "{t}");
+
+    // A matching event is delivered; a non-matching one isn't.
+    call(&app, Method::POST, "/users", auth, Some(json!({"username":"zoe","display_name":"Zoe","password":"password123"}))).await;
+    call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Ignored"}))).await;
+    for _ in 0..50 {
+        if got.lock().unwrap().len() >= 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let got = got.lock().unwrap();
+    assert_eq!(got.len(), 2, "{got:?}");
+    assert!(got[1].1.contains("user.create") && got[1].0.starts_with("sha256="));
+}
