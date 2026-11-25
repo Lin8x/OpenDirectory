@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  binaries:
+    name: Agent, server and CLI (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64, ext: ".exe" }
+          - { os: macos-latest, name: macos-arm64, ext: "" }
+          - { os: ubuntu-22.04, name: linux-x64, ext: "" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p od-agent -p od-server -p od-cli
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p out
+          for b in opendirectory-agent opendirectory-server od; do
+            cp "target/release/$b${{ matrix.ext }}" "out/$b-${{ matrix.name }}${{ matrix.ext }}"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.name }}
+          path: out/*
+
+  admin-center:
+    name: Admin Center (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64, bundles: "msi,nsis" }
+          - { os: macos-latest, name: macos-arm64, bundles: "dmg" }
+          - { os: ubuntu-22.04, name: linux-x64, bundles: "deb,appimage" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin-center/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - working-directory: apps/admin-center
+        run: npm ci
+      - working-directory: apps/admin-center
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p out
+          find target/release/bundle -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -exec cp {} out/ \;
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-center-${{ matrix.name }}
+          path: out/*
+
+  publish:
+    name: Publish GitHub Release
+    needs: [binaries, admin-center]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: OpenDirectory ${{ github.ref_name }}
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Early preview. Installers are unsigned, so Windows SmartScreen and macOS Gatekeeper will warn on first launch
+            (macOS: right-click the app and choose Open). See the README for setup.
+
+            - **Admin Center**: the desktop app (`.msi`/`.exe` for Windows, `.dmg` for macOS, `.deb`/`.AppImage` for Linux).
+            - **Endpoint Agent**: `opendirectory-agent-*`, run `enroll --install` on each managed computer as Administrator/root.
+            - **Management Server** (`opendirectory-server-*`) and **CLI** (`od-*`) for headless setups.
+          files: dist/*

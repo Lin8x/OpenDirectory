@@ -64,3 +64,7 @@ cd apps/admin-center && npm run dev          # http://localhost:1420
 ```
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit together.
+
+## Downloads
+
+Prebuilt installers for the Admin Center and binaries for the agent, server and CLI are attached to each [GitHub Release](../../releases). Releases are built by `.github/workflows/release.yml` whenever a `v*` tag is pushed.
