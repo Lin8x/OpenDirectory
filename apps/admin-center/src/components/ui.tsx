@@ -286,7 +286,7 @@ export function CodeBlock({ code, label }: { code: string; label?: string }) {
       <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-xs font-medium text-ink-3">
         <span>{label}</span><CopyButton text={code} />
       </div>
-      <pre className="selectable overflow-x-auto px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink">{code}</pre>
+      <pre className="selectable whitespace-pre-wrap break-all px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink">{code}</pre>
     </div>
   );
 }

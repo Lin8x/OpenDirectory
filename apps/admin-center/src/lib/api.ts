@@ -72,3 +72,13 @@ export const desktop = {
   connectRemote: (url: string, fingerprint: string) => invoke<ConnectionState>("connect_remote", { url, fingerprint }),
   disconnect: () => invoke<ConnectionState>("disconnect"),
 };
+
+/** Saves a text export. Desktop: Downloads folder (returns the path). Browser: a normal download. */
+export async function saveExport(fileName: string, contents: string): Promise<string | null> {
+  if (isDesktop) return invoke<string>("save_export", { fileName, contents });
+  const url = URL.createObjectURL(new Blob([contents], { type: "text/csv;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return null;
+}

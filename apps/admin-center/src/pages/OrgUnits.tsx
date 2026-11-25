@@ -54,7 +54,7 @@ export default function OrgUnits() {
     <>
       <PageHeader title="Organizational Units" term="ou" subtitle="Folders that organize users, groups and endpoints. Link GPOs to an OU and every endpoint inside it, including child OUs, receives them."
         actions={<Button variant="primary" icon={<FolderPlus className="size-4" />} onClick={() => setEditing("new")}>New OU</Button>} />
-      <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
         <Card padded={false} className="h-fit">
           <div className="p-2">
             <button onClick={() => setParams({})} className={cx("flex h-8 w-full items-center gap-2 rounded-md px-2 text-[13.5px]", !sel ? "bg-accent-soft font-medium text-accent" : "text-ink-2 hover:bg-panel-2")}>

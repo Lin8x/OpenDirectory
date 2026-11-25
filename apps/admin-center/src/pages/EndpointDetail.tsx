@@ -195,13 +195,19 @@ function ScriptsTab({ e }: { e: Endpoint }) {
   const [shell, setShell] = useState<Shell>(defShell);
   const [script, setScript] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastRun, setLastRun] = useState<string | null>(null);
   const run = async () => {
     setBusy(true);
-    try { await post(`/endpoints/${e.id}/jobs`, { type: "script", shell, script }); toast("good", "Script queued. It runs at the next check-in."); void jobs.reload(); }
+    try {
+      const j = await post<Job>(`/endpoints/${e.id}/jobs`, { type: "script", shell, script });
+      setLastRun(j.id);
+      toast("good", e.online ? "Script sent. Output appears in History in a few seconds." : "Script queued. It runs when the endpoint reconnects.");
+      void jobs.reload();
+    }
     catch (err) { toast("bad", (err as Error).message); } finally { setBusy(false); }
   };
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       <Card title="Run a script" subtitle={`Runs as ${e.os === "windows" ? "SYSTEM" : "root"} on ${e.hostname}`}>
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
@@ -221,7 +227,7 @@ function ScriptsTab({ e }: { e: Endpoint }) {
       </Card>
       <Card title="History" padded={false}>
         {(jobs.data ?? []).length === 0 ? <p className="p-6 text-center text-sm text-ink-3">No scripts have run on this endpoint yet.</p> : (
-          <ul className="divide-y divide-line">{jobs.data!.map((j) => <JobRow key={j.id} job={j} onChanged={jobs.reload} />)}</ul>
+          <ul className="divide-y divide-line">{jobs.data!.map((j) => <JobRow key={j.id} job={j} onChanged={jobs.reload} defaultOpen={j.id === lastRun} />)}</ul>
         )}
       </Card>
     </div>

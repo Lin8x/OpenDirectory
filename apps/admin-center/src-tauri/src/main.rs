@@ -155,6 +155,23 @@ struct RawResponse {
     body: Value,
 }
 
+/// Saves an export (e.g. the audit log as CSV) to the user's Downloads folder
+/// and returns the full path. A numbered suffix avoids overwriting.
+#[tauri::command]
+fn save_export(handle: tauri::AppHandle, file_name: String, contents: String) -> Result<String, String> {
+    let dir = handle.path().download_dir().or_else(|_| handle.path().document_dir()).map_err(|e| e.to_string())?;
+    let safe: String = file_name.chars().map(|c| if c.is_alphanumeric() || "-_. ".contains(c) { c } else { '_' }).collect();
+    let (stem, ext) = safe.rsplit_once('.').map(|(a, b)| (a.to_string(), format!(".{b}"))).unwrap_or((safe.clone(), String::new()));
+    let mut path = dir.join(&safe);
+    let mut n = 1;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}){ext}"));
+        n += 1;
+    }
+    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 async fn api_request(
     app: State<'_, Arc<App>>,
@@ -251,7 +268,7 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![connection_status, host_locally, connect_remote, disconnect, api_request])
+        .invoke_handler(tauri::generate_handler![connection_status, host_locally, connect_remote, disconnect, api_request, save_export])
         .run(tauri::generate_context!())
         .expect("error while running OpenDirectory Admin Center");
 }

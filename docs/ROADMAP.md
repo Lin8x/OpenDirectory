@@ -18,4 +18,5 @@
 5. **Software deployment and patch reporting.** Package catalog, per-endpoint installed software list.
 6. **Domain Controller role.** LDAP and Kerberos endpoints so AD-aware apps and Windows Pro machines can authenticate against OpenDirectory, plus sync from and to an existing Active Directory or Samba domain.
 7. **Delegated administration.** Roles narrower than Domain Admin (help desk, read-only), scoped to OUs.
-8. **High availability.** Server replication and backup/restore from the Admin Center.
+8. **Agent self-update** from GitHub Releases, staged by OU.
+9. **High availability.** Server replication and backup/restore from the Admin Center.

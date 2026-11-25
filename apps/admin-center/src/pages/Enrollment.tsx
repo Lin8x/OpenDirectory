@@ -1,12 +1,17 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, post } from "../lib/api";
 import { useSession } from "../lib/session";
-import type { EnrollmentToken, OrgUnit } from "../lib/types";
+import type { Endpoint, EnrollmentToken, OrgUnit } from "../lib/types";
 import { ago, dateTime } from "../lib/format";
 import { Badge, Button, Callout, Card, CodeBlock, Dialog, Explain, Field, Input, OsIcon, PageHeader, Select, Tabs, useToast } from "../components/ui";
 import { OuSelect, ouPath } from "./Users";
+
+/** Agent binaries attached to every GitHub Release by the release workflow. */
+const RELEASES = "https://github.com/Lin8x/OpenDirectory/releases/latest/download";
 
 export default function Enrollment() {
   const { me } = useSession();
@@ -15,6 +20,11 @@ export default function Enrollment() {
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [os, setOs] = useState<"windows" | "macos" | "linux">("windows");
+  const [source, setSource] = useState<"download" | "copied">("download");
+  // Watch for computers that enroll while this page is open.
+  const [openedAt] = useState(() => Date.now());
+  const endpoints = useQuery<Endpoint[]>("/endpoints", { poll: 4000 });
+  const fresh = (endpoints.data ?? []).filter((e) => new Date(e.enrolled_at).getTime() >= openedAt - 5000);
   const toast = useToast();
 
   const active = (tokens.data ?? []).filter((t) => (!t.expires_at || new Date(t.expires_at) > new Date()) && (t.max_uses === null || t.uses < t.max_uses));
@@ -25,17 +35,25 @@ export default function Enrollment() {
 
   const cmds = useMemo(() => {
     const t = tok?.token ?? "<TOKEN>";
+    const enroll = `enroll --server ${url} --token ${t}${fpArg} --install`;
+    if (source === "copied") {
+      return {
+        windows: `# In an elevated PowerShell (Run as Administrator), from the folder with opendirectory-agent.exe:\n.\\opendirectory-agent.exe ${enroll}`,
+        macos: `# In Terminal, from the folder with opendirectory-agent:\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
+        linux: `# As root, from the folder with opendirectory-agent:\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
+      };
+    }
     return {
-      windows: `# In an elevated PowerShell (Run as Administrator), from the folder with opendirectory-agent.exe:\n.\\opendirectory-agent.exe enroll --server ${url} --token ${t}${fpArg} --install`,
-      macos: `# In Terminal, from the folder with opendirectory-agent:\nsudo ./opendirectory-agent enroll --server ${url} --token ${t}${fpArg} --install`,
-      linux: `# As root, from the folder with opendirectory-agent:\nsudo ./opendirectory-agent enroll --server ${url} --token ${t}${fpArg} --install`,
+      windows: `# In an elevated PowerShell (Run as Administrator):\nInvoke-WebRequest ${RELEASES}/opendirectory-agent-windows-x64.exe -OutFile opendirectory-agent.exe\n.\\opendirectory-agent.exe ${enroll}`,
+      macos: `# In Terminal:\ncurl -fLo opendirectory-agent ${RELEASES}/opendirectory-agent-macos-$([ "$(uname -m)" = arm64 ] && echo arm64 || echo x64)\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
+      linux: `# In a terminal:\ncurl -fLo opendirectory-agent ${RELEASES}/opendirectory-agent-linux-x64\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
     };
-  }, [tok, url, fpArg]);
+  }, [tok, url, fpArg, source]);
 
   return (
     <>
-      <PageHeader title="Enrollment" term="enrollment" subtitle="Bring a computer under management in three steps: create a token, copy the agent to the computer, run one command." />
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <PageHeader title="Enrollment" term="enrollment" subtitle="Bring a computer under management in three steps: create a token, run one command on the computer, and watch it check in." />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="space-y-5">
           <Card title="1. Enrollment token" actions={<Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setCreating(true)}>New token</Button>}>
             {active.length === 0 ? (
@@ -51,10 +69,11 @@ export default function Enrollment() {
               </Field>
             )}
           </Card>
-          <Card title="2. Get the Endpoint Agent">
-            <p className="text-sm text-ink-2">Copy the agent for the computer's OS from the release package (or build it with <code className="rounded bg-panel-2 px-1 font-mono text-xs">cargo build -p od-agent --release</code>) to the computer, for example with a USB drive or a file share. It's a single file with no dependencies.</p>
-          </Card>
-          <Card title="3. Run the enroll command">
+          <Card title="2. Install the Endpoint Agent">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Button size="sm" variant={source === "download" ? "primary" : "ghost"} onClick={() => setSource("download")}>Download from GitHub</Button>
+              <Button size="sm" variant={source === "copied" ? "primary" : "ghost"} onClick={() => setSource("copied")}>I copied the file (offline)</Button>
+            </div>
             <Tabs value={os} onChange={setOs} tabs={[
               { id: "windows", label: <span className="flex items-center gap-1.5"><OsIcon os="windows" className="size-3.5" />Windows</span> },
               { id: "macos", label: <span className="flex items-center gap-1.5"><OsIcon os="macos" className="size-3.5" />macOS</span> },
@@ -62,11 +81,30 @@ export default function Enrollment() {
             ]} />
             <CodeBlock code={cmds[os]} label={os === "windows" ? "PowerShell (Administrator)" : "Terminal"} />
             <div className="mt-3 space-y-2 text-sm text-ink-2">
+              {source === "copied" && <p>Get <code className="rounded bg-panel-2 px-1 font-mono text-xs">opendirectory-agent</code> for this OS from the GitHub release page on another computer and copy it over with a USB drive or file share. It's a single file with no dependencies.</p>}
               {os === "windows" && <p>Installs the <b>OpenDirectory Endpoint Agent</b> Windows Service (automatic start, runs as SYSTEM, restarts on failure). Works on Windows 10 and 11 Home, Pro and Enterprise, and Windows Server.</p>}
               {os === "macos" && <p>Installs a launchd daemon at <code className="font-mono text-xs">/Library/LaunchDaemons/dev.opendirectory.agent.plist</code> that starts at boot and stays running.</p>}
               {os === "linux" && <p>Installs a systemd service <code className="font-mono text-xs">opendirectory-agent.service</code>, enabled at boot with automatic restart.</p>}
-              <p>The endpoint appears in <b>Endpoints</b> within seconds.</p>
             </div>
+          </Card>
+          <Card title="3. Confirm it checked in">
+            {fresh.length === 0 ? (
+              <div className="flex items-center gap-3 text-sm text-ink-2">
+                <Loader2 className="size-4 animate-spin text-accent" />
+                Waiting for a computer to enroll. It shows up here within seconds of running the command.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {fresh.map((e) => (
+                  <li key={e.id} className="flex items-center gap-3 text-sm">
+                    <CheckCircle2 className="size-4 text-good" />
+                    <OsIcon os={e.os} className="size-4" />
+                    <Link to={`/endpoints/${e.id}`} className="font-medium text-accent hover:underline">{e.hostname}</Link>
+                    <span className="text-ink-3">enrolled {ago(e.enrolled_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
         <div className="space-y-5">

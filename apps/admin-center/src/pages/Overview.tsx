@@ -43,7 +43,7 @@ export default function Overview() {
           value={c.endpoints_noncompliant} tone={c.endpoints_noncompliant ? "warn" : "good"} sub={c.endpoints_noncompliant ? "Non-compliant endpoints" : "All endpoints compliant"} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         {done < STEPS.length ? (
           <Card title="Get started" subtitle={`${done} of ${STEPS.length} done`} actions={<Progress value={done / STEPS.length} />}>
             <ol className="-my-1 divide-y divide-line">
@@ -145,7 +145,7 @@ function FleetBars({ byOs, total }: { byOs: Record<string, number>; total: numbe
 
 export function describe(action: string): string {
   const map: Record<string, string> = {
-    "domain.setup": "created the domain", "auth.login": "signed in", "auth.failed": "failed to sign in as",
+    "domain.setup": "created the domain", "auth.login": "signed in", "auth.failed": "failed to sign in",
     "user.create": "created user", "user.update": "updated user", "user.delete": "deleted user", "user.password_reset": "reset the password of", "user.groups": "changed groups of",
     "group.create": "created group", "group.update": "updated group", "group.delete": "deleted group", "group.members": "changed members of",
     "ou.create": "created OU", "ou.update": "updated OU", "ou.delete": "deleted OU",

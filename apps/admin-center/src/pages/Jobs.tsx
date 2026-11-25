@@ -5,7 +5,7 @@ import { useQuery } from "../lib/hooks";
 import { post } from "../lib/api";
 import type { Endpoint, Job } from "../lib/types";
 import { ago, dateTime } from "../lib/format";
-import { Badge, Button, Card, EmptyState, Explain, Loading, OsIcon, PageHeader, Select, useToast } from "../components/ui";
+import { Badge, Button, Card, CopyButton, EmptyState, Explain, Loading, OsIcon, PageHeader, Select, useToast } from "../components/ui";
 
 const tone = { queued: "neutral", running: "accent", succeeded: "good", failed: "bad", cancelled: "neutral" } as const;
 
@@ -14,8 +14,8 @@ export function jobTitle(j: Job) {
   return j.kind.type === "refresh_inventory" ? "Refresh inventory" : "Restart agent";
 }
 
-export function JobRow({ job, endpoint, onChanged }: { job: Job; endpoint?: Endpoint; onChanged?: () => void }) {
-  const [open, setOpen] = useState(false);
+export function JobRow({ job, endpoint, onChanged, defaultOpen = false }: { job: Job; endpoint?: Endpoint; onChanged?: () => void; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   const toast = useToast();
   return (
     <li>
@@ -34,7 +34,7 @@ export function JobRow({ job, endpoint, onChanged }: { job: Job; endpoint?: Endp
       {open && (
         <div className="space-y-2 px-4 pb-3 pl-11">
           {job.kind.type === "script" && <pre className="selectable max-h-40 overflow-auto rounded-md bg-panel-2 px-3 py-2 font-mono text-xs text-ink-2">{job.kind.script}</pre>}
-          <div className="text-xs font-medium text-ink-3">Output</div>
+          <div className="flex items-center justify-between text-xs font-medium text-ink-3"><span>Output</span>{job.output && <CopyButton text={job.output} />}</div>
           <pre className="selectable max-h-80 overflow-auto rounded-md bg-[#0f1218] px-3 py-2 font-mono text-xs leading-relaxed text-[#d7dce5]">{job.output || (job.status === "queued" ? "Waiting for the endpoint to check in…" : job.status === "running" ? "Running…" : "(no output)")}</pre>
           <div className="flex items-center gap-3 text-xs text-ink-3">
             <span>Queued {dateTime(job.created_at)}</span>{job.finished_at && <span>Finished {dateTime(job.finished_at)}</span>}

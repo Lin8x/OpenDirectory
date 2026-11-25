@@ -34,7 +34,8 @@ export default function PolicyEditor() {
   useEffect(() => { if (existing.data) setD(existing.data); }, [existing.data]);
   useEffect(() => {
     if (isNew && params.get("preset") === "signin" && groups.data && d && d.settings.length === 0) {
-      const g = groups.data.find((x) => x.name !== "Domain Admins") ?? groups.data[0];
+      // Prefer a group the admin created; fall back to everyone (Domain Users).
+      const g = groups.data.find((x) => x.name !== "Domain Admins" && x.name !== "Domain Users") ?? groups.data.find((x) => x.name === "Domain Users") ?? groups.data[0];
       setD({ ...d, name: "Sign-in accounts", description: "Lets members of a security group sign in to endpoints with their directory credentials.", settings: [{ kind: "local_accounts", group_id: g?.id ?? "", admin: false }] });
     }
   }, [isNew, params, groups.data]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -65,7 +66,7 @@ export default function PolicyEditor() {
       </div>
       <Explain term="gpo" />
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
           <Card title="Settings" subtitle="Each setting is applied with the native mechanism on every OS" actions={<Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setPicker(true)}>Add setting</Button>}>
             {d.settings.length === 0 ? (
@@ -200,7 +201,7 @@ function SettingForm({ s, onChange, groups }: { s: Setting; onChange: (s: Settin
           <Field label="Security group" term="local_accounts" hint="Every member gets a sign-in account on the endpoints this GPO applies to.">
             <Select value={v.group_id} onChange={(e) => onChange({ ...v, group_id: e.target.value })}>
               <option value="">Choose a group…</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.member_ids.length} members)</option>)}
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.member_ids.length} {g.member_ids.length === 1 ? "member" : "members"})</option>)}
             </Select>
           </Field>
           <Switch checked={v.admin} onChange={(x) => onChange({ ...v, admin: x })} label="Make them local administrators" />

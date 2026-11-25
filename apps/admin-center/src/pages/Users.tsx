@@ -103,7 +103,8 @@ function CreateUser({ open, onClose, groups, ous, onCreated }: { open: boolean; 
   const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { if (open) { setF(blank); setErr(null); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // New people land in the Staff OU when it exists, like AD's default Users container.
+  useEffect(() => { if (open) { setF({ ...blank, ou_id: ous.find((o) => o.name === "Staff" && !o.parent_id)?.id ?? null }); setErr(null); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (k: keyof typeof f, v: unknown) => setF((x) => ({ ...x, [k]: v }));
   const suggest = (name: string) => {
     const p = name.toLowerCase().replace(/[^a-z\s]/g, "").trim().split(/\s+/);
@@ -117,7 +118,8 @@ function CreateUser({ open, onClose, groups, ous, onCreated }: { open: boolean; 
       onCreated(u);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
-  const extra = groups.filter((g) => g.name !== "Domain Users");
+  // Domain Admins is the Role switch, and everyone is in Domain Users.
+  const extra = groups.filter((g) => g.name !== "Domain Users" && g.name !== "Domain Admins");
   return (
     <Dialog open={open} onClose={onClose} title="New user" wide
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={submit} disabled={!f.username}>Create user</Button></>}>
@@ -130,7 +132,7 @@ function CreateUser({ open, onClose, groups, ous, onCreated }: { open: boolean; 
         <Field label="Job title"><Input value={f.title} onChange={(e) => set("title", e.target.value)} /></Field>
         <Field label="Department"><Input value={f.department} onChange={(e) => set("department", e.target.value)} /></Field>
         <Field label="Organizational unit" term="ou"><OuSelect ous={ous} value={f.ou_id} onChange={(v) => set("ou_id", v)} /></Field>
-        <Field label="Role" term="domain_admin"><div className="pt-1.5"><Switch checked={f.admin} onChange={(v) => set("admin", v)} label="Domain Admin (can use the Admin Center)" /></div></Field>
+        <Field label="Role" term="domain_admin" hint="Adds them to the Domain Admins group."><div className="pt-1.5"><Switch checked={f.admin} onChange={(v) => set("admin", v)} label="Domain Admin (can use the Admin Center)" /></div></Field>
       </div>
       {extra.length > 0 && (
         <Field label="Security groups" term="group" hint="Every user is also added to Domain Users.">
@@ -233,12 +235,20 @@ function MemberOf({ user, groups, onChanged }: { user: User; groups: Group[]; on
     <div className="space-y-3">
       <Explain term="group" />
       <div className="divide-y divide-line rounded-lg border border-line">
-        {groups.map((g) => (
-          <label key={g.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-panel-2">
-            <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={sel.includes(g.id)} onChange={(e) => setSel(e.target.checked ? [...sel, g.id] : sel.filter((x) => x !== g.id))} />
-            <div className="flex-1"><div className="text-sm font-medium">{g.name}</div><div className="text-xs text-ink-3">{g.description || `${g.member_ids.length} members`}</div></div>
-          </label>
-        ))}
+        {groups.map((g) => {
+          const builtin = g.name === "Domain Users";
+          return (
+            <label key={g.id} className={`flex items-center gap-3 px-3 py-2.5 ${builtin ? "opacity-70" : "cursor-pointer hover:bg-panel-2"}`}>
+              <input type="checkbox" disabled={builtin} className="size-4 accent-[var(--accent)]" checked={sel.includes(g.id)} onChange={(e) => setSel(e.target.checked ? [...sel, g.id] : sel.filter((x) => x !== g.id))} />
+              <div className="flex-1">
+                <div className="text-sm font-medium">{g.name}</div>
+                <div className="text-xs text-ink-3">
+                  {builtin ? "Every user is a member" : g.name === "Domain Admins" ? "Members are Domain Admins and can use the Admin Center" : g.description || `${g.member_ids.length} members`}
+                </div>
+              </div>
+            </label>
+          );
+        })}
       </div>
       <div className="flex justify-end"><Button variant="primary" disabled={!dirty} loading={busy} onClick={async () => {
         setBusy(true);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  Activity, BookOpen, Boxes, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, PlusCircle, ScrollText,
+  Activity, ArrowRight, BookOpen, Boxes, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, PlusCircle, ScrollText,
   Search, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
 } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
@@ -127,6 +127,13 @@ const QUICK = [
   { label: "Learn the concepts", to: "/learn", icon: <Boxes className="size-4" /> },
 ];
 
+const PAGES = [
+  { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
+  { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Enrollment", to: "/enroll" },
+  { label: "Remote Scripts", to: "/scripts" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" },
+  { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
+];
+
 function CommandPalette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -140,8 +147,13 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(t);
   }, [q]);
 
-  const items = q.trim()
-    ? hits.map((h) => ({ label: h.title, sub: h.subtitle, icon: HIT_ICON[h.type], to: hitPath(h) }))
+  const needle = q.trim().toLowerCase();
+  const items = needle
+    ? [
+        ...QUICK.filter((x) => x.label.toLowerCase().includes(needle)).map((x) => ({ ...x, sub: "Action" })),
+        ...PAGES.filter((x) => x.label.toLowerCase().includes(needle)).map((x) => ({ ...x, icon: <ArrowRight className="size-4" />, label: `Go to ${x.label}`, sub: "Page" })),
+        ...hits.map((h) => ({ label: h.title, sub: h.subtitle, icon: HIT_ICON[h.type], to: hitPath(h) })),
+      ]
     : QUICK.map((x) => ({ ...x, sub: "" }));
 
   const go = (to: string) => { nav(to); onClose(); };
@@ -150,10 +162,11 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       <div className="anim-pop mx-auto w-full max-w-xl overflow-hidden rounded-xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2.5 border-b border-line px-4">
           <Search className="size-4 text-ink-3" />
-          <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} placeholder="Search users, groups, endpoints (hostname, serial, IP), OUs, GPOs…"
+          <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} placeholder="Search or jump to… users, endpoints (hostname, serial, IP), groups, GPOs, pages"
             onKeyDown={(e) => {
               if (e.key === "Escape") onClose();
               if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)); }
+              if (e.key === "Tab") e.preventDefault();
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
               if (e.key === "Enter" && items[sel]) go(items[sel].to);
             }}
