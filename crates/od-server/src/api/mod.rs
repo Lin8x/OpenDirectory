@@ -2,8 +2,12 @@
 //! through these routes; nothing is UI-only.
 
 mod agent;
+pub mod backups;
+mod branding;
 mod directory;
 mod endpoints;
+pub mod integrations;
+mod lab;
 mod policies;
 mod scripts;
 
@@ -18,6 +22,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(directory::health))
         .route("/setup", get(directory::setup_status).post(directory::setup))
+        .route("/branding", get(branding::get).put(branding::set))
         .route("/baselines", get(directory::baselines))
         .route("/baselines/preview", post(directory::preview_baseline))
         .route("/auth/login", post(directory::login))
@@ -55,6 +60,20 @@ pub fn router(state: AppState) -> Router {
         .route("/policies", get(policies::list).post(policies::create))
         .route("/policies/catalog", get(policies::catalog))
         .route("/policies/{id}", get(policies::get).put(policies::update).delete(policies::remove))
+        .route("/backups/plans", get(backups::list).post(backups::create))
+        .route("/backups/plans/{id}", put(backups::update).delete(backups::remove))
+        .route("/backups/plans/{id}/run", post(backups::run_now))
+        .route("/backups/plans/{id}/test", post(backups::test_plan))
+        .route("/backups/plans/{id}/files", get(backups::files))
+        .route("/backups/plans/{id}/restore", post(backups::restore_from_plan))
+        .route("/lab/designs", get(lab::get).put(lab::set))
+        .route("/integrations", get(integrations::list).post(integrations::create))
+        .route("/integrations/{id}", put(integrations::update).delete(integrations::remove))
+        .route("/integrations/{id}/test", post(integrations::test))
+        .route("/integrations/{id}/import", post(integrations::import))
+        .route("/backups/test", post(backups::test_new))
+        .route("/backups/download", post(backups::download_now))
+        .route("/backups/restore", post(backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)))
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))

@@ -44,3 +44,12 @@ fn hostname_guess() -> String {
         .map(|s| s.trim().to_string())
         .unwrap_or_default()
 }
+
+/// Use a certificate and key you supply (e.g. from your own CA or Let's Encrypt).
+pub async fn load_provided(cert: &Path, key: &Path) -> Result<(RustlsConfig, String)> {
+    let pem = std::fs::read_to_string(cert).with_context(|| format!("read {}", cert.display()))?;
+    let first = pem.split("-----END CERTIFICATE-----").next().unwrap_or("").to_string() + "-----END CERTIFICATE-----";
+    let fp = fingerprint_of_pem(&first)?;
+    let cfg = RustlsConfig::from_pem_file(cert, key).await.context("load the TLS certificate and key")?;
+    Ok((cfg, fp))
+}

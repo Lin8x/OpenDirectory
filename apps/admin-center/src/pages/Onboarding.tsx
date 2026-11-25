@@ -4,6 +4,7 @@ import { BaselineStep, ModifiersStep, ReviewStep, useBaselineCatalog, type Basel
 import { ApiError, desktop, isDesktop, post } from "../lib/api";
 import { useSession } from "../lib/session";
 import { setAutostart } from "../lib/autostart";
+import { BrandMark, useBranding } from "../lib/branding";
 import { Button, Callout, Field, Input, Switch, cx } from "../components/ui";
 
 function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
@@ -12,10 +13,7 @@ function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
       <div className="pointer-events-none absolute -left-40 -top-40 size-[520px] rounded-full bg-accent/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-48 -right-40 size-[560px] rounded-full bg-[#7c4dff]/10 blur-3xl" />
       <div className={cx("anim-pop relative w-full", wide ? "max-w-3xl" : "max-w-md")}>
-        <div className="mb-6 flex items-center justify-center gap-3">
-          <img src="/logo.svg" alt="" className="size-10" />
-          <div className="leading-tight"><div className="text-lg font-semibold">OpenDirectory</div><div className="text-xs text-ink-3">Admin Center</div></div>
-        </div>
+        <div className="mb-6 flex items-center justify-center gap-3"><BrandMark className="size-10 max-w-40" /></div>
         {children}
       </div>
     </div>
@@ -234,6 +232,7 @@ function Header({ icon, title, body }: { icon: ReactNode; title: string; body: s
 // -------------------------------------------------------------- sign in
 export function LoginPage() {
   const { signIn, setup, connection, setConnection } = useSession();
+  const { brand } = useBranding();
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [busy, setBusy] = useState(false);
@@ -261,6 +260,7 @@ export function LoginPage() {
           <span className="flex items-center gap-1.5"><Laptop className="size-3.5" />{connection?.mode === "local" ? "Hosted on this computer" : connection?.url ?? "Development server"}</span>
           {isDesktop && <button type="button" className="text-accent hover:underline" onClick={async () => setConnection(await desktop.disconnect())}>Change server</button>}
         </div>
+        {brand.support_contact && <p className="mt-3 text-center text-xs text-ink-3">Need help? Contact {brand.support_contact}</p>}
       </form>
     </Frame>
   );

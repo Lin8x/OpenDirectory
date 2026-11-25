@@ -7,8 +7,10 @@
 
 pub mod api;
 pub mod auth;
+pub mod backup;
 pub mod crypto;
 pub mod db;
+pub mod destinations;
 pub mod error;
 pub mod service;
 pub mod tls;
@@ -56,6 +58,11 @@ pub struct ServerConfig {
     pub local_listen: Option<SocketAddr>,
     /// Hostname or IP put in enrollment commands. Detected when empty.
     pub public_host: Option<String>,
+    /// Folder with the built Admin Center web UI. When set, the server also
+    /// serves the Admin Center to browsers (web mode).
+    pub web_ui: Option<PathBuf>,
+    /// Use this certificate and key (PEM) instead of the self-signed one.
+    pub tls_cert: Option<(PathBuf, PathBuf)>,
 }
 
 impl Default for ServerConfig {
@@ -66,6 +73,8 @@ impl Default for ServerConfig {
             tls: true,
             local_listen: None,
             public_host: None,
+            web_ui: None,
+            tls_cert: None,
         }
     }
 }
@@ -98,13 +107,24 @@ impl RunningServer {
 
 pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppState> {
     std::fs::create_dir_all(data_dir).with_context(|| format!("create data dir {}", data_dir.display()))?;
+    if let Some(kept) = backup::apply_pending(data_dir)? {
+        tracing::info!("Restored from backup; the previous data is in {}", kept.display());
+    }
     let db = db::Db::open(&data_dir.join("directory.db"))?;
     let sealer = crypto::Sealer::load_or_create(&data_dir.join("master.key"))?;
     Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default() })
 }
 
-/// Daily maintenance: apply the audit log retention chosen at onboarding.
+/// Background work: scheduled backups (checked every minute) and the daily
+/// audit log retention chosen at onboarding.
 fn spawn_housekeeping(state: AppState) {
+    let s2 = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            api::backups::run_due(&s2).await;
+        }
+    });
     tokio::spawn(async move {
         loop {
             if let Ok(Some(d)) = state.db.meta_get("audit_retention_days") {
@@ -123,6 +143,24 @@ fn spawn_housekeeping(state: AppState) {
 
 pub fn router(state: AppState) -> Router {
     api::router(state)
+}
+
+/// Serve the built Admin Center for browsers, with strict security headers.
+/// Unknown paths fall back to index.html (the UI routes on the URL hash).
+pub fn with_web_ui(app: Router, dir: &std::path::Path) -> Router {
+    use axum::http::{header, HeaderValue};
+    use tower_http::services::{ServeDir, ServeFile};
+    use tower_http::set_header::SetResponseHeaderLayer;
+    let ui = Router::new()
+        .fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")))
+        .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
+        .layer(SetResponseHeaderLayer::overriding(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")));
+    app.merge(ui)
 }
 
 fn detect_host() -> String {
@@ -147,7 +185,10 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let listen_addr = listener.local_addr()?;
 
     let (scheme, tls_cfg, fingerprint) = if config.tls {
-        let (cfg, fp) = tls::load_or_create(&config.data_dir, &host).await?;
+        let (cfg, fp) = match &config.tls_cert {
+            Some((cert, key)) => tls::load_provided(cert, key).await?,
+            None => tls::load_or_create(&config.data_dir, &host).await?,
+        };
         ("https", Some(cfg), Some(fp))
     } else {
         ("http", None, None)
@@ -162,7 +203,12 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let state = build_state(&config.data_dir, info)?;
     let info = state.info.clone();
     spawn_housekeeping(state.clone());
-    let app = router(state);
+    api::integrations::spawn_dispatcher(state.clone());
+    let mut app = router(state);
+    if let Some(dir) = config.web_ui.as_ref().filter(|d| d.join("index.html").exists()) {
+        tracing::info!("Serving the Admin Center web UI from {}", dir.display());
+        app = with_web_ui(app, dir);
+    }
 
     let mut tasks = Vec::new();
     let svc = app.clone().into_make_service_with_connect_info::<SocketAddr>();

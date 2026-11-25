@@ -480,3 +480,133 @@ async fn onboarding_with_a_baseline_and_modifiers() {
     let t0 = groups.as_array().unwrap().iter().find(|g| g["name"] == "Tier 0 Admins").unwrap();
     assert!(t0["member_ids"].as_array().unwrap().contains(&me["user"]["id"]));
 }
+
+#[tokio::test]
+async fn backup_plan_to_a_folder_with_retention_and_restore() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let dir = std::env::temp_dir().join(format!("od-backups-{}", uuid::Uuid::new_v4()));
+
+    // Encryption needs a passphrase.
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/backups/plans",
+        auth,
+        Some(json!({"name":"Nightly","destination":{"type":"local","path":dir},"schedule":{"frequency":"daily","time":"02:00"}})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    let (st, plan) = call(
+        &app,
+        Method::POST,
+        "/backups/plans",
+        auth,
+        Some(json!({"name":"Nightly","destination":{"type":"local","path":dir},"schedule":{"frequency":"daily","time":"02:00"},
+                    "retention":{"keep_last":2},"passphrase":"a long backup passphrase"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{plan}");
+    assert!(plan["next_run_at"].is_string());
+    assert_eq!(plan["has_passphrase"], true);
+    let id = plan["id"].as_str().unwrap();
+
+    let (st, t) = call(&app, Method::POST, &format!("/backups/plans/{id}/test"), auth, Some(json!({}))).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(t["ok"], true, "{t}");
+
+    for _ in 0..3 {
+        let (_, r) = call(&app, Method::POST, &format!("/backups/plans/{id}/run"), auth, None).await;
+        assert_eq!(r["ok"], true, "{r}");
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    }
+    let (_, files) = call(&app, Method::GET, &format!("/backups/plans/{id}/files"), auth, None).await;
+    assert_eq!(files.as_array().unwrap().len(), 2, "retention keeps 2: {files}");
+
+    // Verify the newest backup with the plan's stored passphrase.
+    let name = files[0]["name"].as_str().unwrap();
+    let (st, v) =
+        call(&app, Method::POST, &format!("/backups/plans/{id}/restore"), auth, Some(json!({"name":name,"verify_only":true}))).await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    assert_eq!(v["verified"]["users"], 1);
+
+    // Download now: a wrong passphrase on upload-restore is refused.
+    let (_, dl) = call(&app, Method::POST, "/backups/download", auth, Some(json!({"passphrase":"another long passphrase"}))).await;
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/backups/restore",
+        auth,
+        Some(json!({"file":dl["data"],"passphrase":"wrong wrong wrong","verify_only":true})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/backups/restore",
+        auth,
+        Some(json!({"file":dl["data"],"passphrase":"another long passphrase","verify_only":true})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Secrets never come back in the listing.
+    let (_, list) = call(&app, Method::GET, "/backups/plans", auth, None).await;
+    assert!(!list.to_string().contains("a long backup passphrase"));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn webhook_integration_receives_signed_events() {
+    use std::sync::{Arc as A, Mutex};
+    let got: A<Mutex<Vec<(String, String)>>> = Default::default();
+    let g2 = got.clone();
+    let recv = axum::Router::new().route(
+        "/hook",
+        axum::routing::post(move |headers: axum::http::HeaderMap, body: String| {
+            let g = g2.clone();
+            async move {
+                let sig = headers.get("x-opendirectory-signature").map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
+                g.lock().unwrap().push((sig, body));
+                "ok"
+            }
+        }),
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = l.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(l, recv).await.unwrap() });
+
+    let state = AppState {
+        db: Db::open_in_memory().unwrap(),
+        sealer: Sealer::from_key([1u8; 32]),
+        info: Arc::new(ServerInfo { version: "test", endpoint_url: "http://test".into(), tls_fingerprint: None, data_dir: "mem".into() }),
+        login_failures: Default::default(),
+    };
+    super::integrations::spawn_dispatcher(state.clone());
+    let app = super::router(state).layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 5], 5555))));
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (st, x) = call(&app, Method::POST, "/integrations", auth, Some(json!({"name":"SIEM","connector":{"type":"webhook","url":format!("http://127.0.0.1:{port}/hook"),"secret":"s3cret","events":["user."]}}))).await;
+    assert_eq!(st, StatusCode::CREATED, "{x}");
+    assert!(!x.to_string().contains("s3cret"));
+    let id = x["id"].as_str().unwrap();
+    let (_, t) = call(&app, Method::POST, &format!("/integrations/{id}/test"), auth, None).await;
+    assert_eq!(t["ok"], true, "{t}");
+
+    // A matching event is delivered; a non-matching one isn't.
+    call(&app, Method::POST, "/users", auth, Some(json!({"username":"zoe","display_name":"Zoe","password":"password123"}))).await;
+    call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Ignored"}))).await;
+    for _ in 0..50 {
+        if got.lock().unwrap().len() >= 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let got = got.lock().unwrap();
+    assert_eq!(got.len(), 2, "{got:?}");
+    assert!(got[1].1.contains("user.create") && got[1].0.starts_with("sha256="));
+}

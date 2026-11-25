@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { PrefsProvider, SessionProvider, useSession } from "./lib/session";
+import { PrefsProvider, SessionProvider, useLearnMode, useSession } from "./lib/session";
+import ClassicShell from "./components/ClassicShell";
 import { Loading, ToastProvider } from "./components/ui";
 import Shell from "./components/Shell";
 import { ConnectPage, LoginPage, SetupWizard, UnreachablePage } from "./pages/Onboarding";
@@ -13,14 +14,20 @@ import Enrollment from "./pages/Enrollment";
 import Policies from "./pages/Policies";
 import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
+import Backups from "./pages/Backups";
+import Integrations from "./pages/Integrations";
+import Lab, { LiveTopology } from "./pages/Lab";
 import ScriptEditor from "./pages/ScriptEditor";
 import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
 import Settings from "./pages/Settings";
 import { UpdatesProvider } from "./lib/updates";
+import { BrandingProvider } from "./lib/branding";
 
 function Gate() {
   const { phase } = useSession();
+  const { ui } = useLearnMode();
+  const Frame = ui === "classic" ? ClassicShell : Shell;
   switch (phase) {
     case "loading": return <div className="grid h-full place-items-center"><Loading label="Starting OpenDirectory…" /></div>;
     case "connect": return <ConnectPage />;
@@ -29,7 +36,7 @@ function Gate() {
     case "login": return <LoginPage />;
     case "ready":
       return (
-        <Shell>
+        <Frame>
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/users" element={<Users />} />
@@ -43,11 +50,15 @@ function Gate() {
             <Route path="/scripts" element={<Scripts />} />
             <Route path="/scripts/:id" element={<ScriptEditor />} />
             <Route path="/audit" element={<Audit />} />
+            <Route path="/backups" element={<Backups />} />
+            <Route path="/integrations" element={<Integrations />} />
+            <Route path="/lab" element={<Lab />} />
+            <Route path="/topology" element={<LiveTopology />} />
             <Route path="/learn" element={<Learn />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </Shell>
+        </Frame>
       );
   }
 }
@@ -58,7 +69,9 @@ export default function App() {
       <ToastProvider>
         <UpdatesProvider>
           <SessionProvider>
-            <Gate />
+            <BrandingProvider>
+              <Gate />
+            </BrandingProvider>
           </SessionProvider>
         </UpdatesProvider>
       </ToastProvider>

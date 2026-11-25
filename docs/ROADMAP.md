@@ -18,6 +18,15 @@
 - Launch at startup for the Admin Center; `opendirectory-server install-service`; headless `od init`.
 - Clear "You're up to date" status for in-app updates.
 
+## Done (v0.4)
+
+- Backup & Restore: one encrypted `.odbackup` file; scheduled plans with retention to a folder or SMB/NFS share, SFTP, FTPS/FTP, WebDAV, S3-compatible storage, any HTTPS endpoint, Google Drive, OneDrive and Dropbox; verified restores.
+- Branding: logo, accent color, product name and support contact.
+- Integrations: import users and groups from Active Directory (LDAPS) and Entra ID; webhooks, Slack and Teams alerts; guides and reachability tests for SMB, DNS, DHCP, WSUS, RDS, print and AD CS.
+- Classic console interface modeled on ADUC and GPMC.
+- Network Lab (design and simulate) and a live Topology Map.
+- Web mode and a Docker image with docker-compose and Portainer instructions.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 Home and Pro and on macOS 14+. Ship signed installers (MSI, pkg, deb/rpm).

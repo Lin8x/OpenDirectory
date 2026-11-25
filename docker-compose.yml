@@ -1,0 +1,29 @@
+# OpenDirectory Management Server + web Admin Center.
+#
+#   docker compose up -d
+#
+# Open https://<host>:8443, accept the self-signed certificate (or set
+# OD_TLS_CERT/OD_TLS_KEY), and create your domain. Works as a Portainer stack
+# too: paste this file into Stacks > Add stack. See docs/DOCKER.md.
+services:
+  opendirectory:
+    # Builds the image from this repository. Once a published image exists
+    # (ghcr.io/lin8x/opendirectory), you can use `image:` instead of `build:`.
+    build: .
+    image: opendirectory:local
+    container_name: opendirectory
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    environment:
+      # Host name or IP that endpoints use to reach this server (shown in enrollment commands).
+      OD_PUBLIC_HOST: ${OD_PUBLIC_HOST:-}
+      # Optional: your own certificate instead of the self-signed one.
+      # OD_TLS_CERT: /certs/fullchain.pem
+      # OD_TLS_KEY: /certs/privkey.pem
+    volumes:
+      - opendirectory-data:/var/lib/opendirectory
+      # - ./certs:/certs:ro
+
+volumes:
+  opendirectory-data:

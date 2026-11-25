@@ -72,6 +72,8 @@ async fn start_local(app: &App, port: u16) -> Result<ConnectionState, String> {
         tls: true,
         local_listen: Some("127.0.0.1:0".parse().unwrap()),
         public_host: None,
+        web_ui: None,
+        tls_cert: None,
     };
     let server = od_server::start(cfg).await.map_err(|e| {
         let msg = format!("{e:#}");
@@ -158,7 +160,7 @@ struct RawResponse {
 /// Saves an export (e.g. the audit log as CSV) to the user's Downloads folder
 /// and returns the full path. A numbered suffix avoids overwriting.
 #[tauri::command]
-fn save_export(handle: tauri::AppHandle, file_name: String, contents: String) -> Result<String, String> {
+fn save_export(handle: tauri::AppHandle, file_name: String, contents: String, base64: Option<bool>) -> Result<String, String> {
     let dir = handle.path().download_dir().or_else(|_| handle.path().document_dir()).map_err(|e| e.to_string())?;
     let safe: String = file_name.chars().map(|c| if c.is_alphanumeric() || "-_. ".contains(c) { c } else { '_' }).collect();
     let (stem, ext) = safe.rsplit_once('.').map(|(a, b)| (a.to_string(), format!(".{b}"))).unwrap_or((safe.clone(), String::new()));
@@ -168,7 +170,13 @@ fn save_export(handle: tauri::AppHandle, file_name: String, contents: String) ->
         path = dir.join(format!("{stem} ({n}){ext}"));
         n += 1;
     }
-    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+    let bytes = if base64.unwrap_or(false) {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.decode(contents.trim()).map_err(|e| e.to_string())?
+    } else {
+        contents.into_bytes()
+    };
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
 }
 

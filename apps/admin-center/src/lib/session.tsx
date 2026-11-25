@@ -73,13 +73,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 }
 
 // Learn mode and theme preferences.
-interface PrefsCtx { learn: boolean; setLearn: (v: boolean) => void; theme: "light" | "dark" | "system"; setTheme: (t: "light" | "dark" | "system") => void }
-const Prefs = createContext<PrefsCtx>({ learn: true, setLearn: () => {}, theme: "system", setTheme: () => {} });
+export type UiMode = "modern" | "classic";
+interface PrefsCtx { learn: boolean; setLearn: (v: boolean) => void; theme: "light" | "dark" | "system"; setTheme: (t: "light" | "dark" | "system") => void; ui: UiMode; setUi: (u: UiMode) => void }
+const Prefs = createContext<PrefsCtx>({ learn: true, setLearn: () => {}, theme: "system", setTheme: () => {}, ui: "modern", setUi: () => {} });
 export const useLearnMode = () => useContext(Prefs);
 
 export function PrefsProvider({ children }: { children: ReactNode }) {
   const [learn, setLearn] = useLocalStorage("od.learn", true);
   const [theme, setTheme] = useLocalStorage<"light" | "dark" | "system">("od.theme", "system");
+  const [ui, setUi] = useLocalStorage<UiMode>("od.ui", "modern");
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && mq.matches));
@@ -87,5 +89,5 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, [theme]);
-  return <Prefs.Provider value={{ learn, setLearn, theme, setTheme }}>{children}</Prefs.Provider>;
+  return <Prefs.Provider value={{ learn, setLearn, theme, setTheme, ui, setUi }}>{children}</Prefs.Provider>;
 }

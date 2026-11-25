@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { put } from "../lib/api";
+import { useBranding, type Branding } from "../lib/branding";
 import { RefreshCw, Server } from "lucide-react";
 import { autostartEnabled, setAutostart } from "../lib/autostart";
 import { friendlyUpdateError, useUpdates } from "../lib/updates";
 import { ago } from "../lib/format";
 import { desktop, isDesktop } from "../lib/api";
 import { useLearnMode, useSession } from "../lib/session";
-import { Button, Card, CodeBlock, Explain, Field, PageHeader, Select, Switch, useToast } from "../components/ui";
+import { Button, Card, CodeBlock, Explain, Field, Input, PageHeader, Select, Switch, useToast } from "../components/ui";
 
 export default function Settings() {
   const { me, connection, setConnection } = useSession();
-  const { learn, setLearn, theme, setTheme } = useLearnMode();
+  const { learn, setLearn, theme, setTheme, ui, setUi } = useLearnMode();
   const s = me?.server;
   return (
     <>
@@ -36,6 +38,11 @@ export default function Settings() {
         <Card title="Preferences">
           <div className="space-y-4">
             <Switch checked={learn} onChange={setLearn} label="Learn mode: show explanations throughout the app" />
+            <Field label="Interface" hint="Classic mimics the console layout of Active Directory Users and Computers and Group Policy Management: a tree, a details list, right-click menus and property sheets.">
+              <Select value={ui} onChange={(e) => setUi(e.target.value as "modern" | "classic")} className="w-48">
+                <option value="modern">Modern</option><option value="classic">Classic (console)</option>
+              </Select>
+            </Field>
             <Field label="Theme">
               <Select value={theme} onChange={(e) => setTheme(e.target.value as "light" | "dark" | "system")} className="w-48">
                 <option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option>
@@ -43,10 +50,58 @@ export default function Settings() {
             </Field>
           </div>
         </Card>
+        <BrandingCard />
         <UpdatesCard />
         <StartupCard hosting={connection?.mode === "local"} />
       </div>
     </>
+  );
+}
+
+function BrandingCard() {
+  const { brand, reload, preview } = useBranding();
+  const toast = useToast();
+  const [b, setB] = useState<Branding>(brand);
+  const [busy, setBusy] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+  useEffect(() => setB(brand), [brand.logo, brand.accent, brand.product_name, brand.support_contact]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => preview(null), [preview]);
+  const change = (n: Branding) => { setB(n); preview(n); };
+  return (
+    <Card title="Branding" subtitle="Your logo, color and name across the Admin Center and its sign-in screen">
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="grid size-16 place-items-center rounded-xl border border-line bg-panel-2"><img src={b.logo || "/logo.svg"} className="max-h-12 max-w-12 object-contain" alt="Logo preview" /></div>
+          <div className="flex flex-wrap gap-2">
+            <input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => {
+              const f = e.target.files?.[0]; if (!f) return;
+              if (f.size > 512 * 1024) { toast("bad", "Logos are limited to 512 KB"); return; }
+              const r = new FileReader(); r.onload = () => change({ ...b, logo: String(r.result) }); r.readAsDataURL(f);
+            }} />
+            <Button size="sm" onClick={() => file.current?.click()}>Upload logo</Button>
+            {b.logo && <Button size="sm" variant="ghost" onClick={() => change({ ...b, logo: "" })}>Use default</Button>}
+          </div>
+        </div>
+        <p className="text-xs text-ink-3">PNG, JPEG, WebP or SVG up to 512 KB. A square logo on a transparent background looks best.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Accent color">
+            <div className="flex items-center gap-2">
+              <input type="color" value={b.accent || "#3a63f3"} onChange={(e) => change({ ...b, accent: e.target.value })} className="h-9 w-12 cursor-pointer rounded border border-line bg-panel" aria-label="Accent color" />
+              <Input value={b.accent} placeholder="#3a63f3" onChange={(e) => change({ ...b, accent: e.target.value })} className="font-mono" />
+            </div>
+          </Field>
+          <Field label="Product name" hint="Shown instead of “Admin Center”"><Input value={b.product_name} placeholder="Contoso IT" onChange={(e) => change({ ...b, product_name: e.target.value })} /></Field>
+        </div>
+        <Field label="Support contact" hint="Shown on the sign-in screen, e.g. an email or phone number"><Input value={b.support_contact} placeholder="it-help@contoso.com" onChange={(e) => change({ ...b, support_contact: e.target.value })} /></Field>
+        <div className="flex gap-2">
+          <Button variant="primary" loading={busy} onClick={async () => {
+            setBusy(true);
+            try { await put("/branding", b); preview(null); reload(); toast("good", "Branding saved"); } catch (e) { toast("bad", (e as Error).message); } finally { setBusy(false); }
+          }}>Save branding</Button>
+          <Button variant="ghost" onClick={() => { preview(null); setB(brand); }}>Reset</Button>
+        </div>
+      </div>
+    </Card>
   );
 }
 
