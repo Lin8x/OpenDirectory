@@ -34,6 +34,8 @@ pub struct AppState {
     pub info: Arc<ServerInfo>,
     /// Failed Admin Center sign-ins per username, for lockout.
     pub login_failures: Arc<std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
+    /// Remote shell sessions and agent wake-ups.
+    pub hub: Arc<api::shell::Hub>,
 }
 
 /// Facts about this server shown in the Admin Center and enrollment commands.
@@ -112,7 +114,7 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
     }
     let db = db::Db::open(&data_dir.join("directory.db"))?;
     let sealer = crypto::Sealer::load_or_create(&data_dir.join("master.key"))?;
-    Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default() })
+    Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default(), hub: Default::default() })
 }
 
 /// Background work: scheduled backups (checked every minute) and the daily

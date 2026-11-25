@@ -273,6 +273,7 @@ pub async fn run(
             finished_at: None,
         };
         s.db.insert_job(&job)?;
+        s.hub.wake(job.endpoint_id);
         jobs.push(job);
     }
     s.db.audit(admin.name(), "script.run", &sc.name, &format!("{} endpoint(s)", targets.len()));

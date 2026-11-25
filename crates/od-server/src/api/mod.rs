@@ -12,6 +12,7 @@ pub mod passwords;
 mod policies;
 pub mod recycle;
 mod scripts;
+pub mod shell;
 
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -61,6 +62,8 @@ pub fn router(state: AppState) -> Router {
         .route("/endpoints/{id}/jobs", get(endpoints::list_endpoint_jobs).post(endpoints::create_job))
         .route("/endpoints/{id}/rsop", get(policies::rsop))
         .route("/endpoints/{id}/laps", get(endpoints::laps))
+        .route("/endpoints/{id}/shell", post(shell::open))
+        .route("/shell/{id}/ws", get(shell::admin_ws))
         .route("/endpoints/{id}/laps/rotate", post(endpoints::laps_rotate))
         .route("/jobs", get(endpoints::list_jobs))
         .route("/patches/run", post(endpoints::patch_run))
@@ -92,7 +95,9 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))
         .route("/agent/script-runs", post(agent::script_run))
-        .route("/agent/laps", post(agent::laps_escrow));
+        .route("/agent/laps", post(agent::laps_escrow))
+        .route("/agent/wait", get(shell::wait))
+        .route("/agent/shell/{id}", get(shell::agent_ws));
 
     let mut router = Router::new().nest("/api/v1", api);
     // Only for running the Admin Center UI in a browser during development.

@@ -114,6 +114,7 @@ pub async fn create_job(
         finished_at: None,
     };
     s.db.insert_job(&job)?;
+    s.hub.wake(job.endpoint_id);
     s.db.audit(admin.name(), "job.create", &e.hostname, &job.kind.summary());
     Ok((StatusCode::CREATED, Json(job)))
 }
@@ -207,6 +208,7 @@ pub async fn laps_rotate(State(s): State<AppState>, admin: Admin, Path(id): Path
     if !s.db.request_laps_rotation(id, true)? {
         return Err(ApiError::not_found("LAPS password"));
     }
+    s.hub.wake(id);
     s.db.audit(admin.name(), "laps.rotate_requested", &e.hostname, "");
     Ok(Json(serde_json::json!({ "ok": true, "message": "The endpoint rotates the password at its next check-in." })))
 }
@@ -249,6 +251,7 @@ pub async fn patch_run(State(s): State<AppState>, admin: Admin, Json(inp): Json<
             finished_at: None,
         };
         s.db.insert_job(&job)?;
+        s.hub.wake(job.endpoint_id);
         jobs.push(job);
     }
     s.db.audit(

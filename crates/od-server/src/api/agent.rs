@@ -127,6 +127,7 @@ pub async fn checkin(
         want_inventory: auth.want_inventory,
         scripts,
         laps_rotate: s.db.get_laps(auth.id)?.map(|l| l.4).unwrap_or(false),
+        shells: s.hub.take_requests(auth.id),
     }))
 }
 

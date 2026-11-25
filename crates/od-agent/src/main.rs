@@ -10,6 +10,7 @@ mod policy;
 mod policy_ext;
 mod policy_scripts;
 mod service;
+mod shell;
 mod state;
 mod util;
 

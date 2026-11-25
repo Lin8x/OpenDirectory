@@ -62,6 +62,20 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut force_inventory = false;
     let mut logons = policy_scripts::LogonWatcher::default();
     let mut last_patch_scan: Option<Instant> = None;
+    // Long poll so jobs and shells start right away instead of at the next check-in.
+    let wake = std::sync::Arc::new(tokio::sync::Notify::new());
+    {
+        let (c, w) = (client.clone(), wake.clone());
+        tokio::spawn(async move {
+            loop {
+                match c.get::<serde_json::Value>("/agent/wait").await {
+                    Ok(v) if v["wake"] == true => w.notify_one(),
+                    Ok(_) => {}
+                    Err(_) => tokio::time::sleep(Duration::from_secs(30)).await,
+                }
+            }
+        });
+    }
     let mut sent_patches: Option<od_core::PatchReport> = None;
 
     loop {
@@ -132,6 +146,11 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                     }
                 }
 
+                // Remote shells an admin opened.
+                for req in resp.shells {
+                    crate::shell::spawn(req, client.clone());
+                }
+
                 // Jobs run concurrently; each reports its own result.
                 let mut restart = false;
                 for job in resp.jobs {
@@ -173,6 +192,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
 
         tokio::select! {
             _ = tokio::time::sleep(wait) => {}
+            _ = wake.notified() => {}
             _ = shutdown.changed() => {
                 if *shutdown.borrow() {
                     tracing::info!("Endpoint Agent stopping");

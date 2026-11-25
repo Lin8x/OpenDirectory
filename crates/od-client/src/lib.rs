@@ -81,7 +81,12 @@ pub struct Client {
     http: reqwest::Client,
     base: String,
     auth: Option<String>,
+    tls: Option<Arc<rustls::ClientConfig>>,
 }
+
+/// A WebSocket to the Management Server (remote shell and tunnels).
+pub type WebSocket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+pub use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 impl Client {
     pub fn new(target: &ServerTarget) -> Result<Client> {
@@ -104,11 +109,13 @@ impl Client {
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(PinnedVerifier { fingerprint: fp, provider }))
                 .with_no_client_auth();
-            builder = builder.use_preconfigured_tls(cfg);
+            let cfg = Arc::new(cfg);
+            builder = builder.use_preconfigured_tls((*cfg).clone());
+            return Ok(Client { http: builder.build()?, base, auth: None, tls: Some(cfg) });
         } else if !base.starts_with("http://") {
             bail!("Server URL must start with https:// or http://");
         }
-        Ok(Client { http: builder.build()?, base, auth: None })
+        Ok(Client { http: builder.build()?, base, auth: None, tls: None })
     }
 
     /// Authenticate as an administrator with a session token.
@@ -125,6 +132,23 @@ impl Client {
 
     pub fn base_url(&self) -> &str {
         &self.base
+    }
+
+    /// Open a WebSocket to `/api/v1{path}`, with the same certificate pinning
+    /// and credentials as normal requests.
+    pub async fn websocket(&self, path: &str) -> Result<WebSocket> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let url = format!("{}/api/v1{}", self.base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1), path);
+        let mut req = url.into_client_request()?;
+        if let Some(a) = &self.auth {
+            req.headers_mut().insert("authorization", a.parse()?);
+        }
+        let connector = self.tls.clone().map(tokio_tungstenite::Connector::Rustls);
+        let (ws, _) =
+            tokio::time::timeout(Duration::from_secs(20), tokio_tungstenite::connect_async_tls_with_config(req, None, false, connector))
+                .await
+                .map_err(|_| anyhow!("Timed out connecting to the Management Server"))??;
+        Ok(ws)
     }
 
     /// Send a request to `/api/v1{path}` and return the JSON body (or `null`).

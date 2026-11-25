@@ -10,6 +10,7 @@ import {
 } from "../components/ui";
 import { OuSelect } from "./Users";
 import { JobRow } from "./Jobs";
+import { RemoteShell } from "../components/RemoteShell";
 
 export default function EndpointDetail() {
   const { id } = useParams();
@@ -17,7 +18,7 @@ export default function EndpointDetail() {
   const toast = useToast();
   const ep = useQuery<Endpoint>(`/endpoints/${id}`, { poll: 8000 });
   const ous = useQuery<OrgUnit[]>("/ous");
-  const [tab, setTab] = useState<"overview" | "policy" | "scripts">("overview");
+  const [tab, setTab] = useState<"overview" | "policy" | "scripts" | "shell">("overview");
   const [confirm, setConfirm] = useState(false);
 
   if (ep.loading && !ep.data) return <Loading />;
@@ -46,7 +47,7 @@ export default function EndpointDetail() {
         </div>
       </div>
 
-      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }, { id: "shell", label: "Remote shell" }]} />
 
       {tab === "overview" && <LapsCard id={e.id} />}
       {tab === "overview" && (
@@ -101,6 +102,7 @@ export default function EndpointDetail() {
       )}
       {tab === "policy" && <PolicyTab e={e} />}
       {tab === "scripts" && <ScriptsTab e={e} />}
+      {tab === "shell" && <RemoteShell endpoint={e} />}
 
       <Confirm open={confirm} onClose={() => setConfirm(false)} danger title={`Retire ${e.hostname}?`} confirmLabel="Retire endpoint"
         body="The agent's credentials are revoked and the endpoint is removed from the directory. Settings and accounts already applied stay on the computer. To manage it again, enroll it with a new token."
