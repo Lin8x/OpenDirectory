@@ -230,6 +230,8 @@ The first build takes several minutes because Cargo downloads and compiles every
 
 On Windows, swap `./scripts/<name>.sh` for `.\scripts\<name>.ps1`.
 
+Don't run the scripts with `sudo`. Nothing in them needs root, and building as root leaves files you can't change later. If you do use sudo, the script says so and runs the task as you instead.
+
 Release binaries end up in `target/release/` and installers in `target/release/bundle/`.
 
 ### Commits and pull requests
