@@ -7,6 +7,7 @@ mod branding;
 mod directory;
 mod endpoints;
 pub mod integrations;
+mod lab;
 mod policies;
 mod scripts;
 
@@ -65,6 +66,7 @@ pub fn router(state: AppState) -> Router {
         .route("/backups/plans/{id}/test", post(backups::test_plan))
         .route("/backups/plans/{id}/files", get(backups::files))
         .route("/backups/plans/{id}/restore", post(backups::restore_from_plan))
+        .route("/lab/designs", get(lab::get).put(lab::set))
         .route("/integrations", get(integrations::list).post(integrations::create))
         .route("/integrations/{id}", put(integrations::update).delete(integrations::remove))
         .route("/integrations/{id}/test", post(integrations::test))

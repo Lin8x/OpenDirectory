@@ -181,6 +181,8 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
             <T n={{ kind: "page", to: "/endpoints" }} depth={1} label="Endpoints" icon={<Monitor className="size-3.5 text-emerald-600" />} />
             <T n={{ kind: "page", to: "/scripts" }} depth={1} label="Script Library" icon={<Terminal className="size-3.5" />} />
             <T n={{ kind: "page", to: "/audit" }} depth={1} label="Event Viewer (Audit Log)" icon={<ScrollText className="size-3.5" />} />
+            <T n={{ kind: "page", to: "/topology" }} depth={1} label="Topology Map" icon={<Globe className="size-3.5" />} />
+            <T n={{ kind: "page", to: "/lab" }} depth={1} label="Network Lab" icon={<LayoutGrid className="size-3.5" />} />
             <T n={{ kind: "page", to: "/backups" }} depth={1} label="Backup & Restore" icon={<DatabaseBackup className="size-3.5" />} />
             <T n={{ kind: "page", to: "/integrations" }} depth={1} label="Integrations" icon={<Plug className="size-3.5" />} />
             <T n={{ kind: "page", to: "/settings" }} depth={1} label="Settings" icon={<Settings className="size-3.5" />} />

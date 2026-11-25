@@ -16,6 +16,7 @@ import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
 import Backups from "./pages/Backups";
 import Integrations from "./pages/Integrations";
+import Lab, { LiveTopology } from "./pages/Lab";
 import ScriptEditor from "./pages/ScriptEditor";
 import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
@@ -51,6 +52,8 @@ function Gate() {
             <Route path="/audit" element={<Audit />} />
             <Route path="/backups" element={<Backups />} />
             <Route path="/integrations" element={<Integrations />} />
+            <Route path="/lab" element={<Lab />} />
+            <Route path="/topology" element={<LiveTopology />} />
             <Route path="/learn" element={<Learn />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
