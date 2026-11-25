@@ -18,11 +18,9 @@ It ships as a native desktop app (the **Admin Center**) that works fully offline
 ## Quick start
 
 ```bash
-# Build everything except the desktop app
-cargo build --release
-
-# Desktop app (needs Node 20+ and, on Linux, webkit2gtk 4.1)
-cd apps/admin-center && npm ci && npx tauri build
+./scripts/setup.sh        # first time only (Windows: .\scripts\setup.ps1)
+./scripts/build.sh        # server, agent and CLI
+./scripts/build.sh --app  # also the Admin Center installer (needs Node 20+ and, on Linux, webkit2gtk 4.1)
 ```
 
 1. Open the Admin Center and pick **Host the directory on this computer**. The setup wizard creates your domain, the first Domain Admin, default OUs (Staff, Workstations, Servers, IT), the Domain Admins / Domain Users groups and a Default Endpoint Policy.
@@ -54,36 +52,62 @@ docs/              architecture and roadmap
 
 ## Development
 
-All developer tasks run through `cargo x`, a small Rust program in `xtask/`, so they work the same on Windows, macOS and Linux with nothing extra to install.
+New to Rust, Cargo or Tauri? Start with [docs/GUIDE.md](docs/GUIDE.md), a plain-language tour of the whole project.
+
+Every developer task has a script in `scripts/`: `.sh` for Linux and macOS, `.ps1` for Windows. They all hand off to `xtask/`, a small Rust program, so each task behaves the same on every OS. If Rust isn't installed yet, the scripts tell you how to install it.
 
 ```bash
-cargo x setup        # first time: UI deps, rustfmt/clippy, git hooks, then doctor
-cargo x doctor       # check your toolchain and environment, with a fix for anything missing
-cargo x dev          # Admin Center with hot reload
-cargo x dev --browser   # dev Management Server + UI in your browser
-cargo x test         # Rust tests + UI typecheck
-cargo x lint         # rustfmt, clippy (warnings are errors), UI typecheck
-cargo x fmt          # format Rust code
-cargo x build --app  # release binaries + the Admin Center installer for this OS
-cargo x commit       # guided Conventional Commit
-cargo x help         # everything else
+./scripts/setup.sh        # first time: UI deps, rustfmt/clippy, git hooks, then doctor
+./scripts/doctor.sh       # check your toolchain and environment, with a fix for anything missing
+./scripts/dev.sh          # Admin Center with hot reload
+./scripts/dev.sh --browser   # dev Management Server + UI in your browser
+./scripts/test.sh         # Rust tests + UI typecheck
+./scripts/lint.sh         # rustfmt, clippy (warnings are errors), UI typecheck
+./scripts/fmt.sh          # format Rust code
+./scripts/build.sh --app  # release binaries + the Admin Center installer for this OS
+./scripts/clean.sh        # remove build output
+./scripts/commit.sh       # guided Conventional Commit
+./scripts/x.sh help       # everything else
 ```
+
+On Windows, run the same names with `.ps1` in PowerShell, for example `.\scripts\dev.ps1 --browser`. If PowerShell refuses to run scripts, allow local scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+| Script | Does |
+| --- | --- |
+| `setup` | First-time setup: UI dependencies, Rust components, git hooks, then `doctor` |
+| `doctor` | Checks Rust, Node, OS packages, git and signing setup, and prints a fix for each problem |
+| `dev` | Runs the Admin Center with hot reload (`--browser` for a dev server + browser UI) |
+| `build` | Release build of the server, agent and CLI (`--app` adds the Admin Center installer) |
+| `test` | Rust tests and the UI typecheck |
+| `lint` | Formatting check, clippy and the UI typecheck |
+| `check` | `lint` + `test`, exactly what CI runs |
+| `fmt` | Formats all Rust code |
+| `clean` | Deletes build output (`target/`, UI `dist/`) |
+| `commit` | Walks you through a Conventional Commit message |
+| `hooks` | Turns on the git hooks in `.githooks/` |
+| `version` | Shows the version in every manifest and whether they agree |
+| `release` | Cuts a release (see below) |
+| `updater-keys` | Generates the in-app update signing key (one time) |
+| `updater-secrets` | Uploads that key to GitHub Actions secrets with `gh` |
+| `x` | Runs any task by name: `./scripts/x.sh <task>` |
+
+Prefer typing Cargo? `cargo x <task>` does the same thing as `./scripts/<task>.sh`.
 
 ### Releasing
 
 ```bash
-cargo x release patch --dry-run   # preview the version bump and changelog
-cargo x release patch             # or minor / major / 1.4.0
+./scripts/release.sh patch --dry-run   # preview the version bump and changelog
+./scripts/release.sh patch             # or minor / major / 1.4.0
 ```
 
 `release` checks you're on an up-to-date `main` with a clean tree, runs lint and tests, bumps the version everywhere, prepends the changelog from Conventional Commits, commits `chore(release): vX.Y.Z`, tags it and pushes. Whenever `main` carries a version that has no GitHub Release yet, `.github/workflows/release.yml` builds installers for every OS and publishes the release. If `main` is protected, use `--no-push`, push the commit to a branch and merge it as a PR: the release is published when it lands.
 
-**In-app updates.** The Admin Center checks the latest GitHub Release when it opens and offers *Update now* or *Remind me later*; admins can turn checks off in Settings. Updates are signed: run `cargo x updater-secrets` once, with your signing key, to give GitHub Actions the key it signs with.
+**In-app updates.** The Admin Center checks the latest GitHub Release when it opens and offers *Update now* or *Remind me later*; admins can turn checks off in Settings. Updates are signed: run `./scripts/updater-secrets.sh` once, with your signing key, to give GitHub Actions the key it signs with.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the git hooks.
 
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit together.
+Read [docs/GUIDE.md](docs/GUIDE.md) for a beginner-friendly tour, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the technical detail.
 
 ## Downloads
 
-Prebuilt installers for the Admin Center and binaries for the agent, server and CLI are attached to each [GitHub Release](../../releases). Releases are built by `.github/workflows/release.yml` whenever a `v*` tag is pushed.
+Prebuilt installers for the Admin Center and binaries for the agent, server and CLI are attached to each [GitHub Release](../../releases). Releases are built by `.github/workflows/release.yml` whenever `main` carries a version that has no release yet.

@@ -2,7 +2,7 @@
 # Fast check before each commit: Rust formatting of staged files.
 if git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
   if ! cargo fmt --all --check >/dev/null 2>&1; then
-    echo "✗ Rust code isn't formatted. Run 'cargo x fmt', stage the changes, and commit again." >&2
+    echo "✗ Rust code isn't formatted. Run ./scripts/fmt.sh (or 'cargo x fmt'), stage the changes, and commit again." >&2
     exit 1
   fi
 fi

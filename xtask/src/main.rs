@@ -30,6 +30,8 @@ const HELP: &str = "\
 OpenDirectory developer tasks
 
 USAGE: cargo x <task> [options]
+       ./scripts/<task>.sh [options]     (Linux, macOS)
+       .\\scripts\\<task>.ps1 [options]    (Windows)
 
 Getting started
   doctor                 Check your toolchain and environment, with fixes for anything missing
