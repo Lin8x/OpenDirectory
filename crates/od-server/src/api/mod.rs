@@ -5,6 +5,7 @@ mod agent;
 mod directory;
 mod endpoints;
 mod policies;
+mod scripts;
 
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -32,6 +33,14 @@ pub fn router(state: AppState) -> Router {
         .route("/groups", get(directory::list_groups).post(directory::create_group))
         .route("/groups/{id}", get(directory::get_group).patch(directory::update_group).delete(directory::delete_group))
         .route("/groups/{id}/members", put(directory::set_group_members))
+        .route("/groups/{id}/endpoints", put(directory::set_group_endpoints))
+        .route("/scripts", get(scripts::list).post(scripts::create))
+        .route("/scripts/templates", get(scripts::list_templates))
+        .route("/scripts/{id}", get(scripts::get).put(scripts::update).delete(scripts::remove))
+        .route("/scripts/{id}/run", post(scripts::run))
+        .route("/scripts/{id}/jobs", get(scripts::script_jobs))
+        .route("/scripts/{id}/usage", get(scripts::usage))
+        .route("/batches/{id}/jobs", get(scripts::batch_jobs))
         .route("/endpoints", get(endpoints::list))
         .route("/endpoints/{id}", get(endpoints::get).patch(endpoints::update).delete(endpoints::remove))
         .route("/endpoints/{id}/jobs", get(endpoints::list_endpoint_jobs).post(endpoints::create_job))
@@ -46,7 +55,8 @@ pub fn router(state: AppState) -> Router {
         .route("/policies/{id}", get(policies::get).put(policies::update).delete(policies::remove))
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
-        .route("/agent/jobs/{id}/result", post(agent::job_result));
+        .route("/agent/jobs/{id}/result", post(agent::job_result))
+        .route("/agent/script-runs", post(agent::script_run));
 
     let mut router = Router::new().nest("/api/v1", api);
     // Only for running the Admin Center UI in a browser during development.

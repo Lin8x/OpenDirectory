@@ -115,8 +115,15 @@ pub async fn setup(State(s): State<AppState>, Json(req): Json<SetupRequest>) -> 
 
         for (name, desc) in [("Domain Admins", "Full control of the directory and every endpoint"), ("Domain Users", "Every user account")]
         {
-            let g =
-                Group { id: Uuid::new_v4(), name: name.into(), description: desc.into(), ou_id: None, member_ids: vec![], created_at: now };
+            let g = Group {
+                id: Uuid::new_v4(),
+                name: name.into(),
+                description: desc.into(),
+                ou_id: None,
+                member_ids: vec![],
+                endpoint_ids: vec![],
+                created_at: now,
+            };
             s.db.insert_group(&g)?;
             admin_groups.push(g.id);
         }
@@ -743,6 +750,7 @@ pub async fn create_group(State(s): State<AppState>, admin: Admin, Json(inp): Js
         description: inp.description.unwrap_or_default(),
         ou_id,
         member_ids: vec![],
+        endpoint_ids: vec![],
         created_at: Utc::now(),
     };
     s.db.insert_group(&g)?;
@@ -799,6 +807,22 @@ pub async fn set_group_members(
     }
     s.db.set_group_members(id, &inp.ids)?;
     s.db.audit(admin.name(), "group.members", &g.name, &format!("{} members", inp.ids.len()));
+    Ok(Json(s.db.get_group(id)?.expect("exists")))
+}
+
+/// Computer members: which endpoints belong to this group.
+pub async fn set_group_endpoints(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<IdList>,
+) -> ApiResult<Json<Group>> {
+    let g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
+    for e in &inp.ids {
+        s.db.get_endpoint(*e)?.ok_or_else(|| ApiError::bad_request("An endpoint in the list no longer exists"))?;
+    }
+    s.db.set_group_endpoints(id, &inp.ids)?;
+    s.db.audit(admin.name(), "group.computers", &g.name, &format!("{} computers", inp.ids.len()));
     Ok(Json(s.db.get_group(id)?.expect("exists")))
 }
 

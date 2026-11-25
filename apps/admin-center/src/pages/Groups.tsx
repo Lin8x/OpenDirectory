@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, Search, Trash2, UserMinus, UsersRound } from "lucide-react";
+import { Monitor, Plus, Search, Trash2, UserMinus, UsersRound } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, patch, post, put } from "../lib/api";
-import type { Group, OrgUnit, User } from "../lib/types";
-import { Avatar, Badge, Button, Card, Confirm, Dialog, Drawer, EmptyState, ErrorNote, Explain, Field, Input, Loading, PageHeader, Row, Table, Td, Textarea, useToast } from "../components/ui";
+import type { Endpoint, Group, OrgUnit, User } from "../lib/types";
+import { Avatar, Badge, OsIcon, Select, Button, Card, Confirm, Dialog, Drawer, EmptyState, ErrorNote, Explain, Field, Input, Loading, PageHeader, Row, Table, Td, Textarea, useToast } from "../components/ui";
 import { OuSelect, ouPath } from "./Users";
 
 const BUILTIN = ["Domain Admins", "Domain Users"];
 
 export default function Groups() {
   const groups = useQuery<Group[]>("/groups");
+  const endpoints = useQuery<Endpoint[]>("/endpoints");
   const users = useQuery<User[]>("/users");
   const ous = useQuery<OrgUnit[]>("/ous");
   const [params, setParams] = useSearchParams();
@@ -28,13 +29,14 @@ export default function Groups() {
           <div className="relative w-72"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" /><Input className="pl-8" placeholder="Search groups" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         </div>
         {groups.loading && !groups.data ? <Loading /> : groups.error ? <div className="p-4"><ErrorNote message={groups.error} onRetry={groups.reload} /></div> : (
-          <Table head={["Name", "Description", "Members", "OU"]}
+          <Table head={["Name", "Description", "Members", "Computers", "OU"]}
             empty={list.length === 0 && <EmptyState icon={<UsersRound className="size-5" />} title="No groups" body="Create a group such as Laptop Users or Finance." action={<Button variant="primary" onClick={() => setCreating(true)}>New group</Button>} />}>
             {list.map((g) => (
               <Row key={g.id} onClick={() => setParams({ id: g.id })} selected={g.id === selected?.id}>
                 <Td><div className="flex items-center gap-2.5"><span className="grid size-8 place-items-center rounded-lg bg-accent-soft text-accent"><UsersRound className="size-4" /></span><span className="font-medium">{g.name}</span>{BUILTIN.includes(g.name) && <Badge>Built-in</Badge>}</div></Td>
                 <Td className="text-ink-2">{g.description || "—"}</Td>
                 <Td><MemberStack ids={g.member_ids} users={users.data ?? []} /></Td>
+                <Td className="text-ink-2">{g.endpoint_ids.length || "—"}</Td>
                 <Td className="text-ink-2">{ouPath(ous.data ?? [], g.ou_id)}</Td>
               </Row>
             ))}
@@ -42,7 +44,7 @@ export default function Groups() {
         )}
       </Card>
       <CreateGroup open={creating} ous={ous.data ?? []} onClose={() => { setCreating(false); setParams({}); }} onCreated={(g) => { void groups.reload(); setCreating(false); setParams({ id: g.id }); }} />
-      {selected && <GroupDrawer group={selected} users={users.data ?? []} ous={ous.data ?? []} onClose={() => setParams({})} onChanged={() => { void groups.reload(); void users.reload(); }} />}
+      {selected && <GroupDrawer group={selected} endpoints={endpoints.data ?? []} users={users.data ?? []} ous={ous.data ?? []} onClose={() => setParams({})} onChanged={() => { void groups.reload(); void users.reload(); }} />}
     </>
   );
 }
@@ -79,7 +81,7 @@ function CreateGroup({ open, ous, onClose, onCreated }: { open: boolean; ous: Or
   );
 }
 
-function GroupDrawer({ group, users, ous, onClose, onChanged }: { group: Group; users: User[]; ous: OrgUnit[]; onClose: () => void; onChanged: () => void }) {
+function GroupDrawer({ group, endpoints, users, ous, onClose, onChanged }: { group: Group; endpoints: Endpoint[]; users: User[]; ous: OrgUnit[]; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const [name, setName] = useState(group.name);
   const [desc, setDesc] = useState(group.description);
@@ -131,9 +133,42 @@ function GroupDrawer({ group, users, ous, onClose, onChanged }: { group: Group; 
           </div>
         ))}
       </div>
+      <h3 className="mb-1 mt-6 text-sm font-semibold">Computers</h3>
+      <p className="mb-2 text-xs text-ink-3">Endpoints in this group, like computer accounts in an AD group. Run library scripts against the group to reach all of them.</p>
+      <ComputerMembers group={group} endpoints={endpoints} onChanged={onChanged} />
       <Confirm open={confirm} onClose={() => setConfirm(false)} danger title={`Delete ${group.name}?`} confirmLabel="Delete group"
         body="Members keep their accounts. GPOs that use this group for sign-in accounts must be changed first."
         onConfirm={async () => { try { await del(`/groups/${group.id}`); toast("good", "Group deleted"); onChanged(); onClose(); } catch (e) { toast("bad", (e as Error).message); } }} />
     </Drawer>
+  );
+}
+
+function ComputerMembers({ group, endpoints, onChanged }: { group: Group; endpoints: Endpoint[]; onChanged: () => void }) {
+  const toast = useToast();
+  const [pick, setPick] = useState("");
+  const members = endpoints.filter((e) => group.endpoint_ids.includes(e.id));
+  const save = async (ids: string[], msg: string) => {
+    try { await put(`/groups/${group.id}/endpoints`, { ids }); toast("good", msg); onChanged(); } catch (e) { toast("bad", (e as Error).message); }
+  };
+  return (
+    <>
+      <div className="mb-3 flex gap-2">
+        <Select value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">Add a computer…</option>
+          {endpoints.filter((e) => !group.endpoint_ids.includes(e.id)).map((e) => <option key={e.id} value={e.id}>{e.hostname}</option>)}
+        </Select>
+        <Button disabled={!pick} onClick={() => { const e = endpoints.find((x) => x.id === pick); setPick(""); void save([...group.endpoint_ids, pick], `Added ${e?.hostname}`); }}>Add</Button>
+      </div>
+      <div className="divide-y divide-line rounded-lg border border-line">
+        {members.length === 0 && <div className="px-3 py-6 text-center text-sm text-ink-3">No computers yet</div>}
+        {members.map((e) => (
+          <div key={e.id} className="flex items-center gap-3 px-3 py-2">
+            <span className="grid size-7 place-items-center rounded-md bg-panel-2"><OsIcon os={e.os} className="size-3.5" /></span>
+            <div className="flex-1 text-sm font-medium">{e.hostname}</div>
+            <Button size="sm" variant="ghost" icon={<Monitor className="size-3.5" />} onClick={() => void save(group.endpoint_ids.filter((x) => x !== e.id), `Removed ${e.hostname}`)}>Remove</Button>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

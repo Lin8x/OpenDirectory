@@ -81,6 +81,9 @@ pub struct Group {
     pub description: String,
     pub ou_id: Option<Uuid>,
     pub member_ids: Vec<Uuid>,
+    /// Computer members (endpoints), like computer accounts in an AD group.
+    #[serde(default)]
+    pub endpoint_ids: Vec<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -182,7 +185,13 @@ pub enum Shell {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum JobKind {
-    Script { shell: Shell, script: String },
+    Script {
+        shell: Shell,
+        script: String,
+        /// Extra environment variables, e.g. `OD_PARAM_*` script parameters.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        env: std::collections::BTreeMap<String, String>,
+    },
     RefreshInventory,
     RestartAgent,
 }
@@ -220,6 +229,12 @@ pub struct Job {
     pub endpoint_id: Uuid,
     pub kind: JobKind,
     pub status: JobStatus,
+    /// Library script this run came from, if any.
+    #[serde(default)]
+    pub script_id: Option<Uuid>,
+    /// Runs started together (one script against many endpoints) share a batch.
+    #[serde(default)]
+    pub batch_id: Option<Uuid>,
     pub exit_code: Option<i32>,
     pub output: String,
     pub created_by: String,

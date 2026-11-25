@@ -32,6 +32,14 @@ pub enum Setting {
     LoginBanner { title: String, text: String },
     /// Make sure these packages are installed (winget / Homebrew / apt / dnf).
     InstallPackages { packages: Vec<String> },
+    /// Run a library script at startup, at sign-in, on a schedule or once
+    /// (GPO Scripts). Parameter values are passed as environment variables.
+    RunScript {
+        script_id: Uuid,
+        trigger: crate::scripts::ScriptTrigger,
+        #[serde(default)]
+        params: std::collections::BTreeMap<String, String>,
+    },
 }
 
 impl Setting {
@@ -45,13 +53,14 @@ impl Setting {
             Setting::LocalAccounts { .. } => "local_accounts",
             Setting::LoginBanner { .. } => "login_banner",
             Setting::InstallPackages { .. } => "install_packages",
+            Setting::RunScript { .. } => "run_script",
         }
     }
 
     /// Settings of these kinds add up across policies instead of the
     /// highest-priority one winning.
     pub fn accumulates(&self) -> bool {
-        matches!(self, Setting::LocalAccounts { .. } | Setting::InstallPackages { .. })
+        matches!(self, Setting::LocalAccounts { .. } | Setting::InstallPackages { .. } | Setting::RunScript { .. })
     }
 
     pub fn describe(&self) -> String {
@@ -88,6 +97,7 @@ impl Setting {
             }
             Setting::LoginBanner { title, .. } => format!("Login notice: {title}"),
             Setting::InstallPackages { packages } => format!("Install {}", packages.join(", ")),
+            Setting::RunScript { trigger, .. } => format!("Run a script {}", trigger.describe()),
         }
     }
 }
@@ -262,6 +272,19 @@ pub fn catalog() -> Vec<CatalogEntry> {
                 ps(Linux, Enforced, "apt, dnf, zypper or pacman"),
             ],
             default: Setting::InstallPackages { packages: vec![] },
+        },
+        CatalogEntry {
+            kind: "run_script",
+            title: "Scripts (startup, sign-in, scheduled)",
+            category: "Scripts",
+            summary: "Runs a script from your Script Library on every endpoint this GPO applies to: when the computer starts, when someone signs in, on a schedule, or once.",
+            ad_equivalent: "Computer/User Configuration > Windows Settings > Scripts",
+            support: vec![
+                ps(Windows, Enforced, "Endpoint Agent runs it as SYSTEM"),
+                ps(Macos, Enforced, "Endpoint Agent runs it as root"),
+                ps(Linux, Enforced, "Endpoint Agent runs it as root"),
+            ],
+            default: Setting::RunScript { script_id: Uuid::nil(), trigger: crate::scripts::ScriptTrigger::Startup, params: Default::default() },
         },
     ]
 }

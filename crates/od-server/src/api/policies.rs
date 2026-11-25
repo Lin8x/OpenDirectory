@@ -73,6 +73,15 @@ fn validate(s: &AppState, inp: &PolicyInput) -> ApiResult<()> {
                     }
                 }
             }
+            Setting::RunScript { script_id, trigger, params } => {
+                let sc = s.db.get_script(*script_id)?.ok_or_else(|| ApiError::bad_request("Choose a script from the Script Library"))?;
+                od_core::scripts::param_env(&sc.params, params).map_err(|e| ApiError::bad_request(format!("{}: {e}", sc.name)))?;
+                if let od_core::scripts::ScriptTrigger::Interval { minutes } = trigger {
+                    if !(5..=10080).contains(minutes) {
+                        return Err(ApiError::bad_request("Scheduled scripts run every 5 minutes to 7 days"));
+                    }
+                }
+            }
             Setting::LoginBanner { title, text } if title.len() > 200 || text.len() > 4000 => {
                 return Err(ApiError::bad_request("The login notice is too long"))
             }

@@ -9,7 +9,7 @@ use od_core::{ComplianceItem, JobKind, OsFamily};
 use tokio::sync::watch;
 
 use crate::state::AgentState;
-use crate::{accounts, inventory, jobs, policy};
+use crate::{accounts, inventory, jobs, policy, policy_scripts};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const INVENTORY_EVERY: Duration = Duration::from_secs(60 * 60);
@@ -28,6 +28,7 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
         endpoint_secret: resp.endpoint_secret,
         enrolled_at: chrono::Utc::now(),
         accounts: Default::default(),
+        script_runs: Default::default(),
     };
     state.save()?;
     Ok(state)
@@ -46,6 +47,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut account_item: Option<ComplianceItem> = None;
     let mut backoff = Duration::from_secs(5);
     let mut force_inventory = false;
+    let mut logons = policy_scripts::LogonWatcher::default();
 
     loop {
         let send_inventory = force_inventory || last_inventory.map(|t| t.elapsed() > INVENTORY_EVERY).unwrap_or(true);
@@ -82,6 +84,13 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                     compliance = policy::apply_all(&resp.settings).await;
                     last_settings = fingerprint;
                     last_apply = Some(Instant::now());
+                }
+
+                // GPO startup, sign-in and scheduled scripts.
+                if policy_scripts::run_due(&resp.scripts, &mut state.script_runs, &mut logons, &client).await {
+                    if let Err(e) = state.save() {
+                        tracing::error!("saving agent state: {e:#}");
+                    }
                 }
 
                 // Jobs run concurrently; each reports its own result.
