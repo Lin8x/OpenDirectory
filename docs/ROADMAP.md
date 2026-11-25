@@ -37,6 +37,13 @@
 - Interactive remote shell, and remote desktop/SSH through secure tunnels (desktop app).
 - Agents wake up instantly for jobs, shells and rotations (long poll).
 
+## Done (v0.6)
+
+- DNS server: authoritative zone with admin records, the server's own records and dynamic records for endpoints and DHCP clients; forwarding; UDP and TCP.
+- DHCP server: scopes, reservations, relay support and leases (off by default).
+- Certificate authority: root CA, issue or sign CSRs, revoke, CRL; Trusted root certificate GPO setting.
+- RADIUS server: PAP and MS-CHAPv2 for VPNs and network devices, per-client group restriction. EAP (WPA2/3-Enterprise) is not yet supported.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 Home and Pro and on macOS 14+. Ship signed installers (MSI, pkg, deb/rpm).

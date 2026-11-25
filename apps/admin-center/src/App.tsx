@@ -16,6 +16,7 @@ import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
 import Patches from "./pages/Patches";
 import Backups from "./pages/Backups";
+import NetworkServices from "./pages/NetworkServices";
 import RecycleBin from "./pages/RecycleBin";
 import PasswordPolicies from "./pages/PasswordPolicies";
 import Integrations from "./pages/Integrations";
@@ -57,6 +58,7 @@ function Gate() {
             <Route path="/recycle-bin" element={<RecycleBin />} />
             <Route path="/password-policies" element={<PasswordPolicies />} />
             <Route path="/backups" element={<Backups />} />
+            <Route path="/network-services" element={<NetworkServices />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/lab" element={<Lab />} />
             <Route path="/topology" element={<LiveTopology />} />
