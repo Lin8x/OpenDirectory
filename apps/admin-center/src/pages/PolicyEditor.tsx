@@ -88,7 +88,7 @@ export default function PolicyEditor() {
                         </div>
                         <button className="rounded p-1 text-ink-3 hover:bg-panel-2 hover:text-bad" onClick={() => setD({ ...d, settings: d.settings.filter((_, j) => j !== i) })} aria-label="Remove"><X className="size-4" /></button>
                       </div>
-                      <div className="px-4 py-3"><SettingForm s={s} onChange={(v) => setSetting(i, v)} groups={groups.data ?? []} scripts={scripts.data ?? []} /></div>
+                      <div className="px-4 py-3"><SettingForm s={s} onChange={(v) => setSetting(i, v)} groups={groups.data ?? []} scripts={scripts.data ?? []} entry={c} /></div>
                       {c && <SupportStrip c={c} />}
                     </div>
                   );
@@ -174,7 +174,7 @@ function SupportStrip({ c }: { c: CatalogEntry }) {
   );
 }
 
-function SettingForm({ s, onChange, groups, scripts }: { s: Setting; onChange: (s: Setting) => void; groups: Group[]; scripts: Script[] }) {
+function SettingForm({ s, onChange, groups, scripts, entry }: { s: Setting; onChange: (s: Setting) => void; groups: Group[]; scripts: Script[]; entry?: CatalogEntry }) {
   switch (s.kind as SettingKind) {
     case "password_min_length": {
       const v = s as Extract<Setting, { kind: "password_min_length" }>;
@@ -228,7 +228,7 @@ function SettingForm({ s, onChange, groups, scripts }: { s: Setting; onChange: (
       return <ScriptSettingForm v={v} onChange={onChange} scripts={scripts} />;
     }
     default:
-      return <GenericSettingForm s={s} onChange={onChange} />;
+      return <GenericSettingForm s={s} onChange={onChange} entry={entry} />;
   }
 }
 
@@ -272,14 +272,21 @@ function ScriptSettingForm({ v, onChange, scripts }: { v: Extract<Setting, { kin
 }
 
 /** Fallback editor for settings without a dedicated form: one input per field. */
-function GenericSettingForm({ s, onChange }: { s: Setting; onChange: (s: Setting) => void }) {
+const LABELS: Record<string, string> = {
+  enabled: "On", required: "Required", allowed: "Allowed", threshold: "Wrong passwords before lockout", duration_minutes: "Lockout duration (minutes)",
+  days: "Days (0 = never)", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
+};
+
+function GenericSettingForm({ s, onChange, entry }: { s: Setting; onChange: (s: Setting) => void; entry?: CatalogEntry }) {
   const fields = Object.entries(s).filter(([k]) => k !== "kind");
   if (fields.length === 0) return <p className="text-sm text-ink-3">No options. Adding it turns it on.</p>;
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {fields.map(([k, val]) => {
-        const label = k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+        const label = LABELS[k] ?? k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
         const set = (x: unknown) => onChange({ ...s, [k]: x } as Setting);
+        const choice = entry?.choices?.find((c) => c.field === k);
+        if (choice) return <Field key={k} label={label}><Select value={String(val)} onChange={(e) => set(e.target.value)}>{choice.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>;
         if (typeof val === "boolean") return <div key={k} className="pt-6"><Switch checked={val} onChange={set} label={label} /></div>;
         if (typeof val === "number") return <Field key={k} label={label}><Input type="number" value={val} onChange={(e) => set(Number(e.target.value))} /></Field>;
         if (Array.isArray(val)) return <div key={k} className="sm:col-span-2"><Field label={label}><PackageList value={val as string[]} onChange={set} /></Field></div>;

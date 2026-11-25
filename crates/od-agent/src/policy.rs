@@ -181,6 +181,7 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             item(s, if a || b { Applied } else { Compliant }, "Shown on console and SSH login")
         }
         Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } | Setting::RunScript { .. } => unreachable!("handled elsewhere"),
+        _ => return crate::policy_ext::apply(s).await,
     })
 }
 
@@ -301,6 +302,7 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             item(s, if changed { Applied } else { Compliant }, "Shown at the login window")
         }
         Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } | Setting::RunScript { .. } => unreachable!("handled elsewhere"),
+        _ => return crate::policy_ext::apply(s).await,
     })
 }
 
@@ -416,6 +418,7 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             }
         }
         Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } | Setting::RunScript { .. } => unreachable!("handled elsewhere"),
+        _ => return crate::policy_ext::apply(s).await,
     })
 }
 
@@ -470,7 +473,7 @@ async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
-    Ok(item(s, ComplianceState::Unsupported, "Unsupported OS"))
+    crate::policy_ext::apply(s).await
 }
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {

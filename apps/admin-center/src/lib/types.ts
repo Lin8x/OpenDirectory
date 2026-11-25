@@ -43,7 +43,25 @@ export type Setting =
   | { kind: "local_accounts"; group_id: Uuid; admin: boolean }
   | { kind: "login_banner"; title: string; text: string }
   | { kind: "install_packages"; packages: string[] }
-  | { kind: "run_script"; script_id: Uuid; trigger: ScriptTrigger; params: Record<string, string> };
+  | { kind: "run_script"; script_id: Uuid; trigger: ScriptTrigger; params: Record<string, string> }
+  | { kind: "account_lockout"; threshold: number; duration_minutes: number }
+  | { kind: "password_max_age"; days: number }
+  | { kind: "password_history"; count: number }
+  | { kind: "password_complexity"; required: boolean }
+  | { kind: "usb_storage"; mode: "allow" | "read_only" | "block" }
+  | { kind: "guest_account"; enabled: boolean }
+  | { kind: "remote_desktop"; enabled: boolean }
+  | { kind: "ssh_server"; enabled: boolean }
+  | { kind: "auto_login"; allowed: boolean }
+  | { kind: "time_server"; server: string }
+  | { kind: "hide_last_username"; enabled: boolean }
+  | { kind: "disable_autorun"; enabled: boolean }
+  | { kind: "smb1"; enabled: boolean }
+  | { kind: "llmnr"; enabled: boolean }
+  | { kind: "antivirus"; required: boolean }
+  | { kind: "app_reputation"; enabled: boolean }
+  | { kind: "security_auditing"; enabled: boolean }
+  | { kind: "update_deferral"; quality_days: number; feature_days: number };
 export type SettingKind = Setting["kind"];
 
 export interface Policy {
@@ -54,7 +72,7 @@ export type SupportLevel = "enforced" | "report_only" | "unsupported";
 export interface PlatformSupport { os: OsFamily; level: SupportLevel; mechanism: string }
 export interface CatalogEntry {
   kind: SettingKind; title: string; category: string; summary: string; ad_equivalent: string;
-  support: PlatformSupport[]; default: Setting;
+  support: PlatformSupport[]; default: Setting; choices?: { field: string; options: [string, string][] }[];
 }
 export interface RsopEntry {
   setting: Setting; policy_id: Uuid; policy_name: string; overridden: string[]; description: string;
