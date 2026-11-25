@@ -27,6 +27,16 @@
 - Network Lab (design and simulate) and a live Topology Map.
 - Web mode and a Docker image with docker-compose and Portainer instructions.
 
+## Done (v0.5)
+
+- Recycle Bin for users, groups, OUs, GPOs and scripts (180 days, exact restore).
+- Fine-grained password policies (PSOs) with precedence; Default Domain Password Policy; history, expiry and lockout; resultant policy per user.
+- Self-service password change and one-time help-desk reset codes.
+- LAPS: rotating local admin passwords escrowed on the server, audited reads, rotate on demand.
+- Patch management: pending OS updates from Windows Update, apt, dnf and softwareupdate; scan and install on endpoints, groups or OUs.
+- Interactive remote shell, and remote desktop/SSH through secure tunnels (desktop app).
+- Agents wake up instantly for jobs, shells and rotations (long poll).
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 Home and Pro and on macOS 14+. Ship signed installers (MSI, pkg, deb/rpm).
