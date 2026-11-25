@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
+  Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, Globe, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
   KeyRound, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
 } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
@@ -49,6 +49,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
   {
     section: "Administration",
     items: [
+      { to: "/network-services", label: "Network Services", icon: <Globe className="size-4" /> },
       { to: "/lab", label: "Network Lab", icon: <FlaskConical className="size-4" /> },
       { to: "/backups", label: "Backup & Restore", icon: <DatabaseBackup className="size-4" /> },
     ],
@@ -149,7 +150,7 @@ const QUICK = [
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
+  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 

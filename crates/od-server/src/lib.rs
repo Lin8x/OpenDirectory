@@ -12,6 +12,7 @@ pub mod crypto;
 pub mod db;
 pub mod destinations;
 pub mod error;
+pub mod netsvc;
 pub mod service;
 pub mod tls;
 
@@ -36,6 +37,8 @@ pub struct AppState {
     pub login_failures: Arc<std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
     /// Remote shell sessions and agent wake-ups.
     pub hub: Arc<api::shell::Hub>,
+    /// DNS and other hosted network services.
+    pub services: Arc<netsvc::Services>,
 }
 
 /// Facts about this server shown in the Admin Center and enrollment commands.
@@ -114,7 +117,14 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
     }
     let db = db::Db::open(&data_dir.join("directory.db"))?;
     let sealer = crypto::Sealer::load_or_create(&data_dir.join("master.key"))?;
-    Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default(), hub: Default::default() })
+    Ok(AppState {
+        db,
+        sealer,
+        info: Arc::new(info),
+        login_failures: Default::default(),
+        hub: Default::default(),
+        services: Default::default(),
+    })
 }
 
 /// Background work: scheduled backups (checked every minute) and the daily
@@ -211,6 +221,7 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let info = state.info.clone();
     spawn_housekeeping(state.clone());
     api::integrations::spawn_dispatcher(state.clone());
+    netsvc::start_all(&state);
     let mut app = router(state);
     if let Some(dir) = config.web_ui.as_ref().filter(|d| d.join("index.html").exists()) {
         tracing::info!("Serving the Admin Center web UI from {}", dir.display());

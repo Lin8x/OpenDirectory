@@ -48,6 +48,10 @@ od status
 - **Patch Management:** pending OS updates on every endpoint, with scan and install for endpoints, groups or OUs.
 - **Remote shell and desktop:** an interactive terminal on any endpoint, and RDP, VNC or SSH through an encrypted tunnel (desktop app). Endpoints never need inbound ports.
 
+### Network Services
+
+The Management Server can host the network roles a Windows Server usually provides: a **DNS server** for the domain (with records for every endpoint), a **DHCP server**, an internal **certificate authority** (with a GPO setting that makes endpoints trust it) and a **RADIUS server** for VPNs and network devices (PAP and MS-CHAPv2). Each is off until you turn it on in **Network Services**.
+
 ### Docker and web mode
 
 The Management Server can serve the Admin Center to any browser (`--web-ui <folder>`, or a `web` folder next to the binary). The official image does this out of the box:

@@ -82,6 +82,14 @@ fn validate(s: &AppState, inp: &PolicyInput) -> ApiResult<()> {
                     }
                 }
             }
+            Setting::TrustedRootCertificate { name, pem } => {
+                if name.trim().is_empty() || name.len() > 64 || !name.chars().all(|c| c.is_ascii_alphanumeric() || " ._-".contains(c)) {
+                    return Err(ApiError::bad_request("Name the certificate with letters, numbers, spaces, dots or dashes"));
+                }
+                if !pem.contains("-----BEGIN CERTIFICATE-----") || pem.len() > 16 * 1024 || pem.matches("BEGIN CERTIFICATE").count() != 1 {
+                    return Err(ApiError::bad_request("Paste exactly one PEM certificate"));
+                }
+            }
             Setting::LocalAdminPassword { account, length, rotate_days } => {
                 let a = account.trim().to_lowercase();
                 let ok = !a.is_empty()

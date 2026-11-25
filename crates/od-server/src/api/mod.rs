@@ -4,10 +4,12 @@
 mod agent;
 pub mod backups;
 mod branding;
-mod directory;
+mod ca;
+pub mod directory;
 mod endpoints;
 pub mod integrations;
 mod lab;
+mod netsvc;
 pub mod passwords;
 mod policies;
 pub mod recycle;
@@ -83,6 +85,17 @@ pub fn router(state: AppState) -> Router {
         .route("/recycle-bin", get(recycle::list))
         .route("/recycle-bin/{id}/restore", post(recycle::restore))
         .route("/recycle-bin/{id}", delete(recycle::purge))
+        .route("/dns", get(netsvc::get_dns))
+        .route("/dns/config", put(netsvc::set_dns_config))
+        .route("/dns/records", put(netsvc::set_dns_records))
+        .route("/ca", get(ca::get).post(ca::init))
+        .route("/ca/issue", post(ca::issue))
+        .route("/ca/certificates/{id}", get(ca::download))
+        .route("/ca/certificates/{id}/revoke", post(ca::revoke))
+        .route("/ca/root.pem", get(ca::root_pem))
+        .route("/ca/crl.pem", get(ca::crl))
+        .route("/dhcp", get(netsvc::get_dhcp).put(netsvc::set_dhcp))
+        .route("/radius", get(netsvc::get_radius).put(netsvc::set_radius))
         .route("/lab/designs", get(lab::get).put(lab::set))
         .route("/integrations", get(integrations::list).post(integrations::create))
         .route("/integrations/{id}", put(integrations::update).delete(integrations::remove))

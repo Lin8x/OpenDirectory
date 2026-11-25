@@ -8,6 +8,7 @@ import {
   Badge, Button, Card, Confirm, Dialog, Explain, Field, Input, Loading, OsIcon, Select, Switch, Textarea, cx, useToast,
 } from "../components/ui";
 import { OuSelect, ouPath } from "./Users";
+import { useCaRoot } from "./NetworkServices";
 
 type Draft = Omit<Policy, "id" | "created_at" | "updated_at">;
 const EMPTY: Draft = { name: "", description: "", enabled: true, priority: 100, targets: { all_endpoints: true, ou_ids: [] }, settings: [] };
@@ -227,6 +228,10 @@ function SettingForm({ s, onChange, groups, scripts, entry }: { s: Setting; onCh
       const v = s as Extract<Setting, { kind: "run_script" }>;
       return <ScriptSettingForm v={v} onChange={onChange} scripts={scripts} />;
     }
+    case "trusted_root_certificate": {
+      const v = s as Extract<Setting, { kind: "trusted_root_certificate" }>;
+      return <TrustedRootForm v={v} onChange={onChange} />;
+    }
     default:
       return <GenericSettingForm s={s} onChange={onChange} entry={entry} />;
   }
@@ -309,6 +314,17 @@ function PackageList({ value, onChange }: { value: string[]; onChange: (v: strin
         <Button onClick={add}>Add</Button>
       </div>
       <p className="text-xs text-ink-3">Names are passed to each OS's package manager; a name that doesn't exist on an OS is reported as failed there.</p>
+    </div>
+  );
+}
+
+function TrustedRootForm({ v, onChange }: { v: Extract<Setting, { kind: "trusted_root_certificate" }>; onChange: (s: Setting) => void }) {
+  const ca = useCaRoot();
+  return (
+    <div className="space-y-3">
+      <Field label="Name"><Input value={v.name} onChange={(e) => onChange({ ...v, name: e.target.value })} /></Field>
+      <Field label="Certificate (PEM)"><Textarea rows={5} className="font-mono text-[11px]" value={v.pem} placeholder="-----BEGIN CERTIFICATE-----" onChange={(e) => onChange({ ...v, pem: e.target.value })} /></Field>
+      {ca.data?.initialized && <Button size="sm" onClick={() => onChange({ ...v, name: ca.data!.common_name ?? v.name, pem: ca.data!.root_pem ?? "" })}>Use this domain's certificate authority</Button>}
     </div>
   );
 }

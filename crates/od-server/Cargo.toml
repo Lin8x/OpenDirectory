@@ -34,7 +34,12 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
 axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
-rcgen = "0.13"
+rcgen = { version = "0.13", features = ["x509-parser"] }
+time = "0.3"
+md-5 = "0.10"
+md4 = "0.10"
+sha1 = "0.10"
+des = "0.8"
 base64 = "0.22"
 flate2 = "1"
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
@@ -51,5 +56,6 @@ windows-service = "0.7"
 
 [dev-dependencies]
 od-client.workspace = true
+md-5 = "0.10"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
