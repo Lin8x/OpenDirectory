@@ -1281,6 +1281,15 @@ dependencies = [
 
 [[package]]
 name = "des"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffdd80ce8ce993de27e9f063a444a4d53ce8e8db4c1f00cc03af5ad5a9867a1e"
+dependencies = [
+ "cipher 0.4.4",
+]
+
+[[package]]
+name = "des"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "916a94e407b54f9034d71dd748234cd1e516ced6284009906ae246f177eafe5a"
@@ -3085,6 +3094,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
+name = "md-5"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
+dependencies = [
+ "cfg-if",
+ "digest 0.10.7",
+]
+
+[[package]]
+name = "md4"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da5ac363534dce5fabf69949225e174fbf111a498bf0ff794c8ea1fba9f3dda"
+dependencies = [
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "md5"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3711,12 +3739,15 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "clap",
+ "des 0.8.1",
  "flate2",
  "futures-util",
  "hex",
  "hmac 0.12.1",
  "http-body-util",
  "ldap3",
+ "md-5",
+ "md4",
  "od-client",
  "od-core",
  "rand 0.8.8",
@@ -3728,6 +3759,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "suppaftp",
  "time",
@@ -5705,7 +5737,7 @@ dependencies = [
  "chacha20 0.10.2",
  "cipher 0.5.2",
  "ctutils",
- "des",
+ "des 0.9.0",
  "poly1305 0.9.1",
  "ssh-encoding",
  "zeroize",

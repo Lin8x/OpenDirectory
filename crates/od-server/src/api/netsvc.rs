@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::auth::Admin;
 use crate::error::{ApiError, ApiResult};
-use crate::netsvc::{self, dhcp, dns};
+use crate::netsvc::{self, dhcp, dns, radius};
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -108,4 +108,49 @@ pub async fn set_dhcp(State(s): State<AppState>, admin: Admin, Json(c): Json<dhc
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     s.db.audit(admin.name(), "dhcp.config", "", &format!("{} scope(s), {}", c.scopes.len(), if c.enabled { "on" } else { "off" }));
     Ok(Json(netsvc::dhcp_status(&s)))
+}
+
+#[derive(Serialize)]
+pub struct RadiusView {
+    config: radius::RadiusConfig,
+    status: netsvc::ServiceStatus,
+}
+
+pub async fn get_radius(State(s): State<AppState>, _a: Admin) -> Json<RadiusView> {
+    let mut config = netsvc::radius_config(&s);
+    for c in &mut config.clients {
+        c.secret = crate::destinations::KEEP.into();
+    }
+    Json(RadiusView { config, status: netsvc::radius_status(&s) })
+}
+
+pub async fn set_radius(
+    State(s): State<AppState>,
+    admin: Admin,
+    Json(mut c): Json<radius::RadiusConfig>,
+) -> ApiResult<Json<netsvc::ServiceStatus>> {
+    c.listen.parse::<std::net::SocketAddr>().map_err(|_| ApiError::bad_request("Listen on an address like 0.0.0.0:1812"))?;
+    let old = netsvc::radius_config(&s);
+    for cl in &mut c.clients {
+        if cl.secret == crate::destinations::KEEP {
+            cl.secret = old.clients.iter().find(|o| o.name == cl.name).map(|o| o.secret.clone()).unwrap_or_default();
+        }
+        if cl.secret.len() < 12 {
+            return Err(ApiError::bad_request(format!("{}: use a shared secret of at least 12 characters", cl.name)));
+        }
+        let ok = cl.address.parse::<std::net::IpAddr>().is_ok()
+            || cl
+                .address
+                .split_once('/')
+                .map(|(a, b)| a.parse::<std::net::Ipv4Addr>().is_ok() && b.parse::<u8>().map(|b| b <= 32).unwrap_or(false))
+                .unwrap_or(false);
+        if !ok {
+            return Err(ApiError::bad_request(format!("{}: enter an IP address or a range like 10.0.0.0/24", cl.name)));
+        }
+    }
+    netsvc::save_radius_config(&s, &c)?;
+    netsvc::restart_radius(&s);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    s.db.audit(admin.name(), "radius.config", "", &format!("{} client(s), {}", c.clients.len(), if c.enabled { "on" } else { "off" }));
+    Ok(Json(netsvc::radius_status(&s)))
 }

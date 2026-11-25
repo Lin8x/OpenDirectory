@@ -4,6 +4,7 @@
 
 pub mod dhcp;
 pub mod dns;
+pub mod radius;
 
 use std::sync::Mutex;
 
@@ -17,6 +18,8 @@ pub struct Services {
     dns_status: Mutex<ServiceStatus>,
     dhcp: Mutex<Option<tokio::task::JoinHandle<()>>>,
     dhcp_status: Mutex<ServiceStatus>,
+    radius: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    radius_status: Mutex<ServiceStatus>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -84,7 +87,47 @@ pub fn restart_dhcp(s: &AppState) {
     *s.services.dhcp.lock().unwrap_or_else(|e| e.into_inner()) = Some(task);
 }
 
+/// RADIUS settings, sealed because they hold client shared secrets.
+pub fn radius_config(s: &AppState) -> radius::RadiusConfig {
+    s.db.meta_get("radius_config")
+        .ok()
+        .flatten()
+        .and_then(|h| hex::decode(h).ok())
+        .and_then(|b| s.sealer.open(&b).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+pub fn save_radius_config(s: &AppState, c: &radius::RadiusConfig) -> anyhow::Result<()> {
+    s.db.meta_set("radius_config", &hex::encode(s.sealer.seal(&serde_json::to_vec(c)?)?))
+}
+pub fn radius_status(s: &AppState) -> ServiceStatus {
+    s.services.radius_status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+pub fn restart_radius(s: &AppState) {
+    if let Some(old) = s.services.radius.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        old.abort();
+    }
+    let cfg = radius_config(s);
+    let set = |st: ServiceStatus| *s.services.radius_status.lock().unwrap_or_else(|e| e.into_inner()) = st;
+    if !cfg.enabled {
+        set(ServiceStatus::default());
+        return;
+    }
+    set(ServiceStatus { running: true, error: String::new() });
+    let s2 = s.clone();
+    let task = tokio::spawn(async move {
+        if let Err(e) = radius::serve(s2.clone(), cfg).await {
+            tracing::warn!("RADIUS server stopped: {e:#}");
+            *s2.services.radius_status.lock().unwrap_or_else(|e| e.into_inner()) =
+                ServiceStatus { running: false, error: format!("{e:#}") };
+        }
+    });
+    *s.services.radius.lock().unwrap_or_else(|e| e.into_inner()) = Some(task);
+}
+
 pub fn start_all(s: &AppState) {
     restart_dns(s);
     restart_dhcp(s);
+    restart_radius(s);
 }
