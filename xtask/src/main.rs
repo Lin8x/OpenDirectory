@@ -54,7 +54,7 @@ Releasing
   version                Show the version in every manifest and whether they agree
   release <v|patch|minor|major> [--dry-run] [--no-push] [--skip-checks]
                          Bump versions, update CHANGELOG.md, commit, tag vX.Y.Z and push.
-                         GitHub Actions then builds installers and publishes the release
+                         When it reaches main, GitHub Actions builds installers and publishes the release
                          (with signed in-app updates when the updater secrets are set).
   updater-keys           Generate the in-app update signing key (one time)
   updater-secrets [key]  Upload the signing key to GitHub Actions secrets using `gh`

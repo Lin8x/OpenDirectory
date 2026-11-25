@@ -2788,7 +2788,7 @@ dependencies = [
 
 [[package]]
 name = "od-admin-center"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "od-client",
@@ -2806,7 +2806,7 @@ dependencies = [
 
 [[package]]
 name = "od-agent"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2828,7 +2828,7 @@ dependencies = [
 
 [[package]]
 name = "od-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2844,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "od-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -2857,7 +2857,7 @@ dependencies = [
 
 [[package]]
 name = "od-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -2867,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "od-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -6063,7 +6063,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
 ]

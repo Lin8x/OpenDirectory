@@ -76,7 +76,7 @@ cargo x release patch --dry-run   # preview the version bump and changelog
 cargo x release patch             # or minor / major / 1.4.0
 ```
 
-`release` checks you're on an up-to-date `main` with a clean tree, runs lint and tests, bumps the version everywhere, prepends the changelog from Conventional Commits, commits `chore(release): vX.Y.Z`, tags it and pushes. GitHub Actions then builds installers for every OS and publishes the GitHub Release.
+`release` checks you're on an up-to-date `main` with a clean tree, runs lint and tests, bumps the version everywhere, prepends the changelog from Conventional Commits, commits `chore(release): vX.Y.Z`, tags it and pushes. Whenever `main` carries a version that has no GitHub Release yet, `.github/workflows/release.yml` builds installers for every OS and publishes the release. If `main` is protected, use `--no-push`, push the commit to a branch and merge it as a PR: the release is published when it lands.
 
 **In-app updates.** The Admin Center checks the latest GitHub Release when it opens and offers *Update now* or *Remind me later*; admins can turn checks off in Settings. Updates are signed: run `cargo x updater-secrets` once, with your signing key, to give GitHub Actions the key it signs with.
 
