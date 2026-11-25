@@ -1,13 +1,15 @@
 name: Release
 
-# Push a tag like v0.2.0 (`cargo x release minor` does this) to build installers
-# for every OS and publish them as a GitHub Release. When the updater signing
-# secrets are set, the release also carries signed update bundles and the
-# latest.json manifest the Admin Center checks for in-app updates.
+# Runs on every push to main. When the workspace version (bumped by
+# `cargo x release`) has no GitHub Release yet, it builds installers for every
+# OS and publishes them as release vX.Y.Z. When the updater signing secrets are
+# set, the release also carries signed update bundles and the latest.json
+# manifest the Admin Center checks for in-app updates.
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,12 +18,37 @@ env:
   CARGO_TERM_COLOR: always
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: Check for a new version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "$tag is already released; nothing to do."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "Releasing $tag"
+          fi
+
   admin-center:
     name: Admin Center (${{ matrix.name }})
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -65,8 +92,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/admin-center
-          tagName: ${{ github.ref_name }}
-          releaseName: OpenDirectory ${{ github.ref_name }}
+          tagName: ${{ needs.plan.outputs.tag }}
+          releaseName: OpenDirectory ${{ needs.plan.outputs.tag }}
           releaseBody: |
             Install the **Admin Center** for your OS from the files below (`.msi`/`-setup.exe` for Windows, `.dmg` for macOS, `.deb`/`.rpm`/`.AppImage` for Linux).
             The **Endpoint Agent**, **Management Server** and **od CLI** binaries are attached as `opendirectory-agent-*`, `opendirectory-server-*` and `od-*`.
@@ -74,7 +101,7 @@ jobs:
             Installers are not code-signed yet: Windows SmartScreen will ask you to confirm ("More info" → "Run anyway"), and on macOS right-click the app and choose Open the first time.
             Existing installs offer this update automatically when the Admin Center opens.
 
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for what changed.
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ needs.plan.outputs.tag }}/CHANGELOG.md) for what changed.
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
@@ -82,7 +109,7 @@ jobs:
 
   binaries:
     name: Agent, server and CLI (${{ matrix.name }})
-    needs: admin-center
+    needs: [plan, admin-center]
     strategy:
       fail-fast: false
       matrix:
@@ -118,4 +145,4 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.ref_name }}" out/* --clobber --repo "${{ github.repository }}"
+        run: gh release upload "${{ needs.plan.outputs.tag }}" out/* --clobber --repo "${{ github.repository }}"
