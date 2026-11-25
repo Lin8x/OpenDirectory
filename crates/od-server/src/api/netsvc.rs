@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::auth::Admin;
 use crate::error::{ApiError, ApiResult};
-use crate::netsvc::{self, dns};
+use crate::netsvc::{self, dhcp, dns};
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -78,4 +78,34 @@ pub async fn set_dns_records(
     s.db.meta_set("dns_records", &serde_json::to_string(&recs).map_err(anyhow::Error::from)?)?;
     s.db.audit(admin.name(), "dns.records", "", &format!("{} record(s)", recs.len()));
     Ok(Json(recs))
+}
+
+#[derive(Serialize)]
+pub struct DhcpView {
+    config: dhcp::DhcpConfig,
+    status: netsvc::ServiceStatus,
+    leases: Vec<dhcp::Lease>,
+    /// A guess for this server's address, for the setup form.
+    suggested_server_ip: String,
+}
+
+pub async fn get_dhcp(State(s): State<AppState>, _a: Admin) -> ApiResult<Json<DhcpView>> {
+    let now = chrono::Utc::now();
+    let host = s.info.endpoint_url.split("://").nth(1).and_then(|h| h.rsplit_once(':').map(|(h, _)| h.to_string())).unwrap_or_default();
+    Ok(Json(DhcpView {
+        config: netsvc::dhcp_config(&s),
+        status: netsvc::dhcp_status(&s),
+        leases: dhcp::load_leases(&s).into_iter().filter(|l| l.expires > now && !l.offered).collect(),
+        suggested_server_ip: host.parse::<std::net::Ipv4Addr>().map(|h| h.to_string()).unwrap_or_default(),
+    }))
+}
+
+pub async fn set_dhcp(State(s): State<AppState>, admin: Admin, Json(c): Json<dhcp::DhcpConfig>) -> ApiResult<Json<netsvc::ServiceStatus>> {
+    c.listen.parse::<std::net::SocketAddr>().map_err(|_| ApiError::bad_request("Listen on an address like 0.0.0.0:67"))?;
+    dhcp::validate(&c).map_err(ApiError::bad_request)?;
+    s.db.meta_set("dhcp_config", &serde_json::to_string(&c).map_err(anyhow::Error::from)?)?;
+    netsvc::restart_dhcp(&s);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    s.db.audit(admin.name(), "dhcp.config", "", &format!("{} scope(s), {}", c.scopes.len(), if c.enabled { "on" } else { "off" }));
+    Ok(Json(netsvc::dhcp_status(&s)))
 }

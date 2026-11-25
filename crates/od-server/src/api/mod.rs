@@ -87,6 +87,7 @@ pub fn router(state: AppState) -> Router {
         .route("/dns", get(netsvc::get_dns))
         .route("/dns/config", put(netsvc::set_dns_config))
         .route("/dns/records", put(netsvc::set_dns_records))
+        .route("/dhcp", get(netsvc::get_dhcp).put(netsvc::set_dhcp))
         .route("/lab/designs", get(lab::get).put(lab::set))
         .route("/integrations", get(integrations::list).post(integrations::create))
         .route("/integrations/{id}", put(integrations::update).delete(integrations::remove))

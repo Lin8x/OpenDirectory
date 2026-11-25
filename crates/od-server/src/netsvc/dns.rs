@@ -235,6 +235,17 @@ pub fn zone_records(s: &AppState, cfg: &DnsConfig) -> Vec<Record> {
         v.push(Record { port, priority: 0, weight: 100, ..mk("_opendirectory._tcp", "SRV", "od".into()) });
     }
     if cfg.dynamic_updates {
+        // DHCP clients that sent a host name, like DHCP-integrated DNS.
+        let now = chrono::Utc::now();
+        for l in super::dhcp::load_leases(s).into_iter().filter(|l| !l.offered && l.expires > now) {
+            let host = l.hostname.to_lowercase();
+            if !host.is_empty()
+                && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                && !v.iter().any(|r| r.name.eq_ignore_ascii_case(&host))
+            {
+                v.push(mk(&host, "A", l.ip.clone()));
+            }
+        }
         for e in s.db.list_endpoints().unwrap_or_default() {
             let host = e.hostname.to_lowercase().split('.').next().unwrap_or("").to_string();
             let ok = !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
