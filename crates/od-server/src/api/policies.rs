@@ -90,6 +90,11 @@ fn validate(s: &AppState, inp: &PolicyInput) -> ApiResult<()> {
                     return Err(ApiError::bad_request("Paste exactly one PEM certificate"));
                 }
             }
+            Setting::CertificateAutoEnrollment { renew_days } => {
+                if !(1..=180).contains(renew_days) {
+                    return Err(ApiError::bad_request("Renew between 1 and 180 days before expiry"));
+                }
+            }
             Setting::LocalAdminPassword { account, length, rotate_days } => {
                 let a = account.trim().to_lowercase();
                 let ok = !a.is_empty()

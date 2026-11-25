@@ -74,6 +74,9 @@ pub enum Setting {
     LocalAdminPassword { account: String, length: u32, rotate_days: u32 },
     /// Add a certificate authority to the computer's trusted roots.
     TrustedRootCertificate { name: String, pem: String },
+    /// Request a machine certificate from the domain CA and renew it before
+    /// it expires (Certificate Services Client: Auto-Enrollment).
+    CertificateAutoEnrollment { renew_days: u32 },
     /// Run a library script at startup, at sign-in, on a schedule or once
     /// (GPO Scripts). Parameter values are passed as environment variables.
     RunScript {
@@ -98,6 +101,7 @@ impl Setting {
             Setting::RunScript { .. } => "run_script",
             Setting::LocalAdminPassword { .. } => "local_admin_password",
             Setting::TrustedRootCertificate { .. } => "trusted_root_certificate",
+            Setting::CertificateAutoEnrollment { .. } => "certificate_auto_enrollment",
             Setting::AccountLockout { .. } => "account_lockout",
             Setting::PasswordMaxAge { .. } => "password_max_age",
             Setting::PasswordHistory { .. } => "password_history",
@@ -167,6 +171,9 @@ impl Setting {
             Setting::InstallPackages { packages } => format!("Install {}", packages.join(", ")),
             Setting::RunScript { trigger, .. } => format!("Run a script {}", trigger.describe()),
             Setting::TrustedRootCertificate { name, .. } => format!("Trust the {name} certificate authority"),
+            Setting::CertificateAutoEnrollment { renew_days } => {
+                format!("Enroll a machine certificate and renew it {renew_days} days before it expires")
+            }
             Setting::LocalAdminPassword { account, rotate_days, .. } => {
                 format!("Rotate {account}'s password every {rotate_days} days (LAPS)")
             }
@@ -414,6 +421,13 @@ pub fn catalog() -> Vec<CatalogEntry> {
             "Public Key Policies: Trusted Root Certification Authorities",
             [(Enforced, "certutil -addstore Root"), (Enforced, "security add-trusted-cert (System keychain)"), (Enforced, "update-ca-certificates or update-ca-trust")],
             Setting::TrustedRootCertificate { name: "Organization Root CA".into(), pem: String::new() },
+        ),
+        e(
+            "certificate_auto_enrollment", "Machine certificate auto-enrollment", "Security",
+            "Each endpoint creates its own key, requests a computer certificate from the domain certificate authority (Network Services > Certificate Authority) and renews it automatically. Use it for 802.1X EAP-TLS, VPN or mutual TLS. The key never leaves the endpoint.",
+            "Certificate Services Client: Auto-Enrollment",
+            [(Enforced, "Files in ProgramData\\OpenDirectory\\agent\\certs (not imported into the Windows certificate store yet)"), (Enforced, "Files in the agent folder, imported into the System keychain"), (Enforced, "Files in /var/lib/opendirectory-agent/certs")],
+            Setting::CertificateAutoEnrollment { renew_days: 30 },
         ),
         e(
             "local_admin_password", "Local admin password rotation (LAPS)", "Accounts",

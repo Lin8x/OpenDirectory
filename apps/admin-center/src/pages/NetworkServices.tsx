@@ -2,7 +2,7 @@
 // authority and RADIUS.
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, FileKey2, Globe, Network, Plus, Radio, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, BookUser, CheckCircle2, FileKey2, Globe, Network, Plus, Radio, Trash2, XCircle } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { apiBase, post, put } from "../lib/api";
 import { dateTime } from "../lib/format";
@@ -10,7 +10,7 @@ import { Badge, Button, Callout, Card, CopyButton, Dialog, Explain, Field, Input
 
 const KEEP = "••••••••";
 interface Status { running: boolean; error: string }
-type Tab = "dns" | "dhcp" | "ca" | "radius";
+type Tab = "dns" | "dhcp" | "ca" | "radius" | "ldap";
 
 export default function NetworkServices() {
   const [params, setParams] = useSearchParams();
@@ -23,11 +23,13 @@ export default function NetworkServices() {
         { id: "dhcp", label: <span className="flex items-center gap-1.5"><Network className="size-3.5" />DHCP</span> },
         { id: "ca", label: <span className="flex items-center gap-1.5"><FileKey2 className="size-3.5" />Certificate Authority</span> },
         { id: "radius", label: <span className="flex items-center gap-1.5"><Radio className="size-3.5" />RADIUS</span> },
+        { id: "ldap", label: <span className="flex items-center gap-1.5"><BookUser className="size-3.5" />LDAP</span> },
       ]} /></div>
       {tab === "dns" && <Dns />}
       {tab === "dhcp" && <Dhcp />}
       {tab === "ca" && <Ca />}
       {tab === "radius" && <Radius />}
+      {tab === "ldap" && <Ldap />}
       <div className="mt-5"><Explain>DNS (53), DHCP (67) and RADIUS (1812) use privileged or well-known ports: run the Management Server as a service (root/SYSTEM) or change the listen address. In Docker, publish the ports and add the NET_BIND_SERVICE capability.</Explain></div>
     </>
   );
@@ -273,4 +275,38 @@ function Radius() {
 
 export function useCaRoot() {
   return useQuery<CaView>("/ca");
+}
+
+// ------------------------------------------------------------------ LDAP
+interface LdapView { config: { enabled: boolean; listen: string; ldaps_listen: string; allow_anonymous: boolean }; status: Status; base_dn: string }
+
+function Ldap() {
+  const toast = useToast();
+  const v = useQuery<LdapView>("/ldap");
+  const [cfg, setCfg] = useState<LdapView["config"] | null>(null);
+  useEffect(() => { if (v.data) setCfg(v.data.config); }, [v.data]);
+  if (!v.data || !cfg) return <Loading />;
+  const b = v.data.base_dn;
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <Card title="Connect an application" subtitle="Wikis, NAS boxes, VPNs, printers and other apps that support LDAP or Active Directory sign-in">
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          {[["Server", "ldaps://<this server>:636"], ["Base DN", b], ["Users", `${b} (filter: (objectClass=user))`], ["Groups", `${b} (filter: (objectClass=group))`], ["Login attribute", "sAMAccountName (or uid, userPrincipalName)"], ["Bind as", `any directory user, e.g. svc-wiki@<domain>`], ["Group membership", "memberOf on users, member on groups"], ["Example user DN", `CN=Jane Smith,OU=Staff,${b}`]].map(([k, val]) => (
+            <div key={k}><dt className="text-xs text-ink-3">{k}</dt><dd className="flex items-center gap-1 break-all font-mono text-xs">{val}<CopyButton text={val!} /></dd></div>
+          ))}
+        </dl>
+        <p className="mt-4 text-xs text-ink-3">Create a dedicated user for each application to bind with. The directory is read-only over LDAP; manage it here. Kerberos and joining Windows to the domain need the Samba domain controller role.</p>
+      </Card>
+      <Card title="LDAP server" actions={<StatusBadge s={v.data.status} enabled={v.data.config.enabled} />}>
+        <div className="space-y-3">
+          {v.data.status.error && <Callout tone="warn">{v.data.status.error}</Callout>}
+          <Switch checked={cfg.enabled} onChange={(x) => setCfg({ ...cfg, enabled: x })} label="Answer LDAP requests" />
+          <Field label="LDAPS (encrypted)"><Input value={cfg.ldaps_listen} onChange={(e) => setCfg({ ...cfg, ldaps_listen: e.target.value })} /></Field>
+          <Field label="Plain LDAP" hint="Leave empty to allow only LDAPS. Plain LDAP sends passwords unencrypted."><Input value={cfg.listen} onChange={(e) => setCfg({ ...cfg, listen: e.target.value })} /></Field>
+          <Switch checked={cfg.allow_anonymous} onChange={(x) => setCfg({ ...cfg, allow_anonymous: x })} label="Allow searches without signing in" />
+          <Button variant="primary" onClick={async () => { try { const st = await put<Status>("/ldap", cfg); toast(st.error ? "bad" : "good", st.error || "LDAP settings saved"); void v.reload(); } catch (e) { toast("bad", (e as Error).message); } }}>Save and apply</Button>
+        </div>
+      </Card>
+    </div>
+  );
 }

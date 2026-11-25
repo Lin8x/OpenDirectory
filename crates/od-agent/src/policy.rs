@@ -18,7 +18,10 @@ pub async fn apply_all(settings: &[Setting]) -> Vec<ComplianceItem> {
     for s in settings {
         match s {
             Setting::InstallPackages { packages: p } => packages.extend(p.iter().cloned()),
-            Setting::LocalAccounts { .. } | Setting::RunScript { .. } | Setting::LocalAdminPassword { .. } => {}
+            Setting::LocalAccounts { .. }
+            | Setting::RunScript { .. }
+            | Setting::LocalAdminPassword { .. }
+            | Setting::CertificateAutoEnrollment { .. } => {}
             other => {
                 let r = apply(other).await;
                 out.push(match r {

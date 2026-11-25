@@ -44,6 +44,9 @@ pub struct AgentState {
     /// The LAPS account this agent manages, if any.
     #[serde(default)]
     pub laps: Option<LapsState>,
+    /// The auto-enrolled machine certificate's expiry.
+    #[serde(default)]
+    pub cert_not_after: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

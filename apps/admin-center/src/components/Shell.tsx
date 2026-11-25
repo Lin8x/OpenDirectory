@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, Globe, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
-  KeyRound, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
+  KeyRound, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound,
 } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
@@ -26,6 +26,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
     section: "Endpoints",
     items: [
       { to: "/endpoints", label: "Endpoints", icon: <Monitor className="size-4" /> },
+      { to: "/mobile", label: "Mobile Devices", icon: <Smartphone className="size-4" /> },
       { to: "/enroll", label: "Enrollment", icon: <PlusCircle className="size-4" /> },
       { to: "/scripts", label: "Script Library", icon: <Terminal className="size-4" /> },
       { to: "/patches", label: "Patch Management", icon: <Download className="size-4" /> },
@@ -42,6 +43,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
   {
     section: "Integrations",
     items: [
+      { to: "/domain-controller", label: "Domain Controller", icon: <Server className="size-4" /> },
       { to: "/integrations?tab=windows", label: "Windows Services", icon: <Server className="size-4" /> },
       { to: "/integrations?tab=cloud", label: "Cloud & Alerts", icon: <Plug className="size-4" /> },
     ],
@@ -149,8 +151,8 @@ const QUICK = [
 
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
-  { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
+  { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Mobile Devices", to: "/mobile" }, { label: "Enrollment", to: "/enroll" },
+  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Domain Controller (Samba AD DC)", to: "/domain-controller" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 

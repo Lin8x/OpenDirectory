@@ -179,11 +179,13 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
               </>} />
             } />
             <T n={{ kind: "page", to: "/endpoints" }} depth={1} label="Endpoints" icon={<Monitor className="size-3.5 text-emerald-600" />} />
+            <T n={{ kind: "page", to: "/mobile" }} depth={1} label="Mobile Devices" icon={<Monitor className="size-3.5" />} />
             <T n={{ kind: "page", to: "/patches" }} depth={1} label="Patch Management" icon={<RefreshCw className="size-3.5" />} />
             <T n={{ kind: "page", to: "/scripts" }} depth={1} label="Script Library" icon={<Terminal className="size-3.5" />} />
             <T n={{ kind: "page", to: "/audit" }} depth={1} label="Event Viewer (Audit Log)" icon={<ScrollText className="size-3.5" />} />
             <T n={{ kind: "page", to: "/password-policies" }} depth={1} label="Password Policies" icon={<KeyRound className="size-3.5" />} />
             <T n={{ kind: "page", to: "/recycle-bin" }} depth={1} label="Recycle Bin" icon={<FileText className="size-3.5" />} />
+            <T n={{ kind: "page", to: "/domain-controller" }} depth={1} label="Domain Controller" icon={<Globe className="size-3.5" />} />
             <T n={{ kind: "page", to: "/network-services" }} depth={1} label="DNS, DHCP, CA and RADIUS" icon={<Globe className="size-3.5" />} />
             <T n={{ kind: "page", to: "/topology" }} depth={1} label="Topology Map" icon={<Globe className="size-3.5" />} />
             <T n={{ kind: "page", to: "/lab" }} depth={1} label="Network Lab" icon={<LayoutGrid className="size-3.5" />} />

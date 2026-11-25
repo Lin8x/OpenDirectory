@@ -16,8 +16,10 @@ import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
 import Patches from "./pages/Patches";
 import Backups from "./pages/Backups";
+import Mobile from "./pages/Mobile";
 import NetworkServices from "./pages/NetworkServices";
 import RecycleBin from "./pages/RecycleBin";
+import DomainController from "./pages/DomainController";
 import PasswordPolicies from "./pages/PasswordPolicies";
 import Integrations from "./pages/Integrations";
 import Lab, { LiveTopology } from "./pages/Lab";
@@ -47,6 +49,7 @@ function Gate() {
             <Route path="/groups" element={<Groups />} />
             <Route path="/ous" element={<OrgUnits />} />
             <Route path="/endpoints" element={<Endpoints />} />
+            <Route path="/mobile" element={<Mobile />} />
             <Route path="/endpoints/:id" element={<EndpointDetail />} />
             <Route path="/enroll" element={<Enrollment />} />
             <Route path="/gpos" element={<Policies />} />
@@ -59,6 +62,7 @@ function Gate() {
             <Route path="/password-policies" element={<PasswordPolicies />} />
             <Route path="/backups" element={<Backups />} />
             <Route path="/network-services" element={<NetworkServices />} />
+            <Route path="/domain-controller" element={<DomainController />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/lab" element={<Lab />} />
             <Route path="/topology" element={<LiveTopology />} />

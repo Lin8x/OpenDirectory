@@ -72,6 +72,7 @@ export default function ScriptEditor() {
                     <Field label="Label"><Input value={p.label} placeholder="User to unlock" onChange={(e) => setParam(i, { ...p, label: e.target.value })} /></Field>
                     <Field label="Default"><Input value={p.default} onChange={(e) => setParam(i, { ...p, default: e.target.value })} /></Field>
                     <label className="flex h-9 items-center gap-1.5 text-xs"><input type="checkbox" checked={p.required} onChange={(e) => setParam(i, { ...p, required: e.target.checked })} />Required</label>
+                    <label className="flex h-9 items-center gap-1.5 text-xs"><input type="checkbox" checked={!!p.secret} onChange={(e) => setParam(i, { ...p, secret: e.target.checked })} />Secret</label>
                     <button className="mb-2 text-ink-3 hover:text-bad" onClick={() => setD({ ...d, params: d.params.filter((_, j) => j !== i) })} aria-label="Remove parameter"><X className="size-4" /></button>
                   </div>
                 ))}
@@ -157,7 +158,7 @@ function RunDialog({ script, onClose }: { script: Script; onClose: () => void })
         <Field label="Targets"><TargetPicker value={targets} onChange={setTargets} endpoints={eps.data ?? []} groups={groups.data ?? []} ous={ous.data ?? []} /></Field>
         {script.params.length > 0 && (
           <div className="grid gap-3 sm:grid-cols-2">
-            {script.params.map((p) => <Field key={p.name} label={`${p.label || p.name}${p.required ? " *" : ""}`}><Input value={values[p.name] ?? ""} onChange={(e) => setValues({ ...values, [p.name]: e.target.value })} /></Field>)}
+            {script.params.map((p) => <Field key={p.name} label={`${p.label || p.name}${p.required ? " *" : ""}`}><Input type={p.secret ? "password" : "text"} value={values[p.name] ?? ""} onChange={(e) => setValues({ ...values, [p.name]: e.target.value })} /></Field>)}
           </div>
         )}
         {preview && (

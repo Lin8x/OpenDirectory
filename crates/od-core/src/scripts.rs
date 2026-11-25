@@ -22,6 +22,9 @@ pub struct ScriptParam {
     pub default: String,
     #[serde(default)]
     pub required: bool,
+    /// Hidden in run history and the Admin Center (passwords, tokens).
+    #[serde(default)]
+    pub secret: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,7 +167,16 @@ pub struct ScriptTemplate {
 }
 
 fn param(name: &str, label: &str, default: &str, required: bool) -> ScriptParam {
-    ScriptParam { name: name.into(), label: label.into(), default: default.into(), required }
+    ScriptParam { name: name.into(), label: label.into(), default: default.into(), required, secret: false }
+}
+fn secret(name: &str, label: &str) -> ScriptParam {
+    ScriptParam { name: name.into(), label: label.into(), default: String::new(), required: true, secret: true }
+}
+
+/// Does this environment variable carry a secret? Used to hide values.
+pub fn is_secret_env(name: &str) -> bool {
+    let n = name.to_ascii_uppercase();
+    ["PASSWORD", "SECRET", "TOKEN", "PASSPHRASE"].iter().any(|w| n.contains(w))
 }
 
 /// Common sysadmin tasks for each OS, ready to copy into the library.
@@ -371,6 +383,101 @@ else echo "No supported package manager found"; exit 1; fi
             body: "journalctl --no-pager -q --since \"-${OD_PARAM_HOURS}h\" | grep -Ei 'failed password|authentication failure|invalid user' | tail -n 50 || echo 'None found'",
             params: vec![param("HOURS", "Look back (hours)", "24", true)],
         },
+        // ---------------------------------------------------------- domain join
+        ScriptTemplate {
+            key: "win-domain-join",
+            name: "Join Windows to the domain",
+            category: "Domain",
+            description: "Joins this computer to an Active Directory or Samba domain (Windows Pro, Enterprise or Education). The computer's DNS must point at a domain controller.",
+            os: vec![Windows],
+            shell: Shell::Powershell,
+            body: r#"$pw = ConvertTo-SecureString $env:OD_PARAM_JOIN_PASSWORD -AsPlainText -Force
+$cred = New-Object System.Management.Automation.PSCredential($env:OD_PARAM_JOIN_USER, $pw)
+$args = @{ DomainName = $env:OD_PARAM_DOMAIN; Credential = $cred; Force = $true }
+if ($env:OD_PARAM_OU_PATH) { $args.OUPath = $env:OD_PARAM_OU_PATH }
+Add-Computer @args -ErrorAction Stop
+"Joined $env:OD_PARAM_DOMAIN."
+if ($env:OD_PARAM_RESTART -eq 'yes') { shutdown.exe /r /t 60 /c "Your IT team joined this computer to the domain. Restarting in 1 minute."; "Restarting in 1 minute." } else { "Restart to finish joining." }"#,
+            params: vec![
+                param("DOMAIN", "Domain", "corp.example.com", true),
+                param("JOIN_USER", "Account allowed to join computers", "CORP\\Administrator", true),
+                secret("JOIN_PASSWORD", "Its password"),
+                param("OU_PATH", "OU for the computer (optional)", "", false),
+                param("RESTART", "Restart afterwards (yes/no)", "yes", false),
+            ],
+        },
+        ScriptTemplate {
+            key: "linux-realm-join",
+            name: "Join Linux to the domain (realmd/SSSD)",
+            category: "Domain",
+            description: "Installs realmd and SSSD, joins an Active Directory or Samba domain, and creates home folders at first sign-in.",
+            os: vec![Linux],
+            shell: Shell::Bash,
+            body: r#"set -e
+if command -v apt-get >/dev/null; then export DEBIAN_FRONTEND=noninteractive; apt-get update -qq; apt-get install -yq realmd sssd sssd-tools adcli libnss-sss libpam-sss samba-common-bin oddjob oddjob-mkhomedir packagekit
+elif command -v dnf >/dev/null; then dnf -y install realmd sssd adcli oddjob oddjob-mkhomedir samba-common-tools; fi
+printf '%s' "$OD_PARAM_JOIN_PASSWORD" | realm join --user="$OD_PARAM_JOIN_USER" "$OD_PARAM_DOMAIN"
+command -v pam-auth-update >/dev/null && pam-auth-update --enable mkhomedir || true
+command -v authselect >/dev/null && authselect select sssd with-mkhomedir --force || true
+realm list"#,
+            params: vec![param("DOMAIN", "Domain", "corp.example.com", true), param("JOIN_USER", "Account allowed to join computers", "Administrator", true), secret("JOIN_PASSWORD", "Its password")],
+        },
+        ScriptTemplate {
+            key: "mac-ad-bind",
+            name: "Bind a Mac to the domain",
+            category: "Domain",
+            description: "Binds this Mac to an Active Directory or Samba domain with dsconfigad, so domain accounts can sign in.",
+            os: vec![Macos],
+            shell: Shell::Zsh,
+            body: r#"dsconfigad -add "$OD_PARAM_DOMAIN" -computer "$(scutil --get LocalHostName)" -username "$OD_PARAM_JOIN_USER" -password "$OD_PARAM_JOIN_PASSWORD" -mobile enable -mobileconfirm disable -localhome enable -useuncpath enable -force
+dsconfigad -show"#,
+            params: vec![param("DOMAIN", "Domain", "corp.example.com", true), param("JOIN_USER", "Account allowed to join computers", "Administrator", true), secret("JOIN_PASSWORD", "Its password")],
+        },
+        // ---------------------------------------------------------- printing
+        ScriptTemplate {
+            key: "win-deploy-printer",
+            name: "Deploy a printer",
+            category: "Printing",
+            description: "Connects a shared printer from a print server (run as a sign-in script), or adds a TCP/IP printer by address (run as a startup script).",
+            os: vec![Windows],
+            shell: Shell::Powershell,
+            body: r#"if ($env:OD_PARAM_SHARE) {
+  Add-Printer -ConnectionName $env:OD_PARAM_SHARE -ErrorAction Stop
+  if ($env:OD_PARAM_DEFAULT -eq 'yes') { (New-Object -ComObject WScript.Network).SetDefaultPrinter($env:OD_PARAM_SHARE) }
+  "Connected $env:OD_PARAM_SHARE"
+} else {
+  $port = "IP_$env:OD_PARAM_ADDRESS"
+  if (-not (Get-PrinterPort -Name $port -ErrorAction SilentlyContinue)) { Add-PrinterPort -Name $port -PrinterHostAddress $env:OD_PARAM_ADDRESS }
+  if (-not (Get-Printer -Name $env:OD_PARAM_NAME -ErrorAction SilentlyContinue)) { Add-Printer -Name $env:OD_PARAM_NAME -PortName $port -DriverName $env:OD_PARAM_DRIVER }
+  "Added $env:OD_PARAM_NAME at $env:OD_PARAM_ADDRESS"
+}"#,
+            params: vec![
+                param("SHARE", "Shared printer (\\\\server\\queue), or leave empty", "", false),
+                param("ADDRESS", "Or printer IP address", "", false),
+                param("NAME", "Printer name (IP printers)", "Office Printer", false),
+                param("DRIVER", "Driver (IP printers)", "Microsoft IPP Class Driver", false),
+                param("DEFAULT", "Make it the default (yes/no)", "no", false),
+            ],
+        },
+        ScriptTemplate {
+            key: "unix-deploy-printer",
+            name: "Deploy a printer (CUPS)",
+            category: "Printing",
+            description: "Adds a network printer with IPP Everywhere (driverless) on macOS or Linux.",
+            os: vec![Macos, Linux],
+            shell: Shell::Bash,
+            body: r#"set -e
+NAME=$(printf '%s' "$OD_PARAM_NAME" | tr -c 'A-Za-z0-9_-' '_')
+lpadmin -p "$NAME" -E -v "ipp://$OD_PARAM_ADDRESS/ipp/print" -m everywhere -D "$OD_PARAM_NAME" -L "$OD_PARAM_LOCATION"
+[ "$OD_PARAM_DEFAULT" = "yes" ] && lpadmin -d "$NAME"
+lpstat -p "$NAME""#,
+            params: vec![
+                param("ADDRESS", "Printer IP address or name", "", true),
+                param("NAME", "Printer name", "Office Printer", true),
+                param("LOCATION", "Location", "", false),
+                param("DEFAULT", "Make it the default (yes/no)", "no", false),
+            ],
+        },
         // ---------------------------------------------------------- any OS
         ScriptTemplate {
             key: "any-uptime",
@@ -408,6 +515,16 @@ else echo "No supported package manager found"; exit 1; fi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_params_are_marked_and_detected() {
+        let t = templates().into_iter().find(|t| t.key == "win-domain-join").unwrap();
+        let pw = t.params.iter().find(|p| p.name == "JOIN_PASSWORD").unwrap();
+        assert!(pw.secret);
+        assert!(is_secret_env("OD_PARAM_JOIN_PASSWORD"));
+        assert!(is_secret_env("od_param_api_token"));
+        assert!(!is_secret_env("OD_PARAM_DOMAIN"));
+    }
 
     #[test]
     fn templates_are_well_formed() {

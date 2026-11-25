@@ -9,10 +9,12 @@ pub mod directory;
 mod endpoints;
 pub mod integrations;
 mod lab;
+mod mobile;
 mod netsvc;
 pub mod passwords;
 mod policies;
 pub mod recycle;
+pub mod samba;
 mod scripts;
 pub mod shell;
 
@@ -88,6 +90,14 @@ pub fn router(state: AppState) -> Router {
         .route("/dns", get(netsvc::get_dns))
         .route("/dns/config", put(netsvc::set_dns_config))
         .route("/dns/records", put(netsvc::set_dns_records))
+        .route("/dc", get(samba::status))
+        .route("/dc/provision", post(samba::provision))
+        .route("/dc/sync", post(samba::sync))
+        .route("/dc/info", get(samba::info))
+        .route("/dc/action", post(samba::action))
+        .route("/mobile-devices", get(mobile::list).post(mobile::create))
+        .route("/mobile-devices/{id}", put(mobile::update).delete(mobile::remove))
+        .route("/mobile-profiles/apple", post(mobile::apple_profile))
         .route("/ca", get(ca::get).post(ca::init))
         .route("/ca/issue", post(ca::issue))
         .route("/ca/certificates/{id}", get(ca::download))
@@ -95,6 +105,7 @@ pub fn router(state: AppState) -> Router {
         .route("/ca/root.pem", get(ca::root_pem))
         .route("/ca/crl.pem", get(ca::crl))
         .route("/dhcp", get(netsvc::get_dhcp).put(netsvc::set_dhcp))
+        .route("/ldap", get(netsvc::get_ldap).put(netsvc::set_ldap))
         .route("/radius", get(netsvc::get_radius).put(netsvc::set_radius))
         .route("/lab/designs", get(lab::get).put(lab::set))
         .route("/integrations", get(integrations::list).post(integrations::create))
@@ -109,6 +120,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/jobs/{id}/result", post(agent::job_result))
         .route("/agent/script-runs", post(agent::script_run))
         .route("/agent/laps", post(agent::laps_escrow))
+        .route("/agent/certificate", post(ca::agent_enroll))
         .route("/agent/wait", get(shell::wait))
         .route("/agent/shell/{id}", get(shell::agent_ws));
 

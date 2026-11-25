@@ -52,6 +52,16 @@ od status
 
 The Management Server can host the network roles a Windows Server usually provides: a **DNS server** for the domain (with records for every endpoint), a **DHCP server**, an internal **certificate authority** (with a GPO setting that makes endpoints trust it) and a **RADIUS server** for VPNs and network devices (PAP and MS-CHAPv2). Each is off until you turn it on in **Network Services**.
 
+It also has a read-only **LDAP/LDAPS server** with an AD-style schema for apps and appliances that bind to LDAP, and endpoints can auto-enroll a **machine certificate** from the CA through a GPO setting.
+
+### Domain Controller (experimental)
+
+On a Linux Management Server with Samba installed, **Domain Controller** provisions a Samba Active Directory domain controller and keeps it in sync with OpenDirectory (users, groups and passwords). Windows, macOS and Linux computers can then do a real domain join and sign in with Kerberos; the Script Library has join templates for each. The page shows FSMO roles, sites, replication and trusts. It hasn't been tested on real hardware yet, so try it on a test server first.
+
+### Mobile devices
+
+Track phones and tablets (serial, IMEI, owner, OS) and download Apple configuration profiles for Wi-Fi, passcode rules and your root CA. Over-the-air MDM enrollment isn't supported yet.
+
 ### Docker and web mode
 
 The Management Server can serve the Admin Center to any browser (`--web-ui <folder>`, or a `web` folder next to the binary). The official image does this out of the box:

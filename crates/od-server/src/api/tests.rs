@@ -824,3 +824,82 @@ async fn certificate_authority_issues_verifiable_certs() {
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     assert!(String::from_utf8_lossy(&body).contains("BEGIN X509 CRL"));
 }
+
+#[tokio::test]
+async fn machine_certificate_auto_enrollment() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (_, ep_auth) = enroll(&app, auth, "linux", "web-01", None).await;
+    let key = rcgen::KeyPair::generate().unwrap();
+    let mut p = rcgen::CertificateParams::new(vec!["evil.example.com".to_string()]).unwrap();
+    p.distinguished_name.push(rcgen::DnType::CommonName, "evil.example.com");
+    let csr = p.serialize_request(&key).unwrap().pem().unwrap();
+    call(&app, Method::POST, "/ca", auth, Some(json!({}))).await;
+    let (st, _) = call(&app, Method::POST, "/agent/certificate", Some(&ep_auth), Some(json!({ "csr_pem": csr }))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "needs the GPO setting");
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/policies",
+        auth,
+        Some(json!({"name":"Certs","targets":{"all_endpoints":true},"settings":[{"kind":"certificate_auto_enrollment","renew_days":30}]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, r) = call(&app, Method::POST, "/agent/certificate", Some(&ep_auth), Some(json!({ "csr_pem": csr }))).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    let pem = r["cert_pem"].as_str().unwrap();
+    let parsed = rcgen::CertificateParams::from_ca_cert_pem(pem).unwrap();
+    let subject = format!("{:?} {:?}", parsed.distinguished_name, parsed.subject_alt_names);
+    assert!(subject.contains("web-01"), "{subject}");
+    assert!(!subject.contains("evil"), "names come from the directory, not the CSR");
+    let (_, ca) = call(&app, Method::GET, "/ca", auth, None).await;
+    assert_eq!(ca["issued"][0]["kind"], "machine");
+}
+
+#[tokio::test]
+async fn mobile_inventory_and_apple_profiles() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (st, _) = call(&app, Method::POST, "/mobile-devices", auth, Some(json!([{"name":"Bad","platform":"ios","imei":"123"}]))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "IMEI has 15 digits");
+    let (st, d) = call(
+        &app,
+        Method::POST,
+        "/mobile-devices",
+        auth,
+        Some(json!([{"name":"Dan's iPhone","platform":"ios","serial":"F2LXK0ABCD","imei":"35 391805 123456 7","ip":"10.0.20.77"}])),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{d}");
+    let id = d[0]["id"].as_str().unwrap();
+    let mut dev = d[0].clone();
+    dev["status"] = json!("lost");
+    let (st, _) = call(&app, Method::PUT, &format!("/mobile-devices/{id}"), auth, Some(dev)).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, all) = call(&app, Method::GET, "/mobile-devices", auth, None).await;
+    assert_eq!(all[0]["status"], "lost");
+    assert_eq!(all[0]["imei"], "353918051234567");
+
+    call(&app, Method::POST, "/ca", auth, Some(json!({}))).await;
+    let (st, p) = call(&app, Method::POST, "/mobile-profiles/apple", auth, Some(json!({"name":"Staff phones","passcode":{"min_length":6},"wifi":[{"ssid":"Corp <Wi-Fi>","password":"pw&1"}],"trust_ca":true,"restrictions":{"allow_camera":false}}))).await;
+    assert_eq!(st, StatusCode::OK, "{p}");
+    let xml = p["content"].as_str().unwrap();
+    assert!(xml.contains("com.apple.wifi.managed") && xml.contains("Corp &lt;Wi-Fi&gt;") && xml.contains("pw&amp;1"));
+    assert!(xml.contains("com.apple.security.root") && xml.contains("<key>allowCamera</key><false/>"));
+    assert_eq!(p["file_name"], "Staff-phones.mobileconfig");
+    // Well-formed XML (when xmllint is installed).
+    if let Ok(mut c) = std::process::Command::new("xmllint")
+        .args(["--noout", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        use std::io::Write;
+        c.stdin.take().unwrap().write_all(xml.as_bytes()).unwrap();
+        let out = c.wait_with_output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+}

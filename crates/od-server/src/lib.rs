@@ -222,6 +222,7 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     spawn_housekeeping(state.clone());
     api::integrations::spawn_dispatcher(state.clone());
     netsvc::start_all(&state);
+    api::samba::spawn_sync(state.clone());
     let mut app = router(state);
     if let Some(dir) = config.web_ui.as_ref().filter(|d| d.join("index.html").exists()) {
         tracing::info!("Serving the Admin Center web UI from {}", dir.display());

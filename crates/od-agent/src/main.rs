@@ -2,6 +2,7 @@
 
 mod accounts;
 mod agent;
+mod certs;
 mod inventory;
 mod jobs;
 mod laps;

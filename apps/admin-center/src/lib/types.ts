@@ -66,6 +66,7 @@ export type Setting =
   | { kind: "security_auditing"; enabled: boolean }
   | { kind: "update_deferral"; quality_days: number; feature_days: number }
   | { kind: "local_admin_password"; account: string; length: number; rotate_days: number }
+  | { kind: "certificate_auto_enrollment"; renew_days: number }
   | { kind: "trusted_root_certificate"; name: string; pem: string };
 export type SettingKind = Setting["kind"];
 
@@ -94,7 +95,7 @@ export interface Overview {
 }
 export interface SearchHit { type: "user" | "group" | "endpoint" | "ou" | "policy"; id: Uuid; title: string; subtitle: string }
 
-export interface ScriptParam { name: string; label: string; default: string; required: boolean }
+export interface ScriptParam { name: string; label: string; default: string; required: boolean; secret?: boolean }
 export interface Script {
   id: Uuid; name: string; description: string; category: string; shell: Shell; body: string; os: OsFamily[];
   params: ScriptParam[]; template: string | null; created_by: string; created_at: string; updated_at: string;

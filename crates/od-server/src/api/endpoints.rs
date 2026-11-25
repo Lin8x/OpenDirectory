@@ -64,21 +64,33 @@ pub struct JobsQuery {
     limit: Option<u32>,
 }
 
+/// Hide secret script parameters (passwords, tokens) from API responses.
+pub fn redact(mut j: Job) -> Job {
+    if let JobKind::Script { env, .. } = &mut j.kind {
+        for (k, v) in env.iter_mut() {
+            if od_core::scripts::is_secret_env(k) {
+                *v = "••••••••".into();
+            }
+        }
+    }
+    j
+}
+
 pub async fn list_endpoint_jobs(
     State(s): State<AppState>,
     _admin: Admin,
     Path(id): Path<Uuid>,
     Query(q): Query<JobsQuery>,
 ) -> ApiResult<Json<Vec<Job>>> {
-    Ok(Json(s.db.list_jobs(Some(id), q.limit.unwrap_or(50).min(500))?))
+    Ok(Json(s.db.list_jobs(Some(id), q.limit.unwrap_or(50).min(500))?.into_iter().map(redact).collect()))
 }
 
 pub async fn list_jobs(State(s): State<AppState>, _admin: Admin, Query(q): Query<JobsQuery>) -> ApiResult<Json<Vec<Job>>> {
-    Ok(Json(s.db.list_jobs(None, q.limit.unwrap_or(100).min(1000))?))
+    Ok(Json(s.db.list_jobs(None, q.limit.unwrap_or(100).min(1000))?.into_iter().map(redact).collect()))
 }
 
 pub async fn get_job(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Job>> {
-    Ok(Json(s.db.get_job(id)?.ok_or_else(|| ApiError::not_found("Job"))?))
+    Ok(Json(redact(s.db.get_job(id)?.ok_or_else(|| ApiError::not_found("Job"))?)))
 }
 
 pub async fn create_job(

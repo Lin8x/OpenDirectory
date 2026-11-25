@@ -37,6 +37,8 @@ axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 rcgen = { version = "0.13", features = ["x509-parser"] }
 time = "0.3"
 md-5 = "0.10"
+ldap3_proto = "0.9"
+tokio-util = { version = "0.7", features = ["codec"] }
 md4 = "0.10"
 sha1 = "0.10"
 des = "0.8"
@@ -57,5 +59,6 @@ windows-service = "0.7"
 [dev-dependencies]
 od-client.workspace = true
 md-5 = "0.10"
+ldap3_proto = "0.9"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
