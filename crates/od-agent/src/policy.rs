@@ -120,7 +120,11 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             } else {
                 return Ok(item(s, NonCompliant, "Neither ufw nor firewalld is installed"));
             }
-            if linux_firewall_active().await == Some(true) { item(s, Applied, "Firewall turned on") } else { item(s, Failed, "Firewall did not start") }
+            if linux_firewall_active().await == Some(true) {
+                item(s, Applied, "Firewall turned on")
+            } else {
+                item(s, Failed, "Firewall did not start")
+            }
         }
         Setting::DiskEncryption { required } => match linux_root_encrypted().await {
             Some(true) => item(s, Compliant, "Root filesystem is on LUKS"),
@@ -134,7 +138,13 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             }
             if which("apt-get") {
                 if !which("unattended-upgrade") {
-                    let o = crate::util::run_with("apt-get", &["install", "-y", "unattended-upgrades"], None, std::time::Duration::from_secs(900)).await?;
+                    let o = crate::util::run_with(
+                        "apt-get",
+                        &["install", "-y", "unattended-upgrades"],
+                        None,
+                        std::time::Duration::from_secs(900),
+                    )
+                    .await?;
                     if !o.ok() {
                         return Ok(item(s, Failed, format!("Installing unattended-upgrades: {}", o.message())));
                     }
@@ -149,12 +159,17 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
                 if timer.ok() {
                     return Ok(item(s, Compliant, "dnf-automatic installing updates"));
                 }
-                let o = crate::util::run_with("dnf", &["install", "-y", "dnf-automatic"], None, std::time::Duration::from_secs(900)).await?;
+                let o =
+                    crate::util::run_with("dnf", &["install", "-y", "dnf-automatic"], None, std::time::Duration::from_secs(900)).await?;
                 if !o.ok() {
                     return Ok(item(s, Failed, format!("Installing dnf-automatic: {}", o.message())));
                 }
                 let o = run("systemctl", &["enable", "--now", "dnf-automatic-install.timer"]).await?;
-                if o.ok() { item(s, Applied, "dnf-automatic enabled") } else { item(s, Failed, o.message()) }
+                if o.ok() {
+                    item(s, Applied, "dnf-automatic enabled")
+                } else {
+                    item(s, Failed, o.message())
+                }
             } else {
                 item(s, Unsupported, "Only apt and dnf based distributions are supported")
             }
@@ -173,6 +188,7 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
 async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {
     use std::time::Duration;
     let s = Setting::InstallPackages { packages: pkgs.to_vec() };
+    #[allow(clippy::type_complexity)]
     let (check, install): (fn(&str) -> (String, Vec<String>), (&str, Vec<&str>)) = if which("apt-get") {
         (|p| ("dpkg-query".into(), vec!["-W".into(), "-f=${Status}".into(), p.into()]), ("apt-get", vec!["install", "-y"]))
     } else if which("dnf") {
@@ -216,14 +232,22 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
     Ok(match s {
         Setting::PasswordMinLength { length } => {
             let o = run("pwpolicy", &["-setglobalpolicy", &format!("minChars={length}")]).await?;
-            if o.ok() { item(s, Compliant, format!("pwpolicy minChars={length}")) } else { item(s, Failed, o.message()) }
+            if o.ok() {
+                item(s, Compliant, format!("pwpolicy minChars={length}"))
+            } else {
+                item(s, Failed, o.message())
+            }
         }
         Setting::ScreenLock { minutes } => {
             let secs = (minutes * 60).to_string();
             let a = run("defaults", &["write", "/Library/Preferences/com.apple.screensaver", "idleTime", "-int", &secs]).await?;
             let b = run("defaults", &["write", "/Library/Preferences/com.apple.screensaver", "askForPassword", "-int", "1"]).await?;
             let c = run("defaults", &["write", "/Library/Preferences/com.apple.screensaver", "askForPasswordDelay", "-int", "0"]).await?;
-            if a.ok() && b.ok() && c.ok() { item(s, Compliant, format!("Screen saver after {minutes} min, password required")) } else { item(s, Failed, a.message()) }
+            if a.ok() && b.ok() && c.ok() {
+                item(s, Compliant, format!("Screen saver after {minutes} min, password required"))
+            } else {
+                item(s, Failed, a.message())
+            }
         }
         Setting::Firewall { enabled } => {
             if !enabled {
@@ -234,7 +258,11 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
                 return Ok(item(s, Compliant, "Application Firewall on"));
             }
             let o = run(FW, &["--setglobalstate", "on"]).await?;
-            if o.ok() { item(s, Applied, "Application Firewall turned on") } else { item(s, Failed, o.message()) }
+            if o.ok() {
+                item(s, Applied, "Application Firewall turned on")
+            } else {
+                item(s, Failed, o.message())
+            }
         }
         Setting::DiskEncryption { required } => {
             let o = run("fdesetup", &["status"]).await?;
@@ -252,11 +280,21 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             }
             let p = "/Library/Preferences/com.apple.SoftwareUpdate";
             let mut ok = true;
-            for key in ["AutomaticCheckEnabled", "AutomaticDownload", "CriticalUpdateInstall", "ConfigDataInstall", "AutomaticallyInstallMacOSUpdates"] {
+            for key in [
+                "AutomaticCheckEnabled",
+                "AutomaticDownload",
+                "CriticalUpdateInstall",
+                "ConfigDataInstall",
+                "AutomaticallyInstallMacOSUpdates",
+            ] {
                 ok &= run("defaults", &["write", p, key, "-bool", "true"]).await?.ok();
             }
             ok &= run("defaults", &["write", "/Library/Preferences/com.apple.commerce", "AutoUpdate", "-bool", "true"]).await?.ok();
-            if ok { item(s, Compliant, "Automatic macOS and security updates on") } else { item(s, Failed, "Couldn't write Software Update preferences") }
+            if ok {
+                item(s, Compliant, "Automatic macOS and security updates on")
+            } else {
+                item(s, Failed, "Couldn't write Software Update preferences")
+            }
         }
         Setting::LoginBanner { title, text } => {
             let changed = ensure_file(Path::new("/Library/Security/PolicyBanner.txt"), &format!("{title}\n\n{text}\n"))?;
@@ -289,7 +327,11 @@ async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {
     let mut args = vec!["-u", owner.as_str(), brew, "install"];
     args.extend(missing.iter().copied());
     let o = crate::util::run_with("sudo", &args, None, std::time::Duration::from_secs(1800)).await?;
-    Ok(if o.ok() { item(&s, ComplianceState::Applied, format!("Installed {}", missing.join(", "))) } else { item(&s, ComplianceState::Failed, o.message()) })
+    Ok(if o.ok() {
+        item(&s, ComplianceState::Applied, format!("Installed {}", missing.join(", ")))
+    } else {
+        item(&s, ComplianceState::Failed, o.message())
+    })
 }
 
 // ==================================================================== Windows
@@ -307,7 +349,11 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
         Setting::PasswordMinLength { length } => {
             let o = run("net.exe", &["accounts", &format!("/minpwlen:{}", (*length).min(14))]).await?;
             let note = if *length > 14 { " (Windows local policy caps at 14)" } else { "" };
-            if o.ok() { item(s, Compliant, format!("Minimum password length {}{note}", (*length).min(14))) } else { item(s, Failed, o.message()) }
+            if o.ok() {
+                item(s, Compliant, format!("Minimum password length {}{note}", (*length).min(14)))
+            } else {
+                item(s, Failed, o.message())
+            }
         }
         Setting::ScreenLock { minutes } => {
             if reg_dword(SYSTEM, "InactivityTimeoutSecs", minutes * 60).await? {
@@ -325,13 +371,25 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
                 return Ok(item(s, Compliant, "All firewall profiles on"));
             }
             let o = run("netsh.exe", &["advfirewall", "set", "allprofiles", "state", "on"]).await?;
-            if o.ok() { item(s, Applied, "Firewall turned on for all profiles") } else { item(s, Failed, o.message()) }
+            if o.ok() {
+                item(s, Applied, "Firewall turned on for all profiles")
+            } else {
+                item(s, Failed, o.message())
+            }
         }
         Setting::DiskEncryption { required } => {
-            let o = powershell("try { (Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop).ProtectionStatus } catch { 'Unavailable' }", None).await?;
+            let o = powershell(
+                "try { (Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop).ProtectionStatus } catch { 'Unavailable' }",
+                None,
+            )
+            .await?;
             match o.stdout.trim() {
                 "On" => item(s, Compliant, "BitLocker protection on"),
-                "Unavailable" => item(s, if *required { NonCompliant } else { Compliant }, "BitLocker isn't available on this edition; check Device Encryption in Settings"),
+                "Unavailable" => item(
+                    s,
+                    if *required { NonCompliant } else { Compliant },
+                    "BitLocker isn't available on this edition; check Device Encryption in Settings",
+                ),
                 _ if *required => item(s, NonCompliant, "BitLocker is off"),
                 _ => item(s, Compliant, "BitLocker off (optional)"),
             }
@@ -342,12 +400,20 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             }
             let key = r"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU";
             let ok = reg_dword(key, "NoAutoUpdate", 0).await? && reg_dword(key, "AUOptions", 4).await?;
-            if ok { item(s, Compliant, "Automatic download and install") } else { item(s, Failed, "Couldn't write Windows Update policy") }
+            if ok {
+                item(s, Compliant, "Automatic download and install")
+            } else {
+                item(s, Failed, "Couldn't write Windows Update policy")
+            }
         }
         Setting::LoginBanner { title, text } => {
             let a = run("reg.exe", &["add", SYSTEM, "/v", "legalnoticecaption", "/t", "REG_SZ", "/d", title, "/f"]).await?;
             let b = run("reg.exe", &["add", SYSTEM, "/v", "legalnoticetext", "/t", "REG_SZ", "/d", text, "/f"]).await?;
-            if a.ok() && b.ok() { item(s, Compliant, "Shown before sign-in") } else { item(s, Failed, a.message()) }
+            if a.ok() && b.ok() {
+                item(s, Compliant, "Shown before sign-in")
+            } else {
+                item(s, Failed, a.message())
+            }
         }
         Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } => unreachable!("handled elsewhere"),
     })
@@ -374,7 +440,23 @@ async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {
     }
     let mut failed = Vec::new();
     for p in &missing {
-        let o = crate::util::run_with(&w, &["install", "--id", p, "--exact", "--silent", "--scope", "machine", "--accept-package-agreements", "--accept-source-agreements"], None, std::time::Duration::from_secs(1800)).await?;
+        let o = crate::util::run_with(
+            &w,
+            &[
+                "install",
+                "--id",
+                p,
+                "--exact",
+                "--silent",
+                "--scope",
+                "machine",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+            ],
+            None,
+            std::time::Duration::from_secs(1800),
+        )
+        .await?;
         if !o.ok() {
             failed.push(format!("{p}: {}", o.message()));
         }

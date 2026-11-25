@@ -133,10 +133,8 @@ impl Db {
         Ok(self.lock().query_row("SELECT value FROM meta WHERE key = ?", [key], |r| r.get(0)).optional()?)
     }
     pub fn meta_set(&self, key: &str, value: &str) -> Result<()> {
-        self.lock().execute(
-            "INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            [key, value],
-        )?;
+        self.lock()
+            .execute("INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [key, value])?;
         Ok(())
     }
 
@@ -156,14 +154,27 @@ impl Db {
              ORDER BY id DESC LIMIT ?2",
         )?;
         let rows = st.query_map(params![like, limit], |r| {
-            Ok(AuditEntry { id: r.get(0)?, at: req_ts(r.get(1)?), actor: r.get(2)?, action: r.get(3)?, target: r.get(4)?, details: r.get(5)? })
+            Ok(AuditEntry {
+                id: r.get(0)?,
+                at: req_ts(r.get(1)?),
+                actor: r.get(2)?,
+                action: r.get(3)?,
+                target: r.get(4)?,
+                details: r.get(5)?,
+            })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     // ---------- OUs ----------
     fn map_ou(r: &Row) -> rusqlite::Result<OrgUnit> {
-        Ok(OrgUnit { id: uid(r.get(0)?), name: r.get(1)?, description: r.get(2)?, parent_id: opt_uid(r.get(3)?), created_at: req_ts(r.get(4)?) })
+        Ok(OrgUnit {
+            id: uid(r.get(0)?),
+            name: r.get(1)?,
+            description: r.get(2)?,
+            parent_id: opt_uid(r.get(3)?),
+            created_at: req_ts(r.get(4)?),
+        })
     }
     pub fn list_ous(&self) -> Result<Vec<OrgUnit>> {
         let c = self.lock();
@@ -253,9 +264,7 @@ impl Db {
 
     pub fn get_user(&self, id: Uuid) -> Result<Option<User>> {
         let c = self.lock();
-        let u = c
-            .query_row(&format!("SELECT {} FROM users WHERE id = ?", Self::USER_COLS), [id.to_string()], Self::map_user)
-            .optional()?;
+        let u = c.query_row(&format!("SELECT {} FROM users WHERE id = ?", Self::USER_COLS), [id.to_string()], Self::map_user).optional()?;
         Ok(match u {
             Some(u) => {
                 let mut v = [u];
@@ -300,8 +309,16 @@ impl Db {
             "UPDATE users SET username = ?, display_name = ?, email = ?, title = ?, department = ?, ou_id = ?, enabled = ?, role = ?,
              must_change_password = ? WHERE id = ?",
             params![
-                u.username, u.display_name, u.email, u.title, u.department, opt_str(u.ou_id), u.enabled as i64,
-                role_str(u.role), u.must_change_password as i64, u.id.to_string()
+                u.username,
+                u.display_name,
+                u.email,
+                u.title,
+                u.department,
+                opt_str(u.ou_id),
+                u.enabled as i64,
+                role_str(u.role),
+                u.must_change_password as i64,
+                u.id.to_string()
             ],
         )?;
         Ok(())
@@ -330,7 +347,14 @@ impl Db {
 
     // ---------- groups ----------
     fn map_group(r: &Row) -> rusqlite::Result<Group> {
-        Ok(Group { id: uid(r.get(0)?), name: r.get(1)?, description: r.get(2)?, ou_id: opt_uid(r.get(3)?), member_ids: vec![], created_at: req_ts(r.get(4)?) })
+        Ok(Group {
+            id: uid(r.get(0)?),
+            name: r.get(1)?,
+            description: r.get(2)?,
+            ou_id: opt_uid(r.get(3)?),
+            member_ids: vec![],
+            created_at: req_ts(r.get(4)?),
+        })
     }
     fn fill_members(c: &Connection, groups: &mut [Group]) -> rusqlite::Result<()> {
         let mut st = c.prepare("SELECT user_id FROM group_members WHERE group_id = ?")?;
@@ -439,7 +463,12 @@ impl Db {
         Ok(self
             .lock()
             .query_row("SELECT id, secret_hash, ou_id, want_inventory FROM endpoints WHERE id = ?", [id.to_string()], |r| {
-                Ok(EndpointAuth { id: uid(r.get(0)?), secret_hash: r.get(1)?, ou_id: opt_uid(r.get(2)?), want_inventory: r.get::<_, i64>(3)? != 0 })
+                Ok(EndpointAuth {
+                    id: uid(r.get(0)?),
+                    secret_hash: r.get(1)?,
+                    ou_id: opt_uid(r.get(2)?),
+                    want_inventory: r.get::<_, i64>(3)? != 0,
+                })
             })
             .optional()?)
     }
@@ -566,7 +595,9 @@ impl Db {
     pub fn list_jobs(&self, endpoint: Option<Uuid>, limit: u32) -> Result<Vec<Job>> {
         let c = self.lock();
         let (sql, dev) = match endpoint {
-            Some(d) => (format!("SELECT {} FROM jobs WHERE endpoint_id = ?1 ORDER BY created_at DESC LIMIT ?2", Self::JOB_COLS), d.to_string()),
+            Some(d) => {
+                (format!("SELECT {} FROM jobs WHERE endpoint_id = ?1 ORDER BY created_at DESC LIMIT ?2", Self::JOB_COLS), d.to_string())
+            }
             None => (format!("SELECT {} FROM jobs WHERE ?1 = ?1 ORDER BY created_at DESC LIMIT ?2", Self::JOB_COLS), String::new()),
         };
         let mut st = c.prepare(&sql)?;

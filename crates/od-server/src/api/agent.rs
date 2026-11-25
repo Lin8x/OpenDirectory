@@ -21,10 +21,8 @@ pub async fn enroll(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(req): Json<EnrollRequest>,
 ) -> ApiResult<Json<EnrollResponse>> {
-    let token = s
-        .db
-        .consume_token(req.token.trim())?
-        .ok_or_else(|| ApiError::forbidden("That enrollment token is invalid, expired or used up"))?;
+    let token =
+        s.db.consume_token(req.token.trim())?.ok_or_else(|| ApiError::forbidden("That enrollment token is invalid, expired or used up"))?;
     let secret = random_token(32);
     let hostname = if req.inventory.hostname.trim().is_empty() { "unnamed-endpoint".to_string() } else { req.inventory.hostname.clone() };
     let e = Endpoint {

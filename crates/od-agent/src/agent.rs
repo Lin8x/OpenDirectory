@@ -111,7 +111,9 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
             Err(e) => {
                 let msg = e.to_string();
                 if msg.contains("401") || msg.contains("Sign in required") {
-                    tracing::error!("The Management Server no longer recognizes this endpoint (it may have been retired). Re-enroll to continue.");
+                    tracing::error!(
+                        "The Management Server no longer recognizes this endpoint (it may have been retired). Re-enroll to continue."
+                    );
                 } else {
                     tracing::warn!("check-in failed: {msg}");
                 }

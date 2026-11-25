@@ -13,7 +13,9 @@ pub const DISPLAY_NAME: &str = "OpenDirectory Endpoint Agent";
 
 pub fn install_path() -> PathBuf {
     if cfg!(windows) {
-        PathBuf::from(std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into())).join("OpenDirectory").join("opendirectory-agent.exe")
+        PathBuf::from(std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into()))
+            .join("OpenDirectory")
+            .join("opendirectory-agent.exe")
     } else {
         PathBuf::from("/usr/local/bin/opendirectory-agent")
     }
@@ -91,7 +93,9 @@ pub fn uninstall() -> Result<()> {
 
 #[cfg(target_os = "linux")]
 pub fn status() -> String {
-    sh("systemctl", &["is-active", "opendirectory-agent.service"]).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_else(|_| "unknown".into())
+    sh("systemctl", &["is-active", "opendirectory-agent.service"])
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".into())
 }
 
 // ---------------------------------------------------------------- macOS
@@ -143,7 +147,11 @@ pub fn status() -> String {
     match sh("launchctl", &["print", "system/dev.opendirectory.agent"]) {
         Ok(o) if o.status.success() => {
             let s = String::from_utf8_lossy(&o.stdout);
-            if s.contains("state = running") { "active".into() } else { "loaded".into() }
+            if s.contains("state = running") {
+                "active".into()
+            } else {
+                "loaded".into()
+            }
         }
         _ => "not installed".into(),
     }

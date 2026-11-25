@@ -1,8 +1,8 @@
 //! Request authentication for administrators and Endpoint Agents.
 
 use axum::extract::FromRequestParts;
-use axum::http::request::Parts;
 use axum::http::header::AUTHORIZATION;
+use axum::http::request::Parts;
 use od_core::{Role, User};
 use uuid::Uuid;
 

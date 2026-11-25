@@ -46,10 +46,20 @@ impl ServerCertVerifier for PinnedVerifier {
             )))
         }
     }
-    fn verify_tls12_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
         rustls::crypto::verify_tls12_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
     }
-    fn verify_tls13_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
         rustls::crypto::verify_tls13_signature(message, cert, dss, &self.provider.signature_verification_algorithms)
     }
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
@@ -76,11 +86,17 @@ pub struct Client {
 impl Client {
     pub fn new(target: &ServerTarget) -> Result<Client> {
         let base = target.url.trim_end_matches('/').to_string();
-        let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(60)).connect_timeout(Duration::from_secs(10)).user_agent(concat!("OpenDirectory/", env!("CARGO_PKG_VERSION")));
+        let mut builder = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(10))
+            .user_agent(concat!("OpenDirectory/", env!("CARGO_PKG_VERSION")));
         if base.starts_with("https://") {
-            let fp = target.fingerprint.as_deref().map(normalize_fingerprint).filter(|f| f.len() == 64).ok_or_else(|| {
-                anyhow!("An https:// server needs its TLS fingerprint (shown in the Admin Center under Settings)")
-            })?;
+            let fp = target
+                .fingerprint
+                .as_deref()
+                .map(normalize_fingerprint)
+                .filter(|f| f.len() == 64)
+                .ok_or_else(|| anyhow!("An https:// server needs its TLS fingerprint (shown in the Admin Center under Settings)"))?;
             let provider = Arc::new(rustls::crypto::ring::default_provider());
             let cfg = rustls::ClientConfig::builder_with_provider(provider.clone())
                 .with_safe_default_protocol_versions()
@@ -124,11 +140,13 @@ impl Client {
         let resp = req.send().await.map_err(|e| ApiError { status: None, message: describe_reqwest(&e) })?;
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        let json: serde_json::Value = if text.is_empty() { serde_json::Value::Null } else { serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)) };
+        let json: serde_json::Value =
+            if text.is_empty() { serde_json::Value::Null } else { serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)) };
         if status.is_success() {
             Ok(json)
         } else {
-            let message = json.get("error").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_else(|| format!("Server returned {status}"));
+            let message =
+                json.get("error").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_else(|| format!("Server returned {status}"));
             Err(ApiError { status: Some(status), message })
         }
     }

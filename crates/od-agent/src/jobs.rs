@@ -16,7 +16,9 @@ pub async fn run(job: &AgentJob) -> JobResult {
             Ok(r) => r,
             Err(e) => JobResult { exit_code: None, output: format!("Couldn't run the script: {e:#}"), success: false },
         },
-        JobKind::RefreshInventory => JobResult { exit_code: Some(0), output: "Inventory will be sent with the next check-in".into(), success: true },
+        JobKind::RefreshInventory => {
+            JobResult { exit_code: Some(0), output: "Inventory will be sent with the next check-in".into(), success: true }
+        }
         JobKind::RestartAgent => JobResult { exit_code: Some(0), output: "Agent restarting".into(), success: true },
     }
 }
@@ -24,7 +26,11 @@ pub async fn run(job: &AgentJob) -> JobResult {
 fn plan(shell: &Shell) -> (&'static str, &'static str, Vec<&'static str>) {
     // (extension, program, args before the script path)
     match shell {
-        Shell::Powershell => ("ps1", if cfg!(windows) { "powershell.exe" } else { "pwsh" }, vec!["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]),
+        Shell::Powershell => (
+            "ps1",
+            if cfg!(windows) { "powershell.exe" } else { "pwsh" },
+            vec!["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"],
+        ),
         Shell::Cmd => ("cmd", "cmd.exe", vec!["/D", "/C"]),
         Shell::Bash => ("sh", "bash", vec![]),
         Shell::Zsh => ("sh", "zsh", vec![]),
@@ -77,7 +83,10 @@ mod tests {
     async fn runs_shell_script_and_captures_output() {
         let dir = std::env::temp_dir().join(format!("od-agent-test-{}", Uuid::new_v4()));
         std::env::set_var("OD_AGENT_DIR", &dir);
-        let job = AgentJob { id: Uuid::new_v4(), kind: JobKind::Script { shell: Shell::Default, script: "echo hello\necho oops >&2\nexit 3".into() } };
+        let job = AgentJob {
+            id: Uuid::new_v4(),
+            kind: JobKind::Script { shell: Shell::Default, script: "echo hello\necho oops >&2\nexit 3".into() },
+        };
         let r = run(&job).await;
         assert_eq!(r.exit_code, Some(3));
         assert!(!r.success);

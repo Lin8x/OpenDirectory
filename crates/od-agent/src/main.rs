@@ -14,7 +14,11 @@ use clap::{Parser, Subcommand};
 use tokio::sync::watch;
 
 #[derive(Parser)]
-#[command(name = "opendirectory-agent", version, about = "OpenDirectory Endpoint Agent: keeps this computer managed by your Management Server")]
+#[command(
+    name = "opendirectory-agent",
+    version,
+    about = "OpenDirectory Endpoint Agent: keeps this computer managed by your Management Server"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -104,12 +108,8 @@ async fn async_main(cmd: Command) -> Result<()> {
                 let _ = tokio::signal::ctrl_c().await;
                 let _ = tx.send(true);
             });
-            loop {
-                let restart = agent::run(rx.clone()).await?;
-                if !restart {
-                    break;
-                }
-                // Under systemd/launchd, exiting lets the supervisor restart us cleanly.
+            if agent::run(rx).await? {
+                // Restart requested: exiting non-zero lets systemd/launchd/SCM start us again cleanly.
                 std::process::exit(1);
             }
         }

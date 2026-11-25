@@ -29,7 +29,12 @@ pub struct EndpointInput {
     notes: Option<String>,
 }
 
-pub async fn update(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<EndpointInput>) -> ApiResult<Json<Endpoint>> {
+pub async fn update(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<EndpointInput>,
+) -> ApiResult<Json<Endpoint>> {
     let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
     let ou = match inp.ou_id {
         Some(o) => {
@@ -59,7 +64,12 @@ pub struct JobsQuery {
     limit: Option<u32>,
 }
 
-pub async fn list_endpoint_jobs(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>, Query(q): Query<JobsQuery>) -> ApiResult<Json<Vec<Job>>> {
+pub async fn list_endpoint_jobs(
+    State(s): State<AppState>,
+    _admin: Admin,
+    Path(id): Path<Uuid>,
+    Query(q): Query<JobsQuery>,
+) -> ApiResult<Json<Vec<Job>>> {
     Ok(Json(s.db.list_jobs(Some(id), q.limit.unwrap_or(50).min(500))?))
 }
 
@@ -71,7 +81,12 @@ pub async fn get_job(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uu
     Ok(Json(s.db.get_job(id)?.ok_or_else(|| ApiError::not_found("Job"))?))
 }
 
-pub async fn create_job(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(kind): Json<JobKind>) -> ApiResult<(StatusCode, Json<Job>)> {
+pub async fn create_job(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(kind): Json<JobKind>,
+) -> ApiResult<(StatusCode, Json<Job>)> {
     let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
     if let JobKind::Script { script, .. } = &kind {
         if script.trim().is_empty() {
@@ -125,7 +140,11 @@ pub async fn list_tokens(State(s): State<AppState>, _admin: Admin) -> ApiResult<
     Ok(Json(s.db.list_tokens()?))
 }
 
-pub async fn create_token(State(s): State<AppState>, admin: Admin, Json(inp): Json<TokenInput>) -> ApiResult<(StatusCode, Json<EnrollmentToken>)> {
+pub async fn create_token(
+    State(s): State<AppState>,
+    admin: Admin,
+    Json(inp): Json<TokenInput>,
+) -> ApiResult<(StatusCode, Json<EnrollmentToken>)> {
     if let Some(o) = inp.ou_id {
         s.db.get_ou(o)?.ok_or_else(|| ApiError::bad_request("That OU does not exist"))?;
     }

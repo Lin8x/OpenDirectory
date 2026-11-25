@@ -29,7 +29,11 @@ pub async fn collect() -> Inventory {
         let mount = d.mount_point().to_string_lossy().to_string();
         let fs = d.file_system().to_string_lossy().to_string();
         // Skip pseudo and duplicate filesystems (snaps, overlays, bind mounts).
-        if d.total_space() == 0 || ["squashfs", "overlay", "tmpfs", "devtmpfs"].contains(&fs.as_str()) || mount.starts_with("/snap") || mount.starts_with("/System/Volumes/") && mount != "/System/Volumes/Data" {
+        if d.total_space() == 0
+            || ["squashfs", "overlay", "tmpfs", "devtmpfs"].contains(&fs.as_str())
+            || mount.starts_with("/snap")
+            || mount.starts_with("/System/Volumes/") && mount != "/System/Volumes/Data"
+        {
             continue;
         }
         if !seen.insert((d.name().to_owned(), d.total_space())) {

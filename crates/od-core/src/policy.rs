@@ -59,16 +59,32 @@ impl Setting {
             Setting::PasswordMinLength { length } => format!("Passwords at least {length} characters"),
             Setting::ScreenLock { minutes } => format!("Lock screen after {minutes} min idle"),
             Setting::Firewall { enabled } => {
-                if *enabled { "Firewall on".into() } else { "Firewall not enforced".into() }
+                if *enabled {
+                    "Firewall on".into()
+                } else {
+                    "Firewall not enforced".into()
+                }
             }
             Setting::DiskEncryption { required } => {
-                if *required { "Disk encryption required".into() } else { "Disk encryption optional".into() }
+                if *required {
+                    "Disk encryption required".into()
+                } else {
+                    "Disk encryption optional".into()
+                }
             }
             Setting::AutomaticUpdates { enabled } => {
-                if *enabled { "Automatic updates on".into() } else { "Automatic updates not enforced".into() }
+                if *enabled {
+                    "Automatic updates on".into()
+                } else {
+                    "Automatic updates not enforced".into()
+                }
             }
             Setting::LocalAccounts { admin, .. } => {
-                if *admin { "Sign-in accounts for a group (as admins)".into() } else { "Sign-in accounts for a group".into() }
+                if *admin {
+                    "Sign-in accounts for a group (as admins)".into()
+                } else {
+                    "Sign-in accounts for a group".into()
+                }
             }
             Setting::LoginBanner { title, .. } => format!("Login notice: {title}"),
             Setting::InstallPackages { packages } => format!("Install {}", packages.join(", ")),
@@ -287,7 +303,11 @@ pub fn policy_applies(policy: &Policy, endpoint_ou: Option<Uuid>, ou_parent: &Ha
 
 /// Resultant Set of Policy: merge every policy that applies to an endpoint.
 /// Lower `priority` wins; accumulating settings (accounts, packages) add up.
-pub fn effective_settings(policies: &[Policy], endpoint_ou: Option<Uuid>, ou_parent: &HashMap<Uuid, Option<Uuid>>) -> Vec<EffectiveSetting> {
+pub fn effective_settings(
+    policies: &[Policy],
+    endpoint_ou: Option<Uuid>,
+    ou_parent: &HashMap<Uuid, Option<Uuid>>,
+) -> Vec<EffectiveSetting> {
     let mut applicable: Vec<&Policy> = policies.iter().filter(|p| policy_applies(p, endpoint_ou, ou_parent)).collect();
     applicable.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
 
@@ -350,7 +370,8 @@ mod tests {
         tree.insert(parent, None);
         tree.insert(child, Some(parent));
         tree.insert(other, None);
-        let p = pol("Parent link", 1, PolicyTargets { all_endpoints: false, ou_ids: vec![parent] }, vec![Setting::Firewall { enabled: true }]);
+        let p =
+            pol("Parent link", 1, PolicyTargets { all_endpoints: false, ou_ids: vec![parent] }, vec![Setting::Firewall { enabled: true }]);
         assert!(policy_applies(&p, Some(child), &tree));
         assert!(policy_applies(&p, Some(parent), &tree));
         assert!(!policy_applies(&p, Some(other), &tree));

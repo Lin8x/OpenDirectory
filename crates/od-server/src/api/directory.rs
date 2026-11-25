@@ -70,7 +70,11 @@ fn validate_domain(d: &str) -> ApiResult<String> {
         && d.len() <= 253
         && d.split('.').count() >= 2
         && d.split('.').all(|l| {
-            !l.is_empty() && l.len() <= 63 && !l.starts_with('-') && !l.ends_with('-') && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            !l.is_empty()
+                && l.len() <= 63
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+                && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
         });
     if !ok {
         return Err(ApiError::bad_request("Enter a DNS domain name such as corp.example.com"));
@@ -109,11 +113,10 @@ pub async fn setup(State(s): State<AppState>, Json(req): Json<SetupRequest>) -> 
         admin_ou = Some(mk_ou("IT", "IT administrators")?);
         let _ = staff;
 
-        for (name, desc) in [
-            ("Domain Admins", "Full control of the directory and every endpoint"),
-            ("Domain Users", "Every user account"),
-        ] {
-            let g = Group { id: Uuid::new_v4(), name: name.into(), description: desc.into(), ou_id: None, member_ids: vec![], created_at: now };
+        for (name, desc) in [("Domain Admins", "Full control of the directory and every endpoint"), ("Domain Users", "Every user account")]
+        {
+            let g =
+                Group { id: Uuid::new_v4(), name: name.into(), description: desc.into(), ou_id: None, member_ids: vec![], created_at: now };
             s.db.insert_group(&g)?;
             admin_groups.push(g.id);
         }
@@ -379,13 +382,19 @@ pub async fn create_ou(State(s): State<AppState>, admin: Admin, Json(inp): Json<
     let name = required("Name", inp.name.as_deref().unwrap_or(""))?;
     let parent = inp.parent_id.flatten();
     check_parent(&s, None, parent)?;
-    let ou = OrgUnit { id: Uuid::new_v4(), name, description: inp.description.unwrap_or_default(), parent_id: parent, created_at: Utc::now() };
+    let ou =
+        OrgUnit { id: Uuid::new_v4(), name, description: inp.description.unwrap_or_default(), parent_id: parent, created_at: Utc::now() };
     s.db.insert_ou(&ou)?;
     s.db.audit(admin.name(), "ou.create", &ou.name, "");
     Ok((StatusCode::CREATED, Json(ou)))
 }
 
-pub async fn update_ou(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<OuInput>) -> ApiResult<Json<OrgUnit>> {
+pub async fn update_ou(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<OuInput>,
+) -> ApiResult<Json<OrgUnit>> {
     let mut ou = s.db.get_ou(id)?.ok_or_else(|| ApiError::not_found("OU"))?;
     if let Some(n) = inp.name {
         ou.name = required("Name", &n)?;
@@ -492,7 +501,12 @@ pub async fn create_user(State(s): State<AppState>, admin: Admin, Json(inp): Jso
     Ok((StatusCode::CREATED, Json(s.db.get_user(user.id)?.expect("just inserted"))))
 }
 
-pub async fn update_user(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<UserInput>) -> ApiResult<Json<User>> {
+pub async fn update_user(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<UserInput>,
+) -> ApiResult<Json<User>> {
     let mut u = s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?;
     let was_admin = u.role == Role::Admin && u.enabled;
     let mut changes = vec![];
@@ -566,7 +580,12 @@ pub struct PasswordInput {
     must_change_password: bool,
 }
 
-pub async fn reset_password(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<PasswordInput>) -> ApiResult<StatusCode> {
+pub async fn reset_password(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<PasswordInput>,
+) -> ApiResult<StatusCode> {
     let mut u = s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?;
     validate_password(&inp.password)?;
     s.db.set_user_password(id, &hash_password(&inp.password)?, &s.sealer.seal(inp.password.as_bytes())?)?;
@@ -584,7 +603,12 @@ pub struct IdList {
     ids: Vec<Uuid>,
 }
 
-pub async fn set_user_groups(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<IdList>) -> ApiResult<Json<User>> {
+pub async fn set_user_groups(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<IdList>,
+) -> ApiResult<Json<User>> {
     let u = s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?;
     s.db.set_user_groups(id, &inp.ids)?;
     s.db.audit(admin.name(), "user.groups", &u.username, &format!("{} groups", inp.ids.len()));
@@ -614,7 +638,14 @@ pub async fn create_group(State(s): State<AppState>, admin: Admin, Json(inp): Js
     let name = required("Name", inp.name.as_deref().unwrap_or(""))?;
     let ou_id = inp.ou_id.flatten();
     check_ou(&s, ou_id)?;
-    let g = Group { id: Uuid::new_v4(), name, description: inp.description.unwrap_or_default(), ou_id, member_ids: vec![], created_at: Utc::now() };
+    let g = Group {
+        id: Uuid::new_v4(),
+        name,
+        description: inp.description.unwrap_or_default(),
+        ou_id,
+        member_ids: vec![],
+        created_at: Utc::now(),
+    };
     s.db.insert_group(&g)?;
     if let Some(m) = inp.member_ids {
         s.db.set_group_members(g.id, &m)?;
@@ -623,7 +654,12 @@ pub async fn create_group(State(s): State<AppState>, admin: Admin, Json(inp): Js
     Ok((StatusCode::CREATED, Json(s.db.get_group(g.id)?.expect("just inserted"))))
 }
 
-pub async fn update_group(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<GroupInput>) -> ApiResult<Json<Group>> {
+pub async fn update_group(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<GroupInput>,
+) -> ApiResult<Json<Group>> {
     let mut g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
     if let Some(n) = inp.name {
         g.name = required("Name", &n)?;
@@ -643,7 +679,12 @@ pub async fn update_group(State(s): State<AppState>, admin: Admin, Path(id): Pat
     Ok(Json(s.db.get_group(id)?.expect("exists")))
 }
 
-pub async fn set_group_members(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<IdList>) -> ApiResult<Json<Group>> {
+pub async fn set_group_members(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<IdList>,
+) -> ApiResult<Json<Group>> {
     let g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
     s.db.set_group_members(id, &inp.ids)?;
     s.db.audit(admin.name(), "group.members", &g.name, &format!("{} members", inp.ids.len()));
@@ -655,13 +696,12 @@ pub async fn delete_group(State(s): State<AppState>, admin: Admin, Path(id): Pat
     if g.name == "Domain Admins" || g.name == "Domain Users" {
         return Err(ApiError::conflict("Built-in groups can't be deleted"));
     }
-    let used_by: Vec<String> = s
-        .db
-        .list_policies()?
-        .into_iter()
-        .filter(|p| p.settings.iter().any(|st| matches!(st, Setting::LocalAccounts { group_id, .. } if *group_id == id)))
-        .map(|p| p.name)
-        .collect();
+    let used_by: Vec<String> =
+        s.db.list_policies()?
+            .into_iter()
+            .filter(|p| p.settings.iter().any(|st| matches!(st, Setting::LocalAccounts { group_id, .. } if *group_id == id)))
+            .map(|p| p.name)
+            .collect();
     if !used_by.is_empty() {
         return Err(ApiError::conflict(format!("Used for sign-in accounts by: {}", used_by.join(", "))));
     }

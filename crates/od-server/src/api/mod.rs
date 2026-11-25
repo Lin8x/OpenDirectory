@@ -53,10 +53,7 @@ pub fn router(state: AppState) -> Router {
     if std::env::var("OD_DEV_CORS").as_deref() == Ok("1") {
         router = router.layer(tower_http::cors::CorsLayer::permissive());
     }
-    router
-        .layer(TraceLayer::new_for_http())
-        .layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024))
-        .with_state(state)
+    router.layer(TraceLayer::new_for_http()).layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024)).with_state(state)
 }
 
 /// Trim and require a non-empty string field.
@@ -70,9 +67,28 @@ pub(crate) fn required(field: &str, value: &str) -> ApiResult<String> {
 
 /// Account names that must never be created or managed on endpoints.
 const RESERVED_ACCOUNTS: &[&str] = &[
-    "root", "administrator", "admin", "guest", "system", "daemon", "bin", "sys", "nobody", "defaultaccount",
-    "wdagutilityaccount", "localsystem", "networkservice", "localservice", "trustedinstaller", "krbtgt", "wheel",
-    "sudo", "staff", "everyone", "users", "administrators",
+    "root",
+    "administrator",
+    "admin",
+    "guest",
+    "system",
+    "daemon",
+    "bin",
+    "sys",
+    "nobody",
+    "defaultaccount",
+    "wdagutilityaccount",
+    "localsystem",
+    "networkservice",
+    "localservice",
+    "trustedinstaller",
+    "krbtgt",
+    "wheel",
+    "sudo",
+    "staff",
+    "everyone",
+    "users",
+    "administrators",
 ];
 
 /// sAMAccountName-style usernames that are also valid local account names on

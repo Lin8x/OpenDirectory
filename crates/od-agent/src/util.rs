@@ -24,13 +24,21 @@ impl Output {
         let s = if self.stderr.trim().is_empty() { &self.stdout } else { &self.stderr };
         let s = s.trim();
         let line = s.lines().last().unwrap_or("").trim();
-        if line.len() > 300 { line[..line.char_indices().nth(300).map(|c| c.0).unwrap_or(line.len())].to_string() } else { line.to_string() }
+        if line.len() > 300 {
+            line[..line.char_indices().nth(300).map(|c| c.0).unwrap_or(line.len())].to_string()
+        } else {
+            line.to_string()
+        }
     }
 }
 
 pub async fn run_with(program: &str, args: &[&str], stdin: Option<&str>, timeout: Duration) -> Result<Output> {
     let mut cmd = Command::new(program);
-    cmd.args(args).stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    cmd.args(args)
+        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     #[cfg(windows)]
     {
         // CREATE_NO_WINDOW: don't flash console windows on the user's desktop.

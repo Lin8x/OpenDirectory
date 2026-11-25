@@ -105,7 +105,12 @@ pub async fn create(State(s): State<AppState>, admin: Admin, Json(inp): Json<Pol
     Ok((StatusCode::CREATED, Json(p)))
 }
 
-pub async fn update(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<PolicyInput>) -> ApiResult<Json<Policy>> {
+pub async fn update(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<PolicyInput>,
+) -> ApiResult<Json<Policy>> {
     let existing = s.db.get_policy(id)?.ok_or_else(|| ApiError::not_found("Policy"))?;
     let name = required("Name", &inp.name)?;
     validate(&s, &inp)?;

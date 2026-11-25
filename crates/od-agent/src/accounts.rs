@@ -18,8 +18,24 @@ use od_core::{ComplianceItem, ComplianceState};
 use crate::state::ManagedAccountState;
 
 const RESERVED: &[&str] = &[
-    "root", "administrator", "admin", "guest", "system", "daemon", "bin", "sys", "nobody", "defaultaccount",
-    "wdagutilityaccount", "krbtgt", "wheel", "sudo", "staff", "everyone", "users", "administrators",
+    "root",
+    "administrator",
+    "admin",
+    "guest",
+    "system",
+    "daemon",
+    "bin",
+    "sys",
+    "nobody",
+    "defaultaccount",
+    "wdagutilityaccount",
+    "krbtgt",
+    "wheel",
+    "sudo",
+    "staff",
+    "everyone",
+    "users",
+    "administrators",
 ];
 
 pub fn safe_name(name: &str) -> bool {
@@ -102,7 +118,12 @@ async fn apply_one(acct: &ManagedAccount, current: Option<ManagedAccountState>) 
                 bail!("waiting for the password from the Management Server");
             };
             os::create(name, &acct.display_name, pw).await?;
-            ManagedAccountState { password_version: acct.password_version, admin: false, enabled: true, display_name: acct.display_name.clone() }
+            ManagedAccountState {
+                password_version: acct.password_version,
+                admin: false,
+                enabled: true,
+                display_name: acct.display_name.clone(),
+            }
         }
     };
     if !os::exists(name).await? {
@@ -186,7 +207,11 @@ mod os {
         } else {
             let o = run("gpasswd", &["--delete", name, g]).await?;
             // Not being a member already is fine.
-            if o.ok() || o.stderr.contains("not a member") { Ok(()) } else { check(o, "gpasswd -d") }
+            if o.ok() || o.stderr.contains("not a member") {
+                Ok(())
+            } else {
+                check(o, "gpasswd -d")
+            }
         }
     }
 }
@@ -203,7 +228,13 @@ mod os {
 
     async fn next_uid() -> Result<u32> {
         let o = run("dscl", &[".", "-list", "/Users", "UniqueID"]).await?;
-        let max = o.stdout.lines().filter_map(|l| l.split_whitespace().nth(1)?.parse::<u32>().ok()).filter(|u| *u >= 501 && *u < 60000).max().unwrap_or(500);
+        let max = o
+            .stdout
+            .lines()
+            .filter_map(|l| l.split_whitespace().nth(1)?.parse::<u32>().ok())
+            .filter(|u| *u >= 501 && *u < 60000)
+            .max()
+            .unwrap_or(500);
         Ok(max + 1)
     }
 
@@ -237,7 +268,11 @@ mod os {
     pub async fn set_admin(name: &str, admin: bool) -> Result<()> {
         let op = if admin { "-a" } else { "-d" };
         let o = run("dseditgroup", &["-o", "edit", op, name, "-t", "user", "admin"]).await?;
-        if o.ok() || !admin { Ok(()) } else { check(o, "dseditgroup") }
+        if o.ok() || !admin {
+            Ok(())
+        } else {
+            check(o, "dseditgroup")
+        }
     }
 }
 
@@ -252,7 +287,11 @@ mod os {
     const USERS: &str = "S-1-5-32-545";
 
     pub async fn exists(name: &str) -> Result<bool> {
-        let o = powershell("$n=[Console]::In.ReadLine(); if (Get-LocalUser -Name $n -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }", Some(&format!("{name}\n"))).await?;
+        let o = powershell(
+            "$n=[Console]::In.ReadLine(); if (Get-LocalUser -Name $n -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }",
+            Some(&format!("{name}\n")),
+        )
+        .await?;
         Ok(o.stdout.trim() == "yes")
     }
     pub async fn create(name: &str, display: &str, password: &str) -> Result<()> {
@@ -268,7 +307,8 @@ mod os {
         check(powershell(script, Some(&format!("{name}\n{password}\n"))).await?, "Set-LocalUser")
     }
     pub async fn set_display_name(name: &str, display: &str) -> Result<()> {
-        let script = "$ErrorActionPreference='Stop'; $n=[Console]::In.ReadLine(); $f=[Console]::In.ReadLine(); Set-LocalUser -Name $n -FullName $f";
+        let script =
+            "$ErrorActionPreference='Stop'; $n=[Console]::In.ReadLine(); $f=[Console]::In.ReadLine(); Set-LocalUser -Name $n -FullName $f";
         check(powershell(script, Some(&format!("{name}\n{display}\n"))).await?, "Set-LocalUser")
     }
     pub async fn set_enabled(name: &str, enabled: bool) -> Result<()> {
@@ -289,12 +329,24 @@ mod os {
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 mod os {
     use anyhow::{bail, Result};
-    pub async fn exists(_: &str) -> Result<bool> { bail!("unsupported OS") }
-    pub async fn create(_: &str, _: &str, _: &str) -> Result<()> { bail!("unsupported OS") }
-    pub async fn set_password(_: &str, _: &str) -> Result<()> { bail!("unsupported OS") }
-    pub async fn set_display_name(_: &str, _: &str) -> Result<()> { bail!("unsupported OS") }
-    pub async fn set_enabled(_: &str, _: bool) -> Result<()> { bail!("unsupported OS") }
-    pub async fn set_admin(_: &str, _: bool) -> Result<()> { bail!("unsupported OS") }
+    pub async fn exists(_: &str) -> Result<bool> {
+        bail!("unsupported OS")
+    }
+    pub async fn create(_: &str, _: &str, _: &str) -> Result<()> {
+        bail!("unsupported OS")
+    }
+    pub async fn set_password(_: &str, _: &str) -> Result<()> {
+        bail!("unsupported OS")
+    }
+    pub async fn set_display_name(_: &str, _: &str) -> Result<()> {
+        bail!("unsupported OS")
+    }
+    pub async fn set_enabled(_: &str, _: bool) -> Result<()> {
+        bail!("unsupported OS")
+    }
+    pub async fn set_admin(_: &str, _: bool) -> Result<()> {
+        bail!("unsupported OS")
+    }
 }
 
 #[cfg(test)]

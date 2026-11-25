@@ -79,7 +79,9 @@ enum Cmd {
 #[derive(Subcommand)]
 enum UserCmd {
     List,
-    Show { username: String },
+    Show {
+        username: String,
+    },
     Add {
         username: String,
         #[arg(long)]
@@ -93,11 +95,19 @@ enum UserCmd {
         #[arg(long = "group")]
         groups: Vec<String>,
     },
-    Disable { username: String },
-    Enable { username: String },
+    Disable {
+        username: String,
+    },
+    Enable {
+        username: String,
+    },
     /// Reset a password (synced to endpoints on their next check-in).
-    Passwd { username: String },
-    Delete { username: String },
+    Passwd {
+        username: String,
+    },
+    Delete {
+        username: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -108,15 +118,25 @@ enum GroupCmd {
         #[arg(long, default_value = "")]
         description: String,
     },
-    Members { group: String },
-    AddMember { group: String, username: String },
-    RemoveMember { group: String, username: String },
+    Members {
+        group: String,
+    },
+    AddMember {
+        group: String,
+        username: String,
+    },
+    RemoveMember {
+        group: String,
+        username: String,
+    },
 }
 
 #[derive(Subcommand)]
 enum EndpointCmd {
     List,
-    Show { hostname: String },
+    Show {
+        hostname: String,
+    },
     /// Run a script and wait for the output.
     Run {
         hostname: String,
@@ -130,9 +150,13 @@ enum EndpointCmd {
         no_wait: bool,
     },
     /// Show the Resultant Set of Policy for an endpoint.
-    Rsop { hostname: String },
+    Rsop {
+        hostname: String,
+    },
     /// Revoke an endpoint's agent credentials and remove it.
-    Retire { hostname: String },
+    Retire {
+        hostname: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -146,7 +170,9 @@ fn config_path() -> PathBuf {
     let base = if cfg!(windows) {
         std::env::var("APPDATA").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
     } else {
-        std::env::var("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".config"))
+        std::env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".config"))
     };
     base.join("opendirectory").join("cli.json")
 }
@@ -302,7 +328,12 @@ async fn run(cli: Cli) -> Result<()> {
             }
             fn walk(ous: &[OrgUnit], parent: Option<uuid::Uuid>, depth: usize) {
                 for o in ous.iter().filter(|o| o.parent_id == parent) {
-                    println!("{}{}{}", "  ".repeat(depth), o.name, if o.description.is_empty() { String::new() } else { format!("  ({})", o.description) });
+                    println!(
+                        "{}{}{}",
+                        "  ".repeat(depth),
+                        o.name,
+                        if o.description.is_empty() { String::new() } else { format!("  ({})", o.description) }
+                    );
                     walk(ous, Some(o.id), depth + 1);
                 }
             }
@@ -315,7 +346,8 @@ async fn run(cli: Cli) -> Result<()> {
                 Some(name) => Some(find_ou(&c, &name).await?.id),
                 None => None,
             };
-            let t: EnrollmentToken = c.post("/enrollment-tokens", &json!({ "description": description, "ou_id": ou_id, "max_uses": uses })).await?;
+            let t: EnrollmentToken =
+                c.post("/enrollment-tokens", &json!({ "description": description, "ou_id": ou_id, "max_uses": uses })).await?;
             let me: Value = c.get("/auth/me").await?;
             let url = me["server"]["endpoint_url"].as_str().unwrap_or("").to_string();
             let fp = me["server"]["tls_fingerprint"].as_str().map(|f| format!(" --fingerprint {f}")).unwrap_or_default();
@@ -346,7 +378,11 @@ async fn run(cli: Cli) -> Result<()> {
                                     p.priority.to_string(),
                                     p.name.clone(),
                                     if p.enabled { "yes".into() } else { "no".into() },
-                                    if p.targets.all_endpoints { "All endpoints".into() } else { format!("{} OU(s)", p.targets.ou_ids.len()) },
+                                    if p.targets.all_endpoints {
+                                        "All endpoints".into()
+                                    } else {
+                                        format!("{} OU(s)", p.targets.ou_ids.len())
+                                    },
                                     p.settings.len().to_string(),
                                 ]
                             })
@@ -381,7 +417,17 @@ async fn run(cli: Cli) -> Result<()> {
             }
             table(
                 &["when", "actor", "action", "target", "details"],
-                a.iter().map(|e| vec![e.at.format("%Y-%m-%d %H:%M:%S").to_string(), e.actor.clone(), e.action.clone(), e.target.clone(), e.details.clone()]).collect(),
+                a.iter()
+                    .map(|e| {
+                        vec![
+                            e.at.format("%Y-%m-%d %H:%M:%S").to_string(),
+                            e.actor.clone(),
+                            e.action.clone(),
+                            e.target.clone(),
+                            e.details.clone(),
+                        ]
+                    })
+                    .collect(),
             );
         }
         Cmd::Explain { term } => match term {
@@ -505,7 +551,10 @@ async fn group(cmd: GroupCmd, json_out: bool) -> Result<()> {
             if json_out {
                 return print_json(&gs);
             }
-            table(&["name", "members", "description"], gs.iter().map(|g| vec![g.name.clone(), g.member_ids.len().to_string(), g.description.clone()]).collect());
+            table(
+                &["name", "members", "description"],
+                gs.iter().map(|g| vec![g.name.clone(), g.member_ids.len().to_string(), g.description.clone()]).collect(),
+            );
         }
         GroupCmd::Add { name, description } => {
             let g: Group = c.post("/groups", &json!({ "name": name, "description": description })).await?;
@@ -589,7 +638,8 @@ async fn endpoint(cmd: EndpointCmd, json_out: bool) -> Result<()> {
         }
         EndpointCmd::Run { hostname, shell, script, no_wait } => {
             let e = find_endpoint(&c, &hostname).await?;
-            let job: Job = c.post(&format!("/endpoints/{}/jobs", e.id), &json!({ "type": "script", "shell": shell, "script": script })).await?;
+            let job: Job =
+                c.post(&format!("/endpoints/{}/jobs", e.id), &json!({ "type": "script", "shell": shell, "script": script })).await?;
             if no_wait {
                 println!("Queued job {}", job.id);
                 return Ok(());

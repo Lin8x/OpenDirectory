@@ -96,7 +96,9 @@ async fn users_groups_and_guards() {
     let (st, v) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"root"}))).await;
     assert_eq!(st, StatusCode::BAD_REQUEST, "{v}");
 
-    let (st, alice) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"Alice","display_name":"Alice Smith","password":"password123"}))).await;
+    let (st, alice) =
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"Alice","display_name":"Alice Smith","password":"password123"})))
+            .await;
     assert_eq!(st, StatusCode::CREATED, "{alice}");
     assert_eq!(alice["username"], "alice");
     assert_eq!(alice["group_ids"].as_array().unwrap().len(), 1, "auto-added to Domain Users");
@@ -130,7 +132,8 @@ async fn ou_cycles_and_nonempty_deletes_are_rejected() {
     let auth = Some(tok.as_str());
     let (_, a) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"A"}))).await;
     let (_, b) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"B","parent_id":a["id"]}))).await;
-    let (st, _) = call(&app, Method::PATCH, &format!("/ous/{}", a["id"].as_str().unwrap()), auth, Some(json!({"parent_id": b["id"]}))).await;
+    let (st, _) =
+        call(&app, Method::PATCH, &format!("/ous/{}", a["id"].as_str().unwrap()), auth, Some(json!({"parent_id": b["id"]}))).await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
     let (st, _) = call(&app, Method::DELETE, &format!("/ous/{}", a["id"].as_str().unwrap()), auth, None).await;
     assert_eq!(st, StatusCode::CONFLICT);
@@ -161,17 +164,30 @@ async fn endpoint_enrollment_checkin_accounts_and_jobs() {
     let code = t["token"].as_str().unwrap();
 
     let inv = json!({"hostname":"LAPTOP-01","os_name":"Windows 11 Home","os_version":"23H2","os_edition":"Core","kernel_version":"","arch":"x86_64","manufacturer":"","model":"","serial_number":"SN123","cpu_model":"","cpu_cores":8,"memory_bytes":0,"uptime_secs":0,"disks":[],"interfaces":[],"logged_in_users":[],"disk_encrypted":null,"firewall_enabled":true});
-    let (st, enr) = call(&app, Method::POST, "/agent/enroll", None, Some(json!({"token":code,"os":"windows","agent_version":"0.1.0","inventory":inv}))).await;
+    let (st, enr) =
+        call(&app, Method::POST, "/agent/enroll", None, Some(json!({"token":code,"os":"windows","agent_version":"0.1.0","inventory":inv})))
+            .await;
     assert_eq!(st, StatusCode::OK, "{enr}");
     // Single-use token is now spent.
-    let (st, _) = call(&app, Method::POST, "/agent/enroll", None, Some(json!({"token":code,"os":"windows","agent_version":"0.1.0","inventory":inv}))).await;
+    let (st, _) =
+        call(&app, Method::POST, "/agent/enroll", None, Some(json!({"token":code,"os":"windows","agent_version":"0.1.0","inventory":inv})))
+            .await;
     assert_eq!(st, StatusCode::FORBIDDEN);
 
     let ep_auth = format!("Endpoint {}.{}", enr["endpoint_id"].as_str().unwrap(), enr["endpoint_secret"].as_str().unwrap());
-    let (st, _) = call(&app, Method::POST, "/agent/checkin", Some(&format!("Endpoint {}.wrong", enr["endpoint_id"].as_str().unwrap())), Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[]}))).await;
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/agent/checkin",
+        Some(&format!("Endpoint {}.wrong", enr["endpoint_id"].as_str().unwrap())),
+        Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[]})),
+    )
+    .await;
     assert_eq!(st, StatusCode::UNAUTHORIZED);
 
-    let (st, ci) = call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[]}))).await;
+    let (st, ci) =
+        call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[]})))
+            .await;
     assert_eq!(st, StatusCode::OK, "{ci}");
     let accounts = ci["accounts"].as_array().unwrap();
     assert_eq!(accounts.len(), 1);
@@ -182,17 +198,45 @@ async fn endpoint_enrollment_checkin_accounts_and_jobs() {
 
     // Once applied, the password isn't sent again.
     let ver = accounts[0]["password_version"].as_i64().unwrap();
-    let (_, ci) = call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[],"account_versions":{"bob":ver}}))).await;
+    let (_, ci) = call(
+        &app,
+        Method::POST,
+        "/agent/checkin",
+        Some(&ep_auth),
+        Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[],"account_versions":{"bob":ver}})),
+    )
+    .await;
     assert!(ci["accounts"][0]["password"].is_null());
 
     // Queue a script, the agent picks it up and reports back.
     let eid = enr["endpoint_id"].as_str().unwrap();
-    let (st, job) = call(&app, Method::POST, &format!("/endpoints/{eid}/jobs"), auth, Some(json!({"type":"script","shell":"powershell","script":"Get-Date"}))).await;
+    let (st, job) = call(
+        &app,
+        Method::POST,
+        &format!("/endpoints/{eid}/jobs"),
+        auth,
+        Some(json!({"type":"script","shell":"powershell","script":"Get-Date"})),
+    )
+    .await;
     assert_eq!(st, StatusCode::CREATED, "{job}");
-    let (_, ci) = call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[],"account_versions":{"bob":ver}}))).await;
+    let (_, ci) = call(
+        &app,
+        Method::POST,
+        "/agent/checkin",
+        Some(&ep_auth),
+        Some(json!({"agent_version":"0.1.0","inventory":null,"compliance":[],"account_versions":{"bob":ver}})),
+    )
+    .await;
     assert_eq!(ci["jobs"].as_array().unwrap().len(), 1);
     let jid = job["id"].as_str().unwrap();
-    let (st, _) = call(&app, Method::POST, &format!("/agent/jobs/{jid}/result"), Some(&ep_auth), Some(json!({"exit_code":0,"output":"Tuesday","success":true}))).await;
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        &format!("/agent/jobs/{jid}/result"),
+        Some(&ep_auth),
+        Some(json!({"exit_code":0,"output":"Tuesday","success":true})),
+    )
+    .await;
     assert_eq!(st, StatusCode::OK);
     let (_, j) = call(&app, Method::GET, &format!("/jobs/{jid}"), auth, None).await;
     assert_eq!(j["status"], "succeeded");
