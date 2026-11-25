@@ -44,14 +44,21 @@
 - Certificate authority: root CA, issue or sign CSRs, revoke, CRL; Trusted root certificate GPO setting.
 - RADIUS server: PAP and MS-CHAPv2 for VPNs and network devices, per-client group restriction. EAP (WPA2/3-Enterprise) is not yet supported.
 
+## Done (v0.7)
+
+- Mobile devices (basic MDM): inventory of phones and tablets by serial, IMEI, owner and OS, and downloadable Apple configuration profiles (Wi-Fi, passcode, root CA). No over-the-air Apple MDM or Android Enterprise enrollment yet.
+- LDAP server: read-only LDAP and LDAPS with an AD-style schema (users, groups, OUs, computers) for apps, NAS boxes and printers.
+- Domain Controller role (experimental, Linux): provisions a Samba AD DC and syncs users, groups and passwords into it, so Windows, macOS and Linux can do a real domain join with Kerberos. Shows FSMO roles, sites and subnets, replication and trusts, with transfer, seize, site and replicate actions. Multi-DC and trusts are run through Samba and are only lightly wrapped.
+- Domain join, printer deployment templates; secret script parameters hidden from job history.
+- Machine certificate auto-enrollment GPO setting. Windows gets the key and certificate as files; importing into the Windows certificate store is still to do.
+- DFS: guidance only (use Windows DFS or Samba). Print: deployment scripts only, no print server.
+
 ## Next
 
-1. **Real-hardware validation** on Windows 10/11 Home and Pro and on macOS 14+. Ship signed installers (MSI, pkg, deb/rpm).
-2. **Revert removed settings.** When a setting leaves a GPO, return the endpoint to its previous value instead of leaving it as last applied.
-3. **Live remote session.** Interactive shell first, then remote desktop (screen streaming through the server, with user consent prompts).
-4. **Mobile device tracking (basic MDM).** Inventory for iPhone and Android by serial number, IMEI, owner and IP. Later, real enrollment through Apple MDM (needs an APNs certificate) and Android Enterprise.
-5. **Software deployment and patch reporting.** Package catalog, per-endpoint installed software list.
-6. **Domain Controller role.** LDAP and Kerberos endpoints so AD-aware apps and Windows Pro machines can authenticate against OpenDirectory, plus sync from and to an existing Active Directory or Samba domain.
-7. **Delegated administration.** Roles narrower than Domain Admin (help desk, read-only), scoped to OUs.
-8. **Agent self-update** from GitHub Releases, staged by OU.
-9. **High availability.** Server replication and backup/restore from the Admin Center.
+1. **Real-hardware validation** on Windows 10/11 and macOS 14+, and of the Domain Controller role on a clean Ubuntu or Debian server. Ship signed installers.
+2. **Revert removed settings.** When a setting leaves a GPO, return the endpoint to its previous value.
+3. **Windows certificate store import** for auto-enrolled certificates, and EAP-TLS in the RADIUS server.
+4. **Over-the-air MDM.** Apple MDM (needs an APNs certificate) and Android Enterprise.
+5. **Delegated administration.** Roles narrower than Domain Admin (help desk, read-only), scoped to OUs.
+6. **Agent self-update** from GitHub Releases, staged by OU.
+7. **High availability.** Management Server replication.
