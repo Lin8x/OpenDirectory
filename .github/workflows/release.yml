@@ -1,0 +1,121 @@
+name: Release
+
+# Push a tag like v0.2.0 (`cargo x release minor` does this) to build installers
+# for every OS and publish them as a GitHub Release. When the updater signing
+# secrets are set, the release also carries signed update bundles and the
+# latest.json manifest the Admin Center checks for in-app updates.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  admin-center:
+    name: Admin Center (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64, args: "" }
+          - { os: macos-latest, name: macos-universal, args: "--target universal-apple-darwin" }
+          - { os: ubuntu-22.04, name: linux-x64, args: "" }
+    runs-on: ${{ matrix.os }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin-center/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - working-directory: apps/admin-center
+        run: npm ci
+      - name: Decide whether to sign updates
+        id: updater
+        shell: bash
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "args=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set, so this release has no in-app update bundle. Run 'cargo x updater-secrets'."
+          fi
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/admin-center
+          tagName: ${{ github.ref_name }}
+          releaseName: OpenDirectory ${{ github.ref_name }}
+          releaseBody: |
+            Install the **Admin Center** for your OS from the files below (`.msi`/`-setup.exe` for Windows, `.dmg` for macOS, `.deb`/`.rpm`/`.AppImage` for Linux).
+            The **Endpoint Agent**, **Management Server** and **od CLI** binaries are attached as `opendirectory-agent-*`, `opendirectory-server-*` and `od-*`.
+
+            Installers are not code-signed yet: Windows SmartScreen will ask you to confirm ("More info" → "Run anyway"), and on macOS right-click the app and choose Open the first time.
+            Existing installs offer this update automatically when the Admin Center opens.
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for what changed.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }} ${{ steps.updater.outputs.args }}
+
+  binaries:
+    name: Agent, server and CLI (${{ matrix.name }})
+    needs: admin-center
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows-x64, ext: ".exe" }
+          - { os: macos-latest, name: macos-arm64, ext: "" }
+          - { os: macos-latest, name: macos-x64, ext: "", target: x86_64-apple-darwin }
+          - { os: ubuntu-22.04, name: linux-x64, ext: "" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+      - name: Build
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release -p od-agent -p od-server -p od-cli --target ${{ matrix.target }}
+            dir=target/${{ matrix.target }}/release
+          else
+            cargo build --release -p od-agent -p od-server -p od-cli
+            dir=target/release
+          fi
+          mkdir -p out
+          for b in opendirectory-agent opendirectory-server od; do
+            cp "$dir/$b${{ matrix.ext }}" "out/$b-${{ matrix.name }}${{ matrix.ext }}"
+          done
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" out/* --clobber --repo "${{ github.repository }}"

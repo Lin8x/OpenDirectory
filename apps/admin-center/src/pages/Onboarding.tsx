@@ -1,0 +1,252 @@
+import { useState, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, Building2, Check, KeyRound, Laptop, Network, Server, ShieldCheck, WifiOff } from "lucide-react";
+import { ApiError, desktop, isDesktop, post } from "../lib/api";
+import { useSession } from "../lib/session";
+import { Button, Callout, Field, Input, Switch, cx } from "../components/ui";
+
+function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  return (
+    <div className="relative grid min-h-full place-items-center overflow-hidden px-6 py-10">
+      <div className="pointer-events-none absolute -left-40 -top-40 size-[520px] rounded-full bg-accent/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-48 -right-40 size-[560px] rounded-full bg-[#7c4dff]/10 blur-3xl" />
+      <div className={cx("anim-pop relative w-full", wide ? "max-w-3xl" : "max-w-md")}>
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <img src="/logo.svg" alt="" className="size-10" />
+          <div className="leading-tight"><div className="text-lg font-semibold">OpenDirectory</div><div className="text-xs text-ink-3">Admin Center</div></div>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- connection (desktop)
+export function ConnectPage() {
+  const { setConnection } = useSession();
+  const [mode, setMode] = useState<"pick" | "remote">("pick");
+  const [url, setUrl] = useState("https://");
+  const [fp, setFp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const host = async () => {
+    setBusy(true); setErr(null);
+    try { setConnection(await desktop.hostLocally(8443)); } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  };
+  const connect = async () => {
+    setBusy(true); setErr(null);
+    try { setConnection(await desktop.connectRemote(url.trim(), fp.trim())); } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  };
+
+  if (mode === "remote") {
+    return (
+      <Frame>
+        <div className="rounded-2xl border border-line bg-panel p-7 shadow-xl">
+          <h1 className="text-xl font-semibold">Connect to a Management Server</h1>
+          <p className="mt-1 text-sm text-ink-2">Find both values in the Admin Center on the server, under Server &amp; connection.</p>
+          <div className="mt-5 space-y-4">
+            <Field label="Server address" hint="For example https://10.0.0.4:8443 or https://dc01.corp.example.com:8443"><Input value={url} onChange={(e) => setUrl(e.target.value)} autoFocus /></Field>
+            <Field label="TLS fingerprint" term="fingerprint" hint="Starts with sha256: and proves you're talking to your own server."><Input value={fp} onChange={(e) => setFp(e.target.value)} placeholder="sha256:…" className="font-mono text-xs" /></Field>
+            {err && <Callout tone="warn">{err}</Callout>}
+            <div className="flex justify-between pt-2">
+              <Button variant="ghost" icon={<ArrowLeft className="size-4" />} onClick={() => setMode("pick")}>Back</Button>
+              <Button variant="primary" loading={busy} onClick={connect} disabled={!url.startsWith("http")}>Connect</Button>
+            </div>
+          </div>
+        </div>
+      </Frame>
+    );
+  }
+
+  return (
+    <Frame wide>
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome to OpenDirectory</h1>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-ink-2">Directory, Group Policy and endpoint management for Windows, macOS and Linux. Everything runs on your own network, with no internet or cloud account required.</p>
+      </div>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+        <Choice icon={<Server className="size-5" />} title="Host the directory on this computer" onClick={host} busy={busy}
+          body="This computer becomes your Management Server. Endpoints on your network connect to it. Choose this for your first or only server." badge="Recommended" />
+        <Choice icon={<Network className="size-5" />} title="Connect to an existing server" onClick={() => setMode("remote")}
+          body="Manage a Management Server running on another computer, for example from your own workstation." />
+      </div>
+      {err && <div className="mt-4"><Callout tone="warn">{err}</Callout></div>}
+    </Frame>
+  );
+}
+
+function Choice({ icon, title, body, onClick, badge, busy }: { icon: ReactNode; title: string; body: string; onClick: () => void; badge?: string; busy?: boolean }) {
+  return (
+    <button onClick={onClick} disabled={busy} className="group rounded-2xl border border-line bg-panel p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-accent hover:shadow-lg disabled:opacity-60">
+      <div className="flex items-center justify-between">
+        <div className="grid size-10 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</div>
+        {badge && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">{badge}</span>}
+      </div>
+      <h3 className="mt-4 font-semibold">{title}</h3>
+      <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{body}</p>
+      <div className="mt-4 flex items-center gap-1 text-sm font-medium text-accent">{busy ? "Starting…" : "Continue"}<ArrowRight className="size-4 transition group-hover:translate-x-0.5" /></div>
+    </button>
+  );
+}
+
+export function UnreachablePage() {
+  const { error, refresh, connection, setConnection } = useSession();
+  return (
+    <Frame>
+      <div className="rounded-2xl border border-line bg-panel p-7 text-center shadow-xl">
+        <div className="mx-auto grid size-12 place-items-center rounded-xl bg-warn-soft text-warn"><WifiOff className="size-6" /></div>
+        <h1 className="mt-4 text-lg font-semibold">Can't reach the Management Server</h1>
+        <p className="mt-1 text-sm text-ink-2">{connection?.url ?? "The server"} isn't answering.</p>
+        {error && <p className="selectable mt-3 rounded-md bg-panel-2 px-3 py-2 text-left font-mono text-xs text-ink-2">{error}</p>}
+        <div className="mt-5 flex justify-center gap-2">
+          {isDesktop && <Button onClick={async () => setConnection(await desktop.disconnect())}>Change server</Button>}
+          <Button variant="primary" onClick={() => void refresh()}>Try again</Button>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+// -------------------------------------------------------------- first-run setup
+const STEPS = ["Organization", "Domain Admin", "Defaults"] as const;
+
+export function SetupWizard() {
+  const { signIn } = useSession();
+  const [step, setStep] = useState(0);
+  const [org, setOrg] = useState("");
+  const [domain, setDomain] = useState("");
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [userTouched, setUserTouched] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [defaults, setDefaults] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const suggestDomain = (o: string) => {
+    const slug = o.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20);
+    return slug ? `corp.${slug}.local` : "";
+  };
+  const domainOk = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/i.test(domain.trim());
+  const userOk = /^[a-z][a-z0-9._-]{0,19}$/i.test(username.trim());
+  const canNext = [org.trim() && domainOk, name.trim() && userOk && pw.length >= 8 && pw === pw2, true][step];
+
+  const finish = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await post<{ token: string }>("/setup", { organization: org, domain, admin_username: username, admin_display_name: name, admin_password: pw, create_defaults: defaults });
+      await signIn(r.token);
+    } catch (e) { setErr((e as ApiError).message); setBusy(false); }
+  };
+
+  return (
+    <Frame wide>
+      <div className="grid overflow-hidden rounded-2xl border border-line bg-panel shadow-xl md:grid-cols-[230px_1fr]">
+        <div className="border-b border-line bg-panel-2 p-6 md:border-b-0 md:border-r">
+          <div className="text-xs font-semibold uppercase tracking-wider text-ink-3">Set up your domain</div>
+          <ol className="mt-4 space-y-3">
+            {STEPS.map((s, i) => (
+              <li key={s} className="flex items-center gap-2.5 text-sm">
+                <span className={cx("grid size-6 place-items-center rounded-full text-xs font-semibold", i < step ? "bg-good text-white" : i === step ? "bg-accent text-accent-ink" : "bg-line text-ink-3")}>{i < step ? <Check className="size-3.5" /> : i + 1}</span>
+                <span className={i === step ? "font-medium" : "text-ink-2"}>{s}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-8 text-xs leading-relaxed text-ink-3">You can change everything here later. Nothing leaves this network.</p>
+        </div>
+        <div className="p-7">
+          {step === 0 && (
+            <div className="space-y-4">
+              <Header icon={<Building2 className="size-5" />} title="Name your organization" body="The domain is the name of your directory, like an Active Directory domain. Use a name you own or one ending in .local." />
+              <Field label="Organization name"><Input value={org} autoFocus placeholder="Contoso Ltd" onChange={(e) => { setOrg(e.target.value); if (!domain || domain === suggestDomain(org)) setDomain(suggestDomain(e.target.value)); }} /></Field>
+              <Field label="Domain name" term="domain" hint={domain && !domainOk ? "Use a DNS-style name such as corp.contoso.com" : "Users can sign in as DOMAIN\\username or username@domain."}>
+                <Input value={domain} placeholder="corp.contoso.com" onChange={(e) => setDomain(e.target.value.toLowerCase())} />
+              </Field>
+            </div>
+          )}
+          {step === 1 && (
+            <div className="space-y-4">
+              <Header icon={<KeyRound className="size-5" />} title="Create the first Domain Admin" body="This account signs in to the Admin Center and has full control. You can add more admins later." />
+              <Field label="Full name"><Input value={name} autoFocus placeholder="Dana Scott" onChange={(e) => { setName(e.target.value); if (!userTouched) setUsername((e.target.value.trim().split(/\s+/)[0] ?? "").toLowerCase().replace(/[^a-z0-9._-]/g, "")); }} /></Field>
+              <Field label="Username" hint={username && !userOk ? "1 to 20 characters: letters, numbers, dot, dash or underscore, starting with a letter" : `Signs in as ${domain.split(".")[0]?.toUpperCase() || "DOMAIN"}\\${username || "username"}`}>
+                <Input value={username} onChange={(e) => { setUserTouched(true); setUsername(e.target.value.toLowerCase()); }} />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Password" hint="At least 8 characters"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+                <Field label="Confirm password" hint={pw2 && pw !== pw2 ? "Passwords don't match" : undefined}><Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
+              </div>
+            </div>
+          )}
+          {step === 2 && (
+            <div className="space-y-4">
+              <Header icon={<ShieldCheck className="size-5" />} title="Start with sensible defaults" body="Recommended for most organizations. It creates a familiar structure you can rename or delete." />
+              <div className="rounded-xl border border-line p-4">
+                <Switch checked={defaults} onChange={setDefaults} label={<span className="font-medium">Create default OUs, groups and a baseline GPO</span>} />
+                {defaults && (
+                  <ul className="mt-3 space-y-1.5 pl-11 text-sm text-ink-2">
+                    <li><b className="text-ink">OUs:</b> Staff, Workstations, Servers, IT</li>
+                    <li><b className="text-ink">Security groups:</b> Domain Admins, Domain Users</li>
+                    <li><b className="text-ink">Default Endpoint Policy:</b> firewall on, screen lock after 15 minutes, disk encryption check, automatic updates</li>
+                  </ul>
+                )}
+              </div>
+              <Callout tone="info" title="What happens next">You'll land on the Overview with a short checklist: add users, enroll your first computer and create a policy.</Callout>
+              {err && <Callout tone="warn">{err}</Callout>}
+            </div>
+          )}
+          <div className="mt-7 flex justify-between">
+            <Button variant="ghost" icon={<ArrowLeft className="size-4" />} onClick={() => setStep((s) => s - 1)} disabled={step === 0}>Back</Button>
+            {step < 2
+              ? <Button variant="primary" onClick={() => setStep((s) => s + 1)} disabled={!canNext}>Continue<ArrowRight className="size-4" /></Button>
+              : <Button variant="primary" loading={busy} onClick={finish}>Create domain</Button>}
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+function Header({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
+  return (
+    <div className="mb-2 flex gap-3">
+      <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</div>
+      <div><h2 className="text-lg font-semibold">{title}</h2><p className="mt-0.5 text-sm text-ink-2">{body}</p></div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------- sign in
+export function LoginPage() {
+  const { signIn, setup, connection, setConnection } = useSession();
+  const [u, setU] = useState("");
+  const [p, setP] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      const r = await post<{ token: string }>("/auth/login", { username: u, password: p });
+      await signIn(r.token);
+    } catch (e) { setErr((e as Error).message); setBusy(false); }
+  };
+  return (
+    <Frame>
+      <form onSubmit={submit} className="rounded-2xl border border-line bg-panel p-7 shadow-xl">
+        <h1 className="text-xl font-semibold">Sign in</h1>
+        <p className="mt-1 text-sm text-ink-2">{setup?.organization ?? "Your organization"} · <span className="text-ink-3">{setup?.domain}</span></p>
+        <div className="mt-5 space-y-4">
+          <Field label="Username"><Input value={u} onChange={(e) => setU(e.target.value)} autoFocus placeholder={`${setup?.domain?.split(".")[0]?.toUpperCase() ?? "DOMAIN"}\\username`} autoComplete="username" /></Field>
+          <Field label="Password"><Input type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></Field>
+          {err && <Callout tone="warn">{err}</Callout>}
+          <Button variant="primary" className="w-full" loading={busy} type="submit" disabled={!u || !p}>Sign in</Button>
+        </div>
+        <div className="mt-5 flex items-center justify-between border-t border-line pt-4 text-xs text-ink-3">
+          <span className="flex items-center gap-1.5"><Laptop className="size-3.5" />{connection?.mode === "local" ? "Hosted on this computer" : connection?.url ?? "Development server"}</span>
+          {isDesktop && <button type="button" className="text-accent hover:underline" onClick={async () => setConnection(await desktop.disconnect())}>Change server</button>}
+        </div>
+      </form>
+    </Frame>
+  );
+}
