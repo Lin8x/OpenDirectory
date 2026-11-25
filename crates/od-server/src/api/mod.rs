@@ -8,7 +8,9 @@ mod directory;
 mod endpoints;
 pub mod integrations;
 mod lab;
+pub mod passwords;
 mod policies;
+pub mod recycle;
 mod scripts;
 
 use axum::routing::{delete, get, post, put};
@@ -27,6 +29,12 @@ pub fn router(state: AppState) -> Router {
         .route("/baselines/preview", post(directory::preview_baseline))
         .route("/auth/login", post(directory::login))
         .route("/auth/logout", post(directory::logout))
+        .route("/auth/change-password", post(passwords::self_service_change))
+        .route("/password-policy", get(passwords::get_domain).put(passwords::set_domain))
+        .route("/password-policies", get(passwords::list_psos).post(passwords::create_pso))
+        .route("/password-policies/{id}", put(passwords::update_pso).delete(passwords::delete_pso))
+        .route("/users/{id}/resultant-password-policy", get(passwords::user_resultant))
+        .route("/users/{id}/reset-code", post(passwords::issue_reset_code))
         .route("/auth/me", get(directory::me))
         .route("/overview", get(directory::overview))
         .route("/search", get(directory::search))
@@ -66,6 +74,9 @@ pub fn router(state: AppState) -> Router {
         .route("/backups/plans/{id}/test", post(backups::test_plan))
         .route("/backups/plans/{id}/files", get(backups::files))
         .route("/backups/plans/{id}/restore", post(backups::restore_from_plan))
+        .route("/recycle-bin", get(recycle::list))
+        .route("/recycle-bin/{id}/restore", post(recycle::restore))
+        .route("/recycle-bin/{id}", delete(recycle::purge))
         .route("/lab/designs", get(lab::get).put(lab::set))
         .route("/integrations", get(integrations::list).post(integrations::create))
         .route("/integrations/{id}", put(integrations::update).delete(integrations::remove))

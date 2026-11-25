@@ -610,3 +610,134 @@ async fn webhook_integration_receives_signed_events() {
     assert_eq!(got.len(), 2, "{got:?}");
     assert!(got[1].1.contains("user.create") && got[1].0.starts_with("sha256="));
 }
+
+#[tokio::test]
+async fn recycle_bin_restores_users_with_password_and_groups() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (_, u) =
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"carol","display_name":"Carol","password":"password123"}))).await;
+    let uid = u["id"].as_str().unwrap().to_string();
+    let (_, g) = call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Finance","member_ids":[uid]}))).await;
+    let gid = g["id"].as_str().unwrap().to_string();
+
+    assert_eq!(call(&app, Method::DELETE, &format!("/users/{uid}"), auth, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(call(&app, Method::DELETE, &format!("/groups/{gid}"), auth, None).await.0, StatusCode::NO_CONTENT);
+    let (_, bin) = call(&app, Method::GET, "/recycle-bin", auth, None).await;
+    assert_eq!(bin.as_array().unwrap().len(), 2);
+
+    // Restore the group first, then the user: membership comes back.
+    let gid_entry = bin.as_array().unwrap().iter().find(|e| e["kind"] == "group").unwrap()["id"].as_str().unwrap().to_string();
+    let uid_entry = bin.as_array().unwrap().iter().find(|e| e["kind"] == "user").unwrap()["id"].as_str().unwrap().to_string();
+    let (st, r) = call(&app, Method::POST, &format!("/recycle-bin/{gid_entry}/restore"), auth, None).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    let (st, r) = call(&app, Method::POST, &format!("/recycle-bin/{uid_entry}/restore"), auth, None).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    let (_, back) = call(&app, Method::GET, &format!("/users/{uid}"), auth, None).await;
+    assert!(back["group_ids"].as_array().unwrap().iter().any(|x| x == &json!(gid)));
+    assert!(back["password_set_at"].is_string(), "password kept: {back}");
+    let (_, bin) = call(&app, Method::GET, "/recycle-bin", auth, None).await;
+    assert!(bin.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn password_policies_psos_history_and_self_service() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (st, _) = call(
+        &app,
+        Method::PUT,
+        "/password-policy",
+        auth,
+        Some(json!({"min_length":10,"history":2,"lockout_threshold":3,"lockout_minutes":5})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) =
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"dave","display_name":"Dave","password":"short123"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "domain min length 10");
+    let (_, u) =
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"dave","display_name":"Dave","password":"long-enough-1"}))).await;
+    let uid = u["id"].as_str().unwrap().to_string();
+
+    // A stricter PSO for a group wins for its members.
+    let (_, g) = call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Privileged","member_ids":[uid]}))).await;
+    let (st, pso) = call(
+        &app,
+        Method::POST,
+        "/password-policies",
+        auth,
+        Some(json!({"name":"Admins PSO","precedence":1,"group_ids":[g["id"]],"rules":{"min_length":16,"complexity":true,"history":3}})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{pso}");
+    let (_, r) = call(&app, Method::GET, &format!("/users/{uid}/resultant-password-policy"), auth, None).await;
+    assert_eq!(r["source"], "Admins PSO");
+    let (st, _) = call(&app, Method::POST, &format!("/users/{uid}/password"), auth, Some(json!({"password":"onlylowercaseletters"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "complexity");
+
+    // Self-service change with the current password; history blocks reuse.
+    let (st, v) = call(
+        &app,
+        Method::POST,
+        "/auth/change-password",
+        None,
+        Some(json!({"username":"dave","current_password":"long-enough-1","new_password":"Brand-New-Passw0rd"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/auth/change-password",
+        None,
+        Some(json!({"username":"dave","current_password":"Brand-New-Passw0rd","new_password":"long-enough-1"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "reuse refused");
+
+    // Help-desk reset code works once.
+    let (_, code) = call(&app, Method::POST, &format!("/users/{uid}/reset-code"), auth, None).await;
+    let c = code["code"].as_str().unwrap();
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/auth/change-password",
+        None,
+        Some(json!({"username":"dave","reset_code":c,"new_password":"Another-Passw0rd-2"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/auth/change-password",
+        None,
+        Some(json!({"username":"dave","reset_code":c,"new_password":"Third-Passw0rd-333"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED, "code used up");
+
+    // Wrong current passwords lock the account (threshold 3 from the domain policy; dave's PSO has default lockout 5).
+    for _ in 0..5 {
+        call(
+            &app,
+            Method::POST,
+            "/auth/change-password",
+            None,
+            Some(json!({"username":"dave","current_password":"nope","new_password":"Whatever-Passw0rd-1"})),
+        )
+        .await;
+    }
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/auth/change-password",
+        None,
+        Some(json!({"username":"dave","current_password":"Another-Passw0rd-2","new_password":"Whatever-Passw0rd-1"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+}

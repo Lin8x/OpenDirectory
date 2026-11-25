@@ -136,6 +136,11 @@ fn spawn_housekeeping(state: AppState) {
                     }
                 }
             }
+            match api::recycle::expire(&state) {
+                Ok(n) if n > 0 => tracing::info!("recycle bin: purged {n} expired object(s)"),
+                Err(e) => tracing::warn!("recycle bin: {e:#}"),
+                _ => {}
+            }
             tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
         }
     });

@@ -81,6 +81,16 @@ CREATE TABLE IF NOT EXISTS backup_plans (
 CREATE TABLE IF NOT EXISTS integrations (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, sealed BLOB NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recycle_bin (
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL,
+  deleted_by TEXT NOT NULL, deleted_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS password_history (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, hash TEXT NOT NULL, set_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reset_codes (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, code_hash TEXT NOT NULL, expires_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -121,6 +131,15 @@ pub struct UserSecrets {
     pub password_hash: Option<String>,
     pub password_sealed: Option<Vec<u8>>,
     pub password_version: i64,
+}
+
+pub struct Recycled {
+    pub id: Uuid,
+    pub kind: String,
+    pub name: String,
+    pub data: String,
+    pub deleted_by: String,
+    pub deleted_at: DateTime<Utc>,
 }
 
 pub struct EndpointAuth {
@@ -393,6 +412,42 @@ impl Db {
             params![hash, sealed, ts(Utc::now()), id.to_string()],
         )?;
         Ok(())
+    }
+
+    pub fn push_password_history(&self, id: Uuid, hash: &str) -> Result<()> {
+        let c = self.lock();
+        c.execute("INSERT INTO password_history(user_id, hash, set_at) VALUES (?, ?, ?)", params![id.to_string(), hash, ts(Utc::now())])?;
+        // Keep at most 24, the most any policy remembers.
+        c.execute(
+            "DELETE FROM password_history WHERE user_id = ?1 AND rowid NOT IN (SELECT rowid FROM password_history WHERE user_id = ?1 ORDER BY set_at DESC LIMIT 24)",
+            [id.to_string()],
+        )?;
+        Ok(())
+    }
+    pub fn password_history(&self, id: Uuid, n: u32) -> Result<Vec<String>> {
+        let c = self.lock();
+        let mut st = c.prepare("SELECT hash FROM password_history WHERE user_id = ? ORDER BY set_at DESC LIMIT ?")?;
+        let rows = st.query_map(params![id.to_string(), n], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn set_reset_code(&self, id: Uuid, code_hash: &str, expires: DateTime<Utc>) -> Result<()> {
+        self.lock().execute(
+            "INSERT INTO reset_codes(user_id, code_hash, expires_at) VALUES (?1, ?2, ?3) ON CONFLICT(user_id) DO UPDATE SET code_hash = ?2, expires_at = ?3",
+            params![id.to_string(), code_hash, ts(expires)],
+        )?;
+        Ok(())
+    }
+    /// Use a reset code: true if it matched and hadn't expired. Codes work once.
+    pub fn take_reset_code(&self, id: Uuid, code_hash: &str) -> Result<bool> {
+        let c = self.lock();
+        let row: Option<(String, String)> = c
+            .query_row("SELECT code_hash, expires_at FROM reset_codes WHERE user_id = ?", [id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        let ok = row.map(|(h, exp)| crate::crypto::ct_eq(&h, code_hash) && req_ts(exp) > Utc::now()).unwrap_or(false);
+        if ok {
+            c.execute("DELETE FROM reset_codes WHERE user_id = ?", [id.to_string()])?;
+        }
+        Ok(ok)
     }
 
     pub fn touch_login(&self, id: Uuid) -> Result<()> {
@@ -799,6 +854,47 @@ impl Db {
     }
     pub fn delete_integration(&self, id: Uuid) -> Result<bool> {
         Ok(self.lock().execute("DELETE FROM integrations WHERE id = ?", [id.to_string()])? > 0)
+    }
+
+    // ---------- recycle bin ----------
+    pub fn insert_recycled(&self, id: Uuid, kind: &str, name: &str, data: &str, by: &str) -> Result<()> {
+        self.lock().execute(
+            "INSERT INTO recycle_bin(id, kind, name, data, deleted_by, deleted_at) VALUES (?, ?, ?, ?, ?, ?)",
+            params![id.to_string(), kind, name, data, by, ts(Utc::now())],
+        )?;
+        Ok(())
+    }
+    pub fn list_recycled(&self) -> Result<Vec<Recycled>> {
+        let c = self.lock();
+        let mut st = c.prepare("SELECT id, kind, name, data, deleted_by, deleted_at FROM recycle_bin ORDER BY deleted_at DESC")?;
+        let rows = st.query_map([], Self::map_recycled)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn get_recycled(&self, id: Uuid) -> Result<Option<Recycled>> {
+        Ok(self
+            .lock()
+            .query_row(
+                "SELECT id, kind, name, data, deleted_by, deleted_at FROM recycle_bin WHERE id = ?",
+                [id.to_string()],
+                Self::map_recycled,
+            )
+            .optional()?)
+    }
+    fn map_recycled(r: &Row) -> rusqlite::Result<Recycled> {
+        Ok(Recycled {
+            id: uid(r.get(0)?),
+            kind: r.get(1)?,
+            name: r.get(2)?,
+            data: r.get(3)?,
+            deleted_by: r.get(4)?,
+            deleted_at: req_ts(r.get(5)?),
+        })
+    }
+    pub fn delete_recycled(&self, id: Uuid) -> Result<bool> {
+        Ok(self.lock().execute("DELETE FROM recycle_bin WHERE id = ?", [id.to_string()])? > 0)
+    }
+    pub fn purge_recycled_before(&self, before: DateTime<Utc>) -> Result<usize> {
+        Ok(self.lock().execute("DELETE FROM recycle_bin WHERE deleted_at < ?", [ts(before)])?)
     }
 
     // ---------- scripts ----------

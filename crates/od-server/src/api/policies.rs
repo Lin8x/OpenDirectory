@@ -163,8 +163,9 @@ pub async fn update(
 
 pub async fn remove(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
     let p = s.db.get_policy(id)?.ok_or_else(|| ApiError::not_found("Policy"))?;
+    super::recycle::keep(&s, super::recycle::Snapshot::Policy { policy: p.clone() }, admin.name())?;
     s.db.delete_policy(id)?;
-    s.db.audit(admin.name(), "policy.delete", &p.name, "");
+    s.db.audit(admin.name(), "policy.delete", &p.name, "Moved to the Recycle Bin");
     Ok(StatusCode::NO_CONTENT)
 }
 
