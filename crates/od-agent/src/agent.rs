@@ -12,6 +12,17 @@ use crate::state::AgentState;
 use crate::{accounts, inventory, jobs, laps, policy, policy_scripts};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+const PATCH_SCAN_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// The latest patch scan, shared between jobs and the check-in loop.
+static PATCHES: std::sync::Mutex<Option<od_core::PatchReport>> = std::sync::Mutex::new(None);
+
+pub fn set_patch_report(r: od_core::PatchReport) {
+    *PATCHES.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+}
+fn patch_report() -> Option<od_core::PatchReport> {
+    PATCHES.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 const INVENTORY_EVERY: Duration = Duration::from_secs(60 * 60);
 const REAPPLY_EVERY: Duration = Duration::from_secs(15 * 60);
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
@@ -50,15 +61,30 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut backoff = Duration::from_secs(5);
     let mut force_inventory = false;
     let mut logons = policy_scripts::LogonWatcher::default();
+    let mut last_patch_scan: Option<Instant> = None;
+    let mut sent_patches: Option<od_core::PatchReport> = None;
 
     loop {
-        let send_inventory = force_inventory || last_inventory.map(|t| t.elapsed() > INVENTORY_EVERY).unwrap_or(true);
+        // Scan for OS updates in the background every few hours.
+        if last_patch_scan.map(|t| t.elapsed() > PATCH_SCAN_EVERY).unwrap_or(true) {
+            last_patch_scan = Some(Instant::now());
+            tokio::spawn(async { set_patch_report(crate::patches::scan().await) });
+        }
+        let patches_now = patch_report();
+        let patches_changed = patches_now != sent_patches;
+        let send_inventory = force_inventory || patches_changed || last_inventory.map(|t| t.elapsed() > INVENTORY_EVERY).unwrap_or(true);
         let mut all_compliance = compliance.clone();
         all_compliance.extend(account_item.clone());
         all_compliance.extend(laps_item.clone());
         let req = CheckinRequest {
             agent_version: VERSION.into(),
-            inventory: if send_inventory { Some(inventory::collect().await) } else { None },
+            inventory: if send_inventory {
+                let mut inv = inventory::collect().await;
+                inv.patches = patches_now.clone();
+                Some(inv)
+            } else {
+                None
+            },
             compliance: all_compliance,
             account_versions: state.accounts.iter().map(|(k, v)| (k.clone(), v.password_version)).collect(),
         };
@@ -69,6 +95,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                 if send_inventory {
                     last_inventory = Some(Instant::now());
                     force_inventory = false;
+                    sent_patches = patches_now.clone();
                 }
                 force_inventory |= resp.want_inventory;
 

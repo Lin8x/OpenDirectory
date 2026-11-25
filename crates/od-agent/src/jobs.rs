@@ -20,6 +20,50 @@ pub async fn run(job: &AgentJob) -> JobResult {
             JobResult { exit_code: Some(0), output: "Inventory will be sent with the next check-in".into(), success: true }
         }
         JobKind::RestartAgent => JobResult { exit_code: Some(0), output: "Agent restarting".into(), success: true },
+        JobKind::ScanUpdates => {
+            let r = crate::patches::scan().await;
+            crate::agent::set_patch_report(r.clone());
+            if r.error.is_empty() {
+                let sec = r.pending.iter().filter(|p| p.security).count();
+                let list: Vec<String> = r
+                    .pending
+                    .iter()
+                    .take(50)
+                    .map(|p| format!("{}{} {}", if p.security { "[security] " } else { "" }, p.title, p.id))
+                    .collect();
+                JobResult {
+                    exit_code: Some(0),
+                    output: format!(
+                        "{} update(s) pending, {sec} security{}\n{}",
+                        r.pending.len(),
+                        if r.reboot_required { "; a restart is needed" } else { "" },
+                        list.join("\n")
+                    ),
+                    success: true,
+                }
+            } else {
+                JobResult { exit_code: None, output: r.error, success: false }
+            }
+        }
+        JobKind::InstallUpdates { security_only, reboot } => {
+            let res = crate::patches::install(*security_only).await;
+            let r = crate::patches::scan().await;
+            let needs_reboot = r.reboot_required;
+            crate::agent::set_patch_report(r);
+            match res {
+                Ok((ok, out)) => {
+                    let mut out = out;
+                    if *reboot && needs_reboot {
+                        crate::patches::schedule_reboot().await;
+                        out.push_str("\nRestarting in 1 minute to finish installing.");
+                    } else if needs_reboot {
+                        out.push_str("\nA restart is needed to finish installing.");
+                    }
+                    JobResult { exit_code: Some(if ok { 0 } else { 1 }), output: out, success: ok }
+                }
+                Err(e) => JobResult { exit_code: None, output: format!("{e:#}"), success: false },
+            }
+        }
     }
 }
 

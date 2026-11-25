@@ -14,6 +14,7 @@ import Enrollment from "./pages/Enrollment";
 import Policies from "./pages/Policies";
 import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
+import Patches from "./pages/Patches";
 import Backups from "./pages/Backups";
 import RecycleBin from "./pages/RecycleBin";
 import PasswordPolicies from "./pages/PasswordPolicies";
@@ -50,6 +51,7 @@ function Gate() {
             <Route path="/gpos" element={<Policies />} />
             <Route path="/gpos/:id" element={<PolicyEditor />} />
             <Route path="/scripts" element={<Scripts />} />
+            <Route path="/patches" element={<Patches />} />
             <Route path="/scripts/:id" element={<ScriptEditor />} />
             <Route path="/audit" element={<Audit />} />
             <Route path="/recycle-bin" element={<RecycleBin />} />

@@ -123,6 +123,37 @@ pub struct Inventory {
     pub logged_in_users: Vec<String>,
     pub disk_encrypted: Option<bool>,
     pub firewall_enabled: Option<bool>,
+    /// Pending OS updates from the last scan.
+    #[serde(default)]
+    pub patches: Option<PatchReport>,
+}
+
+/// One pending OS update.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct Patch {
+    pub title: String,
+    /// KB number, package version or update label.
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub security: bool,
+    /// Critical, Important, Moderate, Low, or empty.
+    #[serde(default)]
+    pub severity: String,
+}
+
+/// The result of a patch scan on an endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct PatchReport {
+    pub scanned_at: Option<DateTime<Utc>>,
+    pub pending: Vec<Patch>,
+    pub reboot_required: bool,
+    /// apt, dnf, Windows Update, softwareupdate…
+    #[serde(default)]
+    pub source: String,
+    /// Why the scan couldn't run, if it couldn't.
+    #[serde(default)]
+    pub error: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,6 +225,16 @@ pub enum JobKind {
     },
     RefreshInventory,
     RestartAgent,
+    /// Check for OS updates now.
+    ScanUpdates,
+    /// Install pending OS updates.
+    InstallUpdates {
+        #[serde(default)]
+        security_only: bool,
+        /// Restart afterwards if an update needs it.
+        #[serde(default)]
+        reboot: bool,
+    },
 }
 
 impl JobKind {
@@ -209,6 +250,9 @@ impl JobKind {
             }
             JobKind::RefreshInventory => "Refresh inventory".into(),
             JobKind::RestartAgent => "Restart agent".into(),
+            JobKind::ScanUpdates => "Scan for updates".into(),
+            JobKind::InstallUpdates { security_only: true, .. } => "Install security updates".into(),
+            JobKind::InstallUpdates { .. } => "Install updates".into(),
         }
     }
 }

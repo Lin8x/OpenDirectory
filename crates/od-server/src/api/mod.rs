@@ -63,6 +63,7 @@ pub fn router(state: AppState) -> Router {
         .route("/endpoints/{id}/laps", get(endpoints::laps))
         .route("/endpoints/{id}/laps/rotate", post(endpoints::laps_rotate))
         .route("/jobs", get(endpoints::list_jobs))
+        .route("/patches/run", post(endpoints::patch_run))
         .route("/jobs/{id}", get(endpoints::get_job))
         .route("/jobs/{id}/cancel", post(endpoints::cancel_job))
         .route("/enrollment-tokens", get(endpoints::list_tokens).post(endpoints::create_token))

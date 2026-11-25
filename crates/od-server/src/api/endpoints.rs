@@ -210,3 +210,52 @@ pub async fn laps_rotate(State(s): State<AppState>, admin: Admin, Path(id): Path
     s.db.audit(admin.name(), "laps.rotate_requested", &e.hostname, "");
     Ok(Json(serde_json::json!({ "ok": true, "message": "The endpoint rotates the password at its next check-in." })))
 }
+
+#[derive(Deserialize)]
+pub struct PatchInput {
+    #[serde(default)]
+    targets: od_core::scripts::RunTargets,
+    #[serde(default)]
+    install: bool,
+    #[serde(default)]
+    security_only: bool,
+    #[serde(default)]
+    reboot: bool,
+}
+
+/// Scan for, or install, OS updates on many endpoints at once.
+pub async fn patch_run(State(s): State<AppState>, admin: Admin, Json(inp): Json<PatchInput>) -> ApiResult<(StatusCode, Json<Vec<Job>>)> {
+    if inp.targets.is_empty() {
+        return Err(ApiError::bad_request("Choose at least one endpoint, group or OU"));
+    }
+    let eps = super::scripts::resolve_targets(&s, &inp.targets)?;
+    let kind =
+        if inp.install { JobKind::InstallUpdates { security_only: inp.security_only, reboot: inp.reboot } } else { JobKind::ScanUpdates };
+    let batch = Uuid::new_v4();
+    let mut jobs = vec![];
+    for e in &eps {
+        let job = Job {
+            id: Uuid::new_v4(),
+            endpoint_id: e.id,
+            kind: kind.clone(),
+            status: JobStatus::Queued,
+            script_id: None,
+            batch_id: Some(batch),
+            exit_code: None,
+            output: String::new(),
+            created_by: admin.name().to_string(),
+            created_at: Utc::now(),
+            started_at: None,
+            finished_at: None,
+        };
+        s.db.insert_job(&job)?;
+        jobs.push(job);
+    }
+    s.db.audit(
+        admin.name(),
+        if inp.install { "patch.install" } else { "patch.scan" },
+        &format!("{} endpoint(s)", eps.len()),
+        &kind.summary(),
+    );
+    Ok((StatusCode::CREATED, Json(jobs)))
+}
