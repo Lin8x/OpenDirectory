@@ -4,6 +4,7 @@
 
 pub mod dhcp;
 pub mod dns;
+pub mod ldap;
 pub mod radius;
 
 use std::sync::Mutex;
@@ -20,6 +21,8 @@ pub struct Services {
     dhcp_status: Mutex<ServiceStatus>,
     radius: Mutex<Option<tokio::task::JoinHandle<()>>>,
     radius_status: Mutex<ServiceStatus>,
+    ldap: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    ldap_status: Mutex<ServiceStatus>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -126,7 +129,35 @@ pub fn restart_radius(s: &AppState) {
     *s.services.radius.lock().unwrap_or_else(|e| e.into_inner()) = Some(task);
 }
 
+pub fn ldap_config(s: &AppState) -> ldap::LdapConfig {
+    s.db.meta_get("ldap_config").ok().flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default()
+}
+pub fn ldap_status(s: &AppState) -> ServiceStatus {
+    s.services.ldap_status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+pub fn restart_ldap(s: &AppState) {
+    if let Some(old) = s.services.ldap.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        old.abort();
+    }
+    let cfg = ldap_config(s);
+    let set = |st: ServiceStatus| *s.services.ldap_status.lock().unwrap_or_else(|e| e.into_inner()) = st;
+    if !cfg.enabled {
+        set(ServiceStatus::default());
+        return;
+    }
+    set(ServiceStatus { running: true, error: String::new() });
+    let s2 = s.clone();
+    let task = tokio::spawn(async move {
+        if let Err(e) = ldap::serve(s2.clone(), cfg).await {
+            tracing::warn!("LDAP server stopped: {e:#}");
+            *s2.services.ldap_status.lock().unwrap_or_else(|e| e.into_inner()) = ServiceStatus { running: false, error: format!("{e:#}") };
+        }
+    });
+    *s.services.ldap.lock().unwrap_or_else(|e| e.into_inner()) = Some(task);
+}
+
 pub fn start_all(s: &AppState) {
+    restart_ldap(s);
     restart_dns(s);
     restart_dhcp(s);
     restart_radius(s);

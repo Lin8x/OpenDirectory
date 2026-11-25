@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::auth::Admin;
 use crate::error::{ApiError, ApiResult};
-use crate::netsvc::{self, dhcp, dns, radius};
+use crate::netsvc::{self, dhcp, dns, ldap, radius};
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -153,4 +153,32 @@ pub async fn set_radius(
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     s.db.audit(admin.name(), "radius.config", "", &format!("{} client(s), {}", c.clients.len(), if c.enabled { "on" } else { "off" }));
     Ok(Json(netsvc::radius_status(&s)))
+}
+
+#[derive(Serialize)]
+pub struct LdapView {
+    config: ldap::LdapConfig,
+    status: netsvc::ServiceStatus,
+    base_dn: String,
+}
+
+pub async fn get_ldap(State(s): State<AppState>, _a: Admin) -> ApiResult<Json<LdapView>> {
+    Ok(Json(LdapView {
+        config: netsvc::ldap_config(&s),
+        status: netsvc::ldap_status(&s),
+        base_dn: ldap::base_dn(&s.db.meta_get("domain")?.unwrap_or_default()),
+    }))
+}
+
+pub async fn set_ldap(State(s): State<AppState>, admin: Admin, Json(c): Json<ldap::LdapConfig>) -> ApiResult<Json<netsvc::ServiceStatus>> {
+    for a in [&c.listen, &c.ldaps_listen] {
+        if !a.trim().is_empty() && a.parse::<std::net::SocketAddr>().is_err() {
+            return Err(ApiError::bad_request(format!("\"{a}\" isn't an address like 0.0.0.0:636")));
+        }
+    }
+    s.db.meta_set("ldap_config", &serde_json::to_string(&c).map_err(anyhow::Error::from)?)?;
+    netsvc::restart_ldap(&s);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    s.db.audit(admin.name(), "ldap.config", "", if c.enabled { "LDAP server on" } else { "LDAP server off" });
+    Ok(Json(netsvc::ldap_status(&s)))
 }
