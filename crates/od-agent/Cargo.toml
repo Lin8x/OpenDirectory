@@ -24,6 +24,9 @@ clap.workspace = true
 reqwest.workspace = true
 sha2.workspace = true
 hex.workspace = true
+rand.workspace = true
+portable-pty = "0.9"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 sysinfo = { version = "0.33", default-features = false, features = ["system", "disk", "network"] }
 
 [target.'cfg(windows)'.dependencies]

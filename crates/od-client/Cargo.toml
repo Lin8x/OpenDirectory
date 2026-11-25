@@ -13,3 +13,5 @@ reqwest.workspace = true
 rustls.workspace = true
 sha2.workspace = true
 hex.workspace = true
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tokio.workspace = true

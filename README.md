@@ -40,6 +40,14 @@ od status
 
 `od init --help` lists every flag, so setup can be fully scripted (`OD_PASSWORD` supplies the password). `od init --dry-run` prints the plan without creating anything.
 
+### Identity and remote support
+
+- **Password policies:** a Default Domain Password Policy plus fine-grained policies (PSOs) for groups, with history, expiry and lockout. Users change their own password, or redeem a one-time code from the help desk, with "Change password" on any sign-in screen.
+- **LAPS:** each endpoint keeps a local admin account with its own rotating password, stored encrypted on the server; viewing it is audited.
+- **Recycle Bin:** deleted users, groups, OUs, GPOs and scripts come back with their memberships and passwords for 180 days.
+- **Patch Management:** pending OS updates on every endpoint, with scan and install for endpoints, groups or OUs.
+- **Remote shell and desktop:** an interactive terminal on any endpoint, and RDP, VNC or SSH through an encrypted tunnel (desktop app). Endpoints never need inbound ports.
+
 ### Docker and web mode
 
 The Management Server can serve the Admin Center to any browser (`--web-ui <folder>`, or a `web` folder next to the binary). The official image does this out of the box:

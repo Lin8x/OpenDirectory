@@ -27,7 +27,8 @@ sha2.workspace = true
 hex.workspace = true
 rand.workspace = true
 rustls.workspace = true
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "fs", "set-header"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 argon2 = "0.5"
@@ -49,5 +50,6 @@ suppaftp = { version = "13", default-features = false, features = ["tokio", "tok
 windows-service = "0.7"
 
 [dev-dependencies]
+od-client.workspace = true
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

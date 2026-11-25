@@ -167,7 +167,7 @@ fn check(o: crate::util::Output, what: &str) -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-mod os {
+pub(crate) mod os {
     use super::check;
     use crate::util::{run, run_stdin};
     use anyhow::Result;
@@ -217,7 +217,7 @@ mod os {
 }
 
 #[cfg(target_os = "macos")]
-mod os {
+pub(crate) mod os {
     use super::check;
     use crate::util::{run, run_stdin};
     use anyhow::{bail, Result};
@@ -277,7 +277,7 @@ mod os {
 }
 
 #[cfg(target_os = "windows")]
-mod os {
+pub(crate) mod os {
     use super::check;
     use crate::util::powershell;
     use anyhow::Result;
@@ -327,7 +327,7 @@ mod os {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-mod os {
+pub(crate) mod os {
     use anyhow::{bail, Result};
     pub async fn exists(_: &str) -> Result<bool> {
         bail!("unsupported OS")

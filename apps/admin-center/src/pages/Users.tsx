@@ -7,7 +7,7 @@ import type { Group, OrgUnit, User } from "../lib/types";
 import { ago, dateTime } from "../lib/format";
 import { useSession } from "../lib/session";
 import {
-  Avatar, Badge, Button, Card, Confirm, Dialog, Drawer, EmptyState, ErrorNote, Explain, Field, Input, Loading, PageHeader, Row, Select, Switch, Table, Tabs, Td, useToast,
+  Avatar, Badge, Button, Card, Confirm, Dialog, Drawer, EmptyState, ErrorNote, Explain, Field, Input, Loading, PageHeader, Row, Select, Switch, Table, Tabs, Td, useToast, CopyButton,
 } from "../components/ui";
 
 export function ouPath(ous: OrgUnit[], id: string | null): string {
@@ -280,7 +280,30 @@ function ResetPassword({ open, user, onClose, onDone }: { open: boolean; user: U
         <div className="flex gap-2"><Input className="font-mono" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus /><Button onClick={generate}>Generate</Button></div>
       </Field>
       <Switch checked={must} onChange={setMust} label="User must change password at next sign-in" />
+      <ResultantPso userId={user.id} />
+      <ResetCode user={user} />
       <Explain>The new password is synced to every endpoint where this user has a sign-in account, within about 15 seconds for online endpoints.</Explain>
     </Dialog>
+  );
+}
+
+function ResultantPso({ userId }: { userId: string }) {
+  const r = useQuery<{ source: string; rules: { min_length: number; complexity: boolean; history: number; max_age_days: number } }>(`/users/${userId}/resultant-password-policy`);
+  if (!r.data) return null;
+  const x = r.data.rules;
+  return <p className="text-xs text-ink-3">Rules from <b>{r.data.source}</b>: at least {x.min_length} characters{x.complexity ? ", mixed character types" : ""}{x.history ? `, can't reuse the last ${x.history}` : ""}{x.max_age_days ? `, expires after ${x.max_age_days} days` : ""}.</p>;
+}
+
+function ResetCode({ user }: { user: User }) {
+  const toast = useToast();
+  const [code, setCode] = useState<{ code: string; expires_at: string } | null>(null);
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm"><b>Or give them a reset code</b><p className="text-xs text-ink-3">They choose their own password with "Change password" on any sign-in screen. Works once, for 24 hours.</p></div>
+        <Button size="sm" onClick={async () => { try { setCode(await post(`/users/${user.id}/reset-code`)); } catch (e) { toast("bad", (e as Error).message); } }}>Create code</Button>
+      </div>
+      {code && <div className="mt-2 flex items-center gap-2"><code className="selectable rounded bg-panel-2 px-2 py-1 font-mono text-base tracking-widest">{code.code}</code><CopyButton text={code.code} /></div>}
+    </div>
   );
 }

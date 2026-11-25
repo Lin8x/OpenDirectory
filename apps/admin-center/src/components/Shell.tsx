@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity, ArrowRight, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
-  PanelsTopLeft, Plug, Search, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
+  Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
+  KeyRound, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
 } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
@@ -18,6 +18,8 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
       { to: "/users", label: "Users", icon: <UsersIcon className="size-4" /> },
       { to: "/groups", label: "Security Groups", icon: <UsersRound className="size-4" /> },
       { to: "/ous", label: "Organizational Units", icon: <FolderTree className="size-4" /> },
+      { to: "/password-policies", label: "Password Policies", icon: <KeyRound className="size-4" /> },
+      { to: "/recycle-bin", label: "Recycle Bin", icon: <Trash2 className="size-4" /> },
     ],
   },
   {
@@ -26,6 +28,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
       { to: "/endpoints", label: "Endpoints", icon: <Monitor className="size-4" /> },
       { to: "/enroll", label: "Enrollment", icon: <PlusCircle className="size-4" /> },
       { to: "/scripts", label: "Script Library", icon: <Terminal className="size-4" /> },
+      { to: "/patches", label: "Patch Management", icon: <Download className="size-4" /> },
     ],
   },
   { section: "Policy", items: [{ to: "/gpos", label: "Group Policy", icon: <ShieldCheck className="size-4" /> }] },
@@ -146,7 +149,7 @@ const QUICK = [
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Script Library", to: "/scripts" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Network Lab", to: "/lab" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
+  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 

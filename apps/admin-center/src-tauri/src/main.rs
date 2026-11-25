@@ -180,6 +180,156 @@ fn save_export(handle: tauri::AppHandle, file_name: String, contents: String, ba
     Ok(path.display().to_string())
 }
 
+/// Remote shell bridge: the webview can't open a WebSocket to a server with a
+/// pinned self-signed certificate, so the Rust side holds it and relays data
+/// through events (`shell://data`, `shell://closed`) and commands.
+#[derive(Default)]
+struct Shells(Mutex<std::collections::HashMap<String, tokio::sync::mpsc::UnboundedSender<od_client::WsMessage>>>);
+
+#[derive(Clone, Serialize)]
+struct ShellData {
+    id: String,
+    /// base64
+    data: String,
+}
+
+#[tauri::command]
+async fn shell_connect(
+    app: State<'_, Arc<App>>,
+    shells: State<'_, Arc<Shells>>,
+    handle: AppHandle,
+    session_id: String,
+    ticket: String,
+) -> Result<(), String> {
+    use base64::Engine;
+    use futures_util::{SinkExt, StreamExt};
+    use tauri::Emitter;
+    if session_id.len() > 64
+        || !session_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+        || !ticket.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err("invalid session".into());
+    }
+    let client = app.inner.lock().await.client.clone().ok_or("Not connected to a Management Server")?;
+    let ws = client.websocket(&format!("/shell/{session_id}/ws?ticket={ticket}")).await.map_err(|e| format!("{e:#}"))?;
+    let (mut sink, mut stream) = ws.split();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<od_client::WsMessage>();
+    shells.0.lock().await.insert(session_id.clone(), tx);
+    let shells = shells.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::select! {
+                out = rx.recv() => match out {
+                    Some(m) => { let close = matches!(m, od_client::WsMessage::Close(_)); if sink.send(m).await.is_err() || close { break; } }
+                    None => break,
+                },
+                msg = stream.next() => match msg {
+                    Some(Ok(od_client::WsMessage::Binary(b))) => { let _ = handle.emit("shell://data", ShellData { id: session_id.clone(), data: base64::engine::general_purpose::STANDARD.encode(&b) }); }
+                    Some(Ok(od_client::WsMessage::Text(t))) => { let _ = handle.emit("shell://data", ShellData { id: session_id.clone(), data: base64::engine::general_purpose::STANDARD.encode(t.as_bytes()) }); }
+                    Some(Ok(od_client::WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                    _ => {}
+                },
+            }
+        }
+        shells.0.lock().await.remove(&session_id);
+        let _ = handle.emit("shell://closed", session_id.clone());
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn shell_send(
+    shells: State<'_, Arc<Shells>>,
+    session_id: String,
+    data: Option<String>,
+    resize: Option<(u16, u16)>,
+    close: Option<bool>,
+) -> Result<(), String> {
+    use base64::Engine;
+    let map = shells.0.lock().await;
+    let tx = map.get(&session_id).ok_or("The shell session has ended")?;
+    if let Some(d) = data {
+        let bytes = base64::engine::general_purpose::STANDARD.decode(d).map_err(|e| e.to_string())?;
+        let _ = tx.send(od_client::WsMessage::Binary(bytes.into()));
+    }
+    if let Some((c, r)) = resize {
+        let _ = tx.send(od_client::WsMessage::Text(serde_json::json!({ "resize": [c, r] }).to_string().into()));
+    }
+    if close == Some(true) {
+        let _ = tx.send(od_client::WsMessage::Close(None));
+    }
+    Ok(())
+}
+
+/// Remote desktop through a tunnel: listen on a local port and carry each
+/// connection to a service on the endpoint (RDP 3389, VNC 5900, SSH 22)
+/// through the Management Server. Your usual client connects to 127.0.0.1.
+#[derive(Default)]
+struct Tunnels(Mutex<std::collections::HashMap<u16, tauri::async_runtime::JoinHandle<()>>>);
+
+#[tauri::command]
+async fn tunnel_start(
+    app: State<'_, Arc<App>>,
+    tunnels: State<'_, Arc<Tunnels>>,
+    endpoint_id: String,
+    port: u16,
+    token: String,
+) -> Result<u16, String> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    if !endpoint_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err("invalid endpoint".into());
+    }
+    let client = app.inner.lock().await.client.clone().ok_or("Not connected to a Management Server")?;
+    let admin = client.clone().with_session(&token);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;
+    let local = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let task = tauri::async_runtime::spawn(async move {
+        while let Ok((tcp, _)) = listener.accept().await {
+            let (admin, client, endpoint_id) = (admin.clone(), client.clone(), endpoint_id.clone());
+            tokio::spawn(async move {
+                let opened = admin
+                    .request(
+                        od_client::Method::POST,
+                        &format!("/endpoints/{endpoint_id}/shell"),
+                        Some(&serde_json::json!({ "tunnel_port": port })),
+                    )
+                    .await;
+                let Ok(v) = opened else { return };
+                let (Some(sid), Some(ticket)) = (v["session_id"].as_str(), v["ticket"].as_str()) else { return };
+                let Ok(ws) = client.websocket(&format!("/shell/{sid}/ws?ticket={ticket}")).await else { return };
+                let (mut sink, mut stream) = ws.split();
+                let (mut rd, mut wr) = tcp.into_split();
+                let mut buf = vec![0u8; 32 * 1024];
+                loop {
+                    tokio::select! {
+                        n = rd.read(&mut buf) => match n {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => { if sink.send(od_client::WsMessage::Binary(buf[..n].to_vec().into())).await.is_err() { break; } }
+                        },
+                        m = stream.next() => match m {
+                            Some(Ok(od_client::WsMessage::Binary(b))) => { if wr.write_all(&b).await.is_err() { break; } }
+                            Some(Ok(od_client::WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                            _ => {}
+                        },
+                    }
+                }
+                let _ = sink.send(od_client::WsMessage::Close(None)).await;
+            });
+        }
+    });
+    tunnels.0.lock().await.insert(local, task);
+    Ok(local)
+}
+
+#[tauri::command]
+async fn tunnel_stop(tunnels: State<'_, Arc<Tunnels>>, local_port: u16) -> Result<(), String> {
+    if let Some(t) = tunnels.0.lock().await.remove(&local_port) {
+        t.abort();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn api_request(
     app: State<'_, Arc<App>>,
@@ -234,6 +384,8 @@ fn main() {
             let data_dir = app.path().app_data_dir()?.join("server");
             let state = Arc::new(App { inner: Mutex::new(Inner::default()), config_path: config_dir.join("connection.json"), data_dir });
             app.manage(state.clone());
+            app.manage(Arc::new(Shells::default()));
+            app.manage(Arc::new(Tunnels::default()));
 
             // Reconnect to whatever was used last time.
             let saved = state.load();
@@ -283,7 +435,16 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![connection_status, host_locally, connect_remote, disconnect, api_request, save_export])
+        .invoke_handler(tauri::generate_handler![
+            connection_status,
+            host_locally,
+            connect_remote,
+            disconnect,
+            api_request,
+            save_export,
+            shell_connect,
+            shell_send
+        ])
         .run(tauri::generate_context!())
         .expect("error while running OpenDirectory Admin Center");
 }

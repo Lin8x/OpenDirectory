@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Cpu, HardDrive, MemoryStick, Network, Play, RefreshCw, RotateCw, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { useQuery } from "../lib/hooks";
-import { del, patch, post } from "../lib/api";
+import { del, get, patch, post } from "../lib/api";
 import type { Endpoint, Job, OrgUnit, RsopEntry, Shell } from "../lib/types";
 import { ago, bytes, osLabel, uptime } from "../lib/format";
 import {
-  Badge, Button, Card, Confirm, ErrorNote, Explain, Field, Loading, OsIcon, Select, StatusDot, Tabs, Textarea, complianceLabel, complianceTone, useToast,
+  Badge, Button, Card, Confirm, CopyButton, ErrorNote, Explain, Field, Loading, OsIcon, Select, StatusDot, Tabs, Textarea, complianceLabel, complianceTone, useToast,
 } from "../components/ui";
 import { OuSelect } from "./Users";
 import { JobRow } from "./Jobs";
+import { RemoteShell } from "../components/RemoteShell";
+import { RemoteDesktop } from "../components/RemoteDesktop";
 
 export default function EndpointDetail() {
   const { id } = useParams();
@@ -17,7 +19,7 @@ export default function EndpointDetail() {
   const toast = useToast();
   const ep = useQuery<Endpoint>(`/endpoints/${id}`, { poll: 8000 });
   const ous = useQuery<OrgUnit[]>("/ous");
-  const [tab, setTab] = useState<"overview" | "policy" | "scripts">("overview");
+  const [tab, setTab] = useState<"overview" | "policy" | "scripts" | "shell">("overview");
   const [confirm, setConfirm] = useState(false);
 
   if (ep.loading && !ep.data) return <Loading />;
@@ -46,8 +48,9 @@ export default function EndpointDetail() {
         </div>
       </div>
 
-      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }, { id: "shell", label: "Remote shell & desktop" }]} />
 
+      {tab === "overview" && <LapsCard id={e.id} />}
       {tab === "overview" && (
         <div className="grid gap-5 lg:grid-cols-3">
           <Card title="Hardware" className="lg:col-span-2">
@@ -100,6 +103,7 @@ export default function EndpointDetail() {
       )}
       {tab === "policy" && <PolicyTab e={e} />}
       {tab === "scripts" && <ScriptsTab e={e} />}
+      {tab === "shell" && <div className="space-y-5"><RemoteShell endpoint={e} /><RemoteDesktop endpoint={e} /></div>}
 
       <Confirm open={confirm} onClose={() => setConfirm(false)} danger title={`Retire ${e.hostname}?`} confirmLabel="Retire endpoint"
         body="The agent's credentials are revoked and the endpoint is removed from the directory. Settings and accounts already applied stay on the computer. To manage it again, enroll it with a new token."
@@ -230,6 +234,29 @@ function ScriptsTab({ e }: { e: Endpoint }) {
           <ul className="divide-y divide-line">{jobs.data!.map((j) => <JobRow key={j.id} job={j} onChanged={jobs.reload} defaultOpen={j.id === lastRun} />)}</ul>
         )}
       </Card>
+    </div>
+  );
+}
+
+function LapsCard({ id }: { id: string }) {
+  const toast = useToast();
+  const [v, setV] = useState<{ account: string; password: string; previous_password: string | null; rotated_at: string; rotation_pending: boolean } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3">
+      <span className="text-sm font-semibold">Local admin password (LAPS)</span>
+      {v ? (
+        <>
+          <span className="text-sm text-ink-2">{v.account}</span>
+          <code className="selectable rounded bg-panel-2 px-2 py-0.5 font-mono text-sm">{v.password}</code>
+          <CopyButton text={v.password} />
+          <span className="text-xs text-ink-3">rotated {ago(v.rotated_at)}{v.rotation_pending ? " · rotation requested" : ""}</span>
+        </>
+      ) : err ? <span className="text-xs text-ink-3">{err}</span> : <span className="text-xs text-ink-3">Hidden. Viewing it is recorded in the audit log.</span>}
+      <div className="ml-auto flex gap-2">
+        {!v && <Button size="sm" onClick={async () => { try { setV(await get(`/endpoints/${id}/laps`)); setErr(null); } catch (e) { setErr((e as Error).message); } }}>Show password</Button>}
+        <Button size="sm" variant="ghost" onClick={async () => { try { const r = await post<{ message: string }>(`/endpoints/${id}/laps/rotate`); toast("good", r.message); } catch (e) { toast("bad", (e as Error).message); } }}>Rotate now</Button>
+      </div>
     </div>
   );
 }

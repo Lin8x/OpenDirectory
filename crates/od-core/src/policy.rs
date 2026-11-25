@@ -68,6 +68,10 @@ pub enum Setting {
     SecurityAuditing { enabled: bool },
     /// Delay updates for a pilot/broad ring (patch rings).
     UpdateDeferral { quality_days: u32, feature_days: u32 },
+    /// Windows LAPS-style local administrator: the agent keeps a local admin
+    /// account with a random password, rotates it, and escrows it (encrypted)
+    /// on the Management Server.
+    LocalAdminPassword { account: String, length: u32, rotate_days: u32 },
     /// Run a library script at startup, at sign-in, on a schedule or once
     /// (GPO Scripts). Parameter values are passed as environment variables.
     RunScript {
@@ -90,6 +94,7 @@ impl Setting {
             Setting::LoginBanner { .. } => "login_banner",
             Setting::InstallPackages { .. } => "install_packages",
             Setting::RunScript { .. } => "run_script",
+            Setting::LocalAdminPassword { .. } => "local_admin_password",
             Setting::AccountLockout { .. } => "account_lockout",
             Setting::PasswordMaxAge { .. } => "password_max_age",
             Setting::PasswordHistory { .. } => "password_history",
@@ -152,6 +157,9 @@ impl Setting {
             Setting::LoginBanner { title, .. } => format!("Login notice: {title}"),
             Setting::InstallPackages { packages } => format!("Install {}", packages.join(", ")),
             Setting::RunScript { trigger, .. } => format!("Run a script {}", trigger.describe()),
+            Setting::LocalAdminPassword { account, rotate_days, .. } => {
+                format!("Rotate {account}'s password every {rotate_days} days (LAPS)")
+            }
             Setting::AccountLockout { threshold, duration_minutes } => {
                 format!("Lock accounts for {duration_minutes} min after {threshold} wrong passwords")
             }
@@ -390,6 +398,13 @@ pub fn catalog() -> Vec<CatalogEntry> {
             choices: vec![],
             default: Setting::RunScript { script_id: Uuid::nil(), trigger: crate::scripts::ScriptTrigger::Startup, params: Default::default() },
         },
+        e(
+            "local_admin_password", "Local admin password rotation (LAPS)", "Accounts",
+            "Keeps a local administrator account on every endpoint with its own random password, rotates it on a schedule, and stores it encrypted on the Management Server. Admins can look it up (audited) when they need to sign in locally.",
+            "Windows LAPS: Configure password backup directory / Password settings",
+            [(Enforced, "Local account via the LocalAccounts module"), (Enforced, "Local account via dscl"), (Enforced, "Local account via useradd and chpasswd")],
+            Setting::LocalAdminPassword { account: "odadmin".into(), length: 20, rotate_days: 30 },
+        ),
         e(
             "account_lockout", "Account lockout", "Accounts",
             "Locks a local account for a while after too many wrong passwords, which stops password-guessing attacks.",

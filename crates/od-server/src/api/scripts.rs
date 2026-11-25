@@ -153,8 +153,9 @@ pub async fn remove(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid
     if !users.is_empty() {
         return Err(ApiError::conflict(format!("This script is used by {}. Remove it from those GPOs first.", users.join(", "))));
     }
+    super::recycle::keep(&s, super::recycle::Snapshot::Script { script: sc.clone() }, admin.name())?;
     s.db.delete_script(id)?;
-    s.db.audit(admin.name(), "script.delete", &sc.name, "");
+    s.db.audit(admin.name(), "script.delete", &sc.name, "Moved to the Recycle Bin");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -272,6 +273,7 @@ pub async fn run(
             finished_at: None,
         };
         s.db.insert_job(&job)?;
+        s.hub.wake(job.endpoint_id);
         jobs.push(job);
     }
     s.db.audit(admin.name(), "script.run", &sc.name, &format!("{} endpoint(s)", targets.len()));

@@ -63,6 +63,29 @@ pub struct CheckinResponse {
     /// GPO startup, sign-in and scheduled scripts for this endpoint.
     #[serde(default)]
     pub scripts: Vec<crate::scripts::PolicyScript>,
+    /// An admin asked for the LAPS password to be rotated now.
+    #[serde(default)]
+    pub laps_rotate: bool,
+    /// Interactive shells an admin opened; the agent connects back for each.
+    #[serde(default)]
+    pub shells: Vec<ShellRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShellRequest {
+    pub session_id: Uuid,
+    pub cols: u16,
+    pub rows: u16,
+    /// Connect this local TCP port instead of starting a shell.
+    #[serde(default)]
+    pub tunnel_port: Option<u16>,
+}
+
+/// The agent escrows a new LAPS password before it sets it locally.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LapsEscrow {
+    pub account: String,
+    pub password: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

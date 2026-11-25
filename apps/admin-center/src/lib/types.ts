@@ -17,7 +17,10 @@ export interface Inventory {
   manufacturer: string; model: string; serial_number: string; cpu_model: string; cpu_cores: number; memory_bytes: number;
   uptime_secs: number; disks: Disk[]; interfaces: NetInterface[]; logged_in_users: string[];
   disk_encrypted: boolean | null; firewall_enabled: boolean | null;
+  patches?: PatchReport | null;
 }
+export interface Patch { title: string; id: string; security: boolean; severity: string }
+export interface PatchReport { scanned_at: string | null; pending: Patch[]; reboot_required: boolean; source: string; error: string }
 export type ComplianceState = "compliant" | "applied" | "non_compliant" | "failed" | "unsupported";
 export interface ComplianceItem { setting: string; state: ComplianceState; message: string }
 export interface Endpoint {
@@ -26,7 +29,7 @@ export interface Endpoint {
 }
 export interface EnrollmentToken { token: string; description: string; ou_id: Uuid | null; uses: number; max_uses: number | null; expires_at: string | null; created_at: string; created_by: string }
 export type Shell = "default" | "powershell" | "bash" | "zsh" | "cmd";
-export type JobKind = { type: "script"; shell: Shell; script: string; env?: Record<string, string> } | { type: "refresh_inventory" } | { type: "restart_agent" };
+export type JobKind = { type: "script"; shell: Shell; script: string; env?: Record<string, string> } | { type: "refresh_inventory" } | { type: "restart_agent" } | { type: "scan_updates" } | { type: "install_updates"; security_only: boolean; reboot: boolean };
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export interface Job {
   id: Uuid; endpoint_id: Uuid; kind: JobKind; status: JobStatus; script_id: Uuid | null; batch_id: Uuid | null; exit_code: number | null; output: string;

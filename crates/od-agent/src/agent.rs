@@ -9,9 +9,20 @@ use od_core::{ComplianceItem, JobKind, OsFamily};
 use tokio::sync::watch;
 
 use crate::state::AgentState;
-use crate::{accounts, inventory, jobs, policy, policy_scripts};
+use crate::{accounts, inventory, jobs, laps, policy, policy_scripts};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+const PATCH_SCAN_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// The latest patch scan, shared between jobs and the check-in loop.
+static PATCHES: std::sync::Mutex<Option<od_core::PatchReport>> = std::sync::Mutex::new(None);
+
+pub fn set_patch_report(r: od_core::PatchReport) {
+    *PATCHES.lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+}
+fn patch_report() -> Option<od_core::PatchReport> {
+    PATCHES.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
 const INVENTORY_EVERY: Duration = Duration::from_secs(60 * 60);
 const REAPPLY_EVERY: Duration = Duration::from_secs(15 * 60);
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
@@ -29,6 +40,7 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
         enrolled_at: chrono::Utc::now(),
         accounts: Default::default(),
         script_runs: Default::default(),
+        laps: None,
     };
     state.save()?;
     Ok(state)
@@ -45,17 +57,48 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut last_settings = String::new();
     let mut compliance: Vec<ComplianceItem> = Vec::new();
     let mut account_item: Option<ComplianceItem> = None;
+    let mut laps_item: Option<ComplianceItem> = None;
     let mut backoff = Duration::from_secs(5);
     let mut force_inventory = false;
     let mut logons = policy_scripts::LogonWatcher::default();
+    let mut last_patch_scan: Option<Instant> = None;
+    // Long poll so jobs and shells start right away instead of at the next check-in.
+    let wake = std::sync::Arc::new(tokio::sync::Notify::new());
+    {
+        let (c, w) = (client.clone(), wake.clone());
+        tokio::spawn(async move {
+            loop {
+                match c.get::<serde_json::Value>("/agent/wait").await {
+                    Ok(v) if v["wake"] == true => w.notify_one(),
+                    Ok(_) => {}
+                    Err(_) => tokio::time::sleep(Duration::from_secs(30)).await,
+                }
+            }
+        });
+    }
+    let mut sent_patches: Option<od_core::PatchReport> = None;
 
     loop {
-        let send_inventory = force_inventory || last_inventory.map(|t| t.elapsed() > INVENTORY_EVERY).unwrap_or(true);
+        // Scan for OS updates in the background every few hours.
+        if last_patch_scan.map(|t| t.elapsed() > PATCH_SCAN_EVERY).unwrap_or(true) {
+            last_patch_scan = Some(Instant::now());
+            tokio::spawn(async { set_patch_report(crate::patches::scan().await) });
+        }
+        let patches_now = patch_report();
+        let patches_changed = patches_now != sent_patches;
+        let send_inventory = force_inventory || patches_changed || last_inventory.map(|t| t.elapsed() > INVENTORY_EVERY).unwrap_or(true);
         let mut all_compliance = compliance.clone();
         all_compliance.extend(account_item.clone());
+        all_compliance.extend(laps_item.clone());
         let req = CheckinRequest {
             agent_version: VERSION.into(),
-            inventory: if send_inventory { Some(inventory::collect().await) } else { None },
+            inventory: if send_inventory {
+                let mut inv = inventory::collect().await;
+                inv.patches = patches_now.clone();
+                Some(inv)
+            } else {
+                None
+            },
             compliance: all_compliance,
             account_versions: state.accounts.iter().map(|(k, v)| (k.clone(), v.password_version)).collect(),
         };
@@ -66,6 +109,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                 if send_inventory {
                     last_inventory = Some(Instant::now());
                     force_inventory = false;
+                    sent_patches = patches_now.clone();
                 }
                 force_inventory |= resp.want_inventory;
 
@@ -86,11 +130,25 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                     last_apply = Some(Instant::now());
                 }
 
+                // LAPS: rotate the local admin password when due or requested.
+                let (item, changed) = laps::maintain(&resp.settings, resp.laps_rotate, &mut state, &client).await;
+                laps_item = item;
+                if changed {
+                    if let Err(e) = state.save() {
+                        tracing::error!("saving agent state: {e:#}");
+                    }
+                }
+
                 // GPO startup, sign-in and scheduled scripts.
                 if policy_scripts::run_due(&resp.scripts, &mut state.script_runs, &mut logons, &client).await {
                     if let Err(e) = state.save() {
                         tracing::error!("saving agent state: {e:#}");
                     }
+                }
+
+                // Remote shells an admin opened.
+                for req in resp.shells {
+                    crate::shell::spawn(req, client.clone());
                 }
 
                 // Jobs run concurrently; each reports its own result.
@@ -134,6 +192,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
 
         tokio::select! {
             _ = tokio::time::sleep(wait) => {}
+            _ = wake.notified() => {}
             _ = shutdown.changed() => {
                 if *shutdown.borrow() {
                     tracing::info!("Endpoint Agent stopping");

@@ -41,6 +41,15 @@ pub struct AgentState {
     /// When each GPO script last ran, keyed by script id and trigger.
     #[serde(default)]
     pub script_runs: BTreeMap<String, ScriptRunState>,
+    /// The LAPS account this agent manages, if any.
+    #[serde(default)]
+    pub laps: Option<LapsState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LapsState {
+    pub account: String,
+    pub rotated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

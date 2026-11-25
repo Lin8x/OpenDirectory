@@ -111,6 +111,17 @@ pub async fn setup(State(s): State<AppState>, Json(req): Json<SetupRequest>) -> 
         od_core::baselines::Baseline::Custom
     });
     let plan = od_core::baselines::plan(baseline, &req.modifiers);
+    // The first admin's password must already meet the baseline's rules.
+    if let Some(min) = plan.policies.iter().flat_map(|p| &p.settings).find_map(|st| match st {
+        Setting::PasswordMinLength { length } => Some(*length),
+        _ => None,
+    }) {
+        if (req.admin_password.chars().count() as u32) < min {
+            return Err(ApiError::bad_request(format!(
+                "This baseline requires passwords of at least {min} characters; choose a longer admin password"
+            )));
+        }
+    }
     let (admin_ou, admin_groups) = apply_plan(&s, &plan)?;
 
     let user = User {
@@ -209,6 +220,24 @@ fn apply_plan(s: &AppState, plan: &od_core::baselines::Plan) -> ApiResult<(Optio
     for p in &policies {
         s.db.upsert_policy(p)?;
     }
+    // Directory passwords follow the same rules the baseline sets for endpoints.
+    if let Some(def) = plan.policies.iter().find(|p| p.name == "Default Endpoint Policy") {
+        let mut r = super::passwords::Rules::default();
+        for st in &def.settings {
+            match st {
+                Setting::PasswordMinLength { length } => r.min_length = *length,
+                Setting::PasswordComplexity { required } => r.complexity = *required,
+                Setting::PasswordHistory { count } => r.history = *count,
+                Setting::PasswordMaxAge { days } => r.max_age_days = *days,
+                Setting::AccountLockout { threshold, duration_minutes } => {
+                    r.lockout_threshold = *threshold;
+                    r.lockout_minutes = *duration_minutes;
+                }
+                _ => {}
+            }
+        }
+        s.db.meta_set("password_policy", &serde_json::to_string(&r).map_err(anyhow::Error::from)?)?;
+    }
     let tag = |v: serde_json::Result<serde_json::Value>| v.ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
     s.db.meta_set("baseline", &tag(serde_json::to_value(plan.baseline)))?;
     if let Some(l) = plan.level {
@@ -273,10 +302,42 @@ pub struct LoginRequest {
     password: String,
 }
 
-/// After this many wrong passwords for one username, sign-in is refused for
-/// LOCKOUT_SECS (AD's account lockout threshold and duration).
-const LOCKOUT_THRESHOLD: u32 = 5;
-const LOCKOUT_SECS: u64 = 300;
+/// Lockout rules for a username: its resultant password policy, or the
+/// domain default for unknown names (AD's account lockout threshold and duration).
+fn lockout_rules(s: &AppState, name: &str) -> (u32, std::time::Duration) {
+    let uid = s.db.get_user_by_username(name).ok().flatten().map(|u| u.id);
+    let r = super::passwords::resultant(s, uid).rules;
+    (r.lockout_threshold, std::time::Duration::from_secs(r.lockout_minutes.max(1) as u64 * 60))
+}
+
+/// How long this username is still locked out, if it is.
+pub(crate) fn locked_out(s: &AppState, name: &str) -> Option<std::time::Duration> {
+    let (threshold, window) = lockout_rules(s, name);
+    if threshold == 0 {
+        return None;
+    }
+    let mut f = s.login_failures.lock().unwrap_or_else(|e| e.into_inner());
+    f.retain(|_, (_, at)| at.elapsed() < std::time::Duration::from_secs(24 * 3600));
+    f.get(name).filter(|(n, at)| *n >= threshold && at.elapsed() < window).map(|(_, at)| window.saturating_sub(at.elapsed()))
+}
+
+pub(crate) fn record_failed_login(s: &AppState, name: &str, reason: &str) {
+    let (threshold, window) = lockout_rules(s, name);
+    let mut f = s.login_failures.lock().unwrap_or_else(|e| e.into_inner());
+    let e = f.entry(name.to_string()).or_insert((0, std::time::Instant::now()));
+    if e.1.elapsed() >= window {
+        e.0 = 0;
+    }
+    e.0 += 1;
+    e.1 = std::time::Instant::now();
+    let detail = if threshold > 0 && e.0 >= threshold {
+        format!("{reason}; locked out for {} minutes", window.as_secs() / 60)
+    } else {
+        reason.to_string()
+    };
+    drop(f);
+    s.db.audit(name, "auth.failed", "", &detail);
+}
 
 pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> ApiResult<Json<SessionResponse>> {
     let fail = || ApiError::new(StatusCode::UNAUTHORIZED, "Incorrect username or password");
@@ -285,29 +346,14 @@ pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> 
     let name = name.rsplit('\\').next().unwrap_or(&name).to_string();
     let name = name.split('@').next().unwrap_or(&name).to_string();
 
-    let window = std::time::Duration::from_secs(LOCKOUT_SECS);
-    let locked_for = {
-        let mut f = s.login_failures.lock().unwrap_or_else(|e| e.into_inner());
-        f.retain(|_, (_, at)| at.elapsed() < window);
-        f.get(&name).filter(|(n, _)| *n >= LOCKOUT_THRESHOLD).map(|(_, at)| window.saturating_sub(at.elapsed()))
-    };
-    if let Some(left) = locked_for {
+    if let Some(left) = locked_out(&s, &name) {
         let mins = left.as_secs().div_ceil(60).max(1);
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
             format!("Too many failed attempts. Try again in {mins} minute{}.", if mins == 1 { "" } else { "s" }),
         ));
     }
-    let record_failure = |reason: &str| {
-        let mut f = s.login_failures.lock().unwrap_or_else(|e| e.into_inner());
-        let e = f.entry(name.clone()).or_insert((0, std::time::Instant::now()));
-        e.0 += 1;
-        e.1 = std::time::Instant::now();
-        let detail =
-            if e.0 >= LOCKOUT_THRESHOLD { format!("{reason}; locked out for {} minutes", LOCKOUT_SECS / 60) } else { reason.to_string() };
-        drop(f);
-        s.db.audit(&name, "auth.failed", "", &detail);
-    };
+    let record_failure = |reason: &str| record_failed_login(&s, &name, reason);
 
     let Some(user) = s.db.get_user_by_username(&name)? else {
         // Spend comparable time so usernames can't be probed by timing.
@@ -330,6 +376,13 @@ pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> 
     if user.role != Role::Admin {
         s.db.audit(&user.username, "auth.failed", "", "Not a Domain Admin");
         return Err(ApiError::forbidden("Only Domain Admins can sign in to the Admin Center"));
+    }
+    if super::passwords::expired(&s, &user) {
+        s.db.audit(&user.username, "auth.failed", "", "Password expired");
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "Your password has expired. Choose a new one with \"Change password\" on the sign-in screen.",
+        ));
     }
     s.login_failures.lock().unwrap_or_else(|e| e.into_inner()).remove(&name);
     s.db.audit(&user.username, "auth.login", "", "");
@@ -539,8 +592,9 @@ pub async fn delete_ou(State(s): State<AppState>, admin: Admin, Path(id): Path<U
             "Move its contents first: {children} child OUs, {users} users, {groups} groups, {endpoints} endpoints"
         )));
     }
+    super::recycle::keep(&s, super::recycle::Snapshot::Ou { ou: ou.clone() }, admin.name())?;
     s.db.delete_ou(id)?;
-    s.db.audit(admin.name(), "ou.delete", &ou.name, "");
+    s.db.audit(admin.name(), "ou.delete", &ou.name, "Moved to the Recycle Bin");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -588,7 +642,7 @@ pub async fn create_user(State(s): State<AppState>, admin: Admin, Json(inp): Jso
     let ou_id = inp.ou_id.flatten();
     check_ou(&s, ou_id)?;
     if let Some(pw) = &inp.password {
-        validate_password(pw)?;
+        super::passwords::check(&s, None, pw)?;
     }
     let user = User {
         id: Uuid::new_v4(),
@@ -699,8 +753,9 @@ pub async fn delete_user(State(s): State<AppState>, admin: Admin, Path(id): Path
     if u.role == Role::Admin && u.enabled && s.db.count_enabled_admins()? <= 1 {
         return Err(ApiError::conflict("This is the last enabled Domain Admin"));
     }
+    super::recycle::keep_user(&s, &u, admin.name())?;
     s.db.delete_user(id)?;
-    s.db.audit(admin.name(), "user.delete", &u.username, "");
+    s.db.audit(admin.name(), "user.delete", &u.username, "Moved to the Recycle Bin");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -718,8 +773,8 @@ pub async fn reset_password(
     Json(inp): Json<PasswordInput>,
 ) -> ApiResult<StatusCode> {
     let mut u = s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?;
-    validate_password(&inp.password)?;
-    s.db.set_user_password(id, &hash_password(&inp.password)?, &s.sealer.seal(inp.password.as_bytes())?)?;
+    super::passwords::check(&s, Some(id), &inp.password)?;
+    super::passwords::set(&s, id, &inp.password)?;
     u.must_change_password = inp.must_change_password;
     s.db.update_user(&u)?;
     if u.id != admin.user.id {
@@ -922,8 +977,9 @@ pub async fn delete_group(State(s): State<AppState>, admin: Admin, Path(id): Pat
     if !used_by.is_empty() {
         return Err(ApiError::conflict(format!("Used for sign-in accounts by: {}", used_by.join(", "))));
     }
+    super::recycle::keep(&s, super::recycle::Snapshot::Group { group: g.clone() }, admin.name())?;
     s.db.delete_group(id)?;
-    s.db.audit(admin.name(), "group.delete", &g.name, "");
+    s.db.audit(admin.name(), "group.delete", &g.name, "Moved to the Recycle Bin");
     Ok(StatusCode::NO_CONTENT)
 }
 

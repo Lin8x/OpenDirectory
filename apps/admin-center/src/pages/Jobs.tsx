@@ -11,6 +11,8 @@ const tone = { queued: "neutral", running: "accent", succeeded: "good", failed: 
 
 export function jobTitle(j: Job) {
   if (j.kind.type === "script") return j.kind.script.split("\n")[0]!.slice(0, 80) || "Script";
+  if (j.kind.type === "scan_updates") return "Scan for updates";
+  if (j.kind.type === "install_updates") return j.kind.security_only ? "Install security updates" : "Install updates";
   return j.kind.type === "refresh_inventory" ? "Refresh inventory" : "Restart agent";
 }
 

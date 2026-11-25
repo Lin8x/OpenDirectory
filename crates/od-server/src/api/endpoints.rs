@@ -114,6 +114,7 @@ pub async fn create_job(
         finished_at: None,
     };
     s.db.insert_job(&job)?;
+    s.hub.wake(job.endpoint_id);
     s.db.audit(admin.name(), "job.create", &e.hostname, &job.kind.summary());
     Ok((StatusCode::CREATED, Json(job)))
 }
@@ -172,4 +173,92 @@ pub async fn delete_token(State(s): State<AppState>, admin: Admin, Path(token): 
     }
     s.db.audit(admin.name(), "enrollment_token.revoke", &token[..4.min(token.len())], "");
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(serde::Serialize)]
+pub struct LapsView {
+    account: String,
+    password: String,
+    previous_password: Option<String>,
+    rotated_at: chrono::DateTime<Utc>,
+    rotation_pending: bool,
+}
+
+/// Read the endpoint's LAPS password. Every read is audited.
+pub async fn laps(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<LapsView>> {
+    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    let (account, cur, prev, rotated_at, pending) = s
+        .db
+        .get_laps(id)?
+        .ok_or_else(|| ApiError::not_found("LAPS password (no GPO with the LAPS setting applies yet, or the agent hasn't rotated it)"))?;
+    let open = |b: &[u8]| -> ApiResult<String> { Ok(String::from_utf8(s.sealer.open(b)?).unwrap_or_default()) };
+    let view = LapsView {
+        account,
+        password: open(&cur)?,
+        previous_password: prev.as_deref().map(open).transpose()?,
+        rotated_at,
+        rotation_pending: pending,
+    };
+    s.db.audit(admin.name(), "laps.read", &e.hostname, &format!("Viewed the password for {}", view.account));
+    Ok(Json(view))
+}
+
+pub async fn laps_rotate(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
+    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    if !s.db.request_laps_rotation(id, true)? {
+        return Err(ApiError::not_found("LAPS password"));
+    }
+    s.hub.wake(id);
+    s.db.audit(admin.name(), "laps.rotate_requested", &e.hostname, "");
+    Ok(Json(serde_json::json!({ "ok": true, "message": "The endpoint rotates the password at its next check-in." })))
+}
+
+#[derive(Deserialize)]
+pub struct PatchInput {
+    #[serde(default)]
+    targets: od_core::scripts::RunTargets,
+    #[serde(default)]
+    install: bool,
+    #[serde(default)]
+    security_only: bool,
+    #[serde(default)]
+    reboot: bool,
+}
+
+/// Scan for, or install, OS updates on many endpoints at once.
+pub async fn patch_run(State(s): State<AppState>, admin: Admin, Json(inp): Json<PatchInput>) -> ApiResult<(StatusCode, Json<Vec<Job>>)> {
+    if inp.targets.is_empty() {
+        return Err(ApiError::bad_request("Choose at least one endpoint, group or OU"));
+    }
+    let eps = super::scripts::resolve_targets(&s, &inp.targets)?;
+    let kind =
+        if inp.install { JobKind::InstallUpdates { security_only: inp.security_only, reboot: inp.reboot } } else { JobKind::ScanUpdates };
+    let batch = Uuid::new_v4();
+    let mut jobs = vec![];
+    for e in &eps {
+        let job = Job {
+            id: Uuid::new_v4(),
+            endpoint_id: e.id,
+            kind: kind.clone(),
+            status: JobStatus::Queued,
+            script_id: None,
+            batch_id: Some(batch),
+            exit_code: None,
+            output: String::new(),
+            created_by: admin.name().to_string(),
+            created_at: Utc::now(),
+            started_at: None,
+            finished_at: None,
+        };
+        s.db.insert_job(&job)?;
+        s.hub.wake(job.endpoint_id);
+        jobs.push(job);
+    }
+    s.db.audit(
+        admin.name(),
+        if inp.install { "patch.install" } else { "patch.scan" },
+        &format!("{} endpoint(s)", eps.len()),
+        &kind.summary(),
+    );
+    Ok((StatusCode::CREATED, Json(jobs)))
 }

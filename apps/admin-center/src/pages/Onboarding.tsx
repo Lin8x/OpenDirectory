@@ -233,6 +233,7 @@ function Header({ icon, title, body }: { icon: ReactNode; title: string; body: s
 export function LoginPage() {
   const { signIn, setup, connection, setConnection } = useSession();
   const { brand } = useBranding();
+  const [changing, setChanging] = useState(false);
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [busy, setBusy] = useState(false);
@@ -260,8 +261,47 @@ export function LoginPage() {
           <span className="flex items-center gap-1.5"><Laptop className="size-3.5" />{connection?.mode === "local" ? "Hosted on this computer" : connection?.url ?? "Development server"}</span>
           {isDesktop && <button type="button" className="text-accent hover:underline" onClick={async () => setConnection(await desktop.disconnect())}>Change server</button>}
         </div>
-        {brand.support_contact && <p className="mt-3 text-center text-xs text-ink-3">Need help? Contact {brand.support_contact}</p>}
+        <p className="mt-3 text-center text-xs"><button type="button" className="text-accent hover:underline" onClick={() => setChanging(true)}>Change password or use a reset code</button></p>
+        {brand.support_contact && <p className="mt-1 text-center text-xs text-ink-3">Need help? Contact {brand.support_contact}</p>}
       </form>
+      {changing && <ChangePassword initialUser={u} onClose={() => setChanging(false)} />}
     </Frame>
+  );
+}
+
+/** Self-service: anyone in the directory can change their password here,
+ *  with their current password or a one-time code from the help desk. */
+function ChangePassword({ initialUser, onClose }: { initialUser: string; onClose: () => void }) {
+  const [user, setUser] = useState(initialUser);
+  const [mode, setMode] = useState<"password" | "code">("password");
+  const [cur, setCur] = useState("");
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <form className="w-full max-w-sm space-y-3 rounded-2xl border border-line bg-panel p-6 shadow-xl" onClick={(e) => e.stopPropagation()} onSubmit={async (e) => {
+        e.preventDefault(); setBusy(true); setMsg(null);
+        try {
+          const r = await post<{ message: string }>("/auth/change-password", { username: user, new_password: pw, ...(mode === "password" ? { current_password: cur } : { reset_code: cur }) });
+          setMsg({ ok: true, text: r.message });
+        } catch (err) { setMsg({ ok: false, text: (err as Error).message }); } finally { setBusy(false); }
+      }}>
+        <h2 className="text-lg font-semibold">Change your password</h2>
+        <Field label="Username"><Input value={user} onChange={(e) => setUser(e.target.value)} autoFocus={!initialUser} /></Field>
+        <div className="flex gap-1 rounded-lg bg-panel-2 p-1 text-xs">
+          {(["password", "code"] as const).map((m) => <button type="button" key={m} onClick={() => { setMode(m); setCur(""); }} className={cx("flex-1 rounded-md py-1", mode === m ? "bg-panel shadow" : "text-ink-3")}>{m === "password" ? "Current password" : "Reset code"}</button>)}
+        </div>
+        <Field label={mode === "password" ? "Current password" : "Reset code from your IT team"}><Input type={mode === "password" ? "password" : "text"} value={cur} onChange={(e) => setCur(e.target.value)} autoFocus={!!initialUser} placeholder={mode === "code" ? "XXXXX-XXXXX" : undefined} /></Field>
+        <Field label="New password"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+        <Field label="Confirm new password" hint={pw2 && pw !== pw2 ? "Passwords don't match" : undefined}><Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
+        {msg && <Callout tone={msg.ok ? "good" : "warn"}>{msg.text}</Callout>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" onClick={onClose}>{msg?.ok ? "Close" : "Cancel"}</Button>
+          {!msg?.ok && <Button type="submit" variant="primary" loading={busy} disabled={!user || !cur || !pw || pw !== pw2}>Change password</Button>}
+        </div>
+      </form>
+    </div>
   );
 }
