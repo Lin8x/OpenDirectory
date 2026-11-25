@@ -76,6 +76,9 @@ pub struct ShellRequest {
     pub session_id: Uuid,
     pub cols: u16,
     pub rows: u16,
+    /// Connect this local TCP port instead of starting a shell.
+    #[serde(default)]
+    pub tunnel_port: Option<u16>,
 }
 
 /// The agent escrows a new LAPS password before it sets it locally.

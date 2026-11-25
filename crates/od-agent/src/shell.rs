@@ -29,7 +29,11 @@ fn shell_command() -> CommandBuilder {
 
 pub fn spawn(req: ShellRequest, client: od_client::Client) {
     tokio::spawn(async move {
-        if let Err(e) = run(req, client).await {
+        let res = match req.tunnel_port {
+            Some(port) => tunnel(req.session_id, port, client).await,
+            None => run(req, client).await,
+        };
+        if let Err(e) = res {
             tracing::warn!("remote shell ended: {e:#}");
         }
     });
@@ -94,6 +98,38 @@ async fn run(req: ShellRequest, client: od_client::Client) -> anyhow::Result<()>
         }
     }
     let _ = child.kill();
+    let _ = sink.send(WsMessage::Close(None)).await;
+    Ok(())
+}
+
+/// TCP tunnel: connect to a service on this computer (Remote Desktop, VNC,
+/// SSH) and pipe it through the WebSocket. Only loopback is reachable.
+async fn tunnel(session: uuid::Uuid, port: u16, client: od_client::Client) -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let ws = client.websocket(&format!("/agent/shell/{session}")).await?;
+    let (mut sink, mut stream) = ws.split();
+    let tcp = match tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = sink.send(WsMessage::Close(None)).await;
+            anyhow::bail!("nothing is listening on port {port} ({e}); turn the service on first");
+        }
+    };
+    let (mut rd, mut wr) = tcp.into_split();
+    let mut buf = vec![0u8; 32 * 1024];
+    loop {
+        tokio::select! {
+            n = rd.read(&mut buf) => match n {
+                Ok(0) | Err(_) => break,
+                Ok(n) => { if sink.send(WsMessage::Binary(buf[..n].to_vec().into())).await.is_err() { break; } }
+            },
+            msg = stream.next() => match msg {
+                Some(Ok(WsMessage::Binary(b))) => { if wr.write_all(&b).await.is_err() { break; } }
+                Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                _ => {}
+            },
+        }
+    }
     let _ = sink.send(WsMessage::Close(None)).await;
     Ok(())
 }

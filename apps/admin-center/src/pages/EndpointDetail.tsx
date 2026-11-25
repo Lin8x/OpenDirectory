@@ -11,6 +11,7 @@ import {
 import { OuSelect } from "./Users";
 import { JobRow } from "./Jobs";
 import { RemoteShell } from "../components/RemoteShell";
+import { RemoteDesktop } from "../components/RemoteDesktop";
 
 export default function EndpointDetail() {
   const { id } = useParams();
@@ -47,7 +48,7 @@ export default function EndpointDetail() {
         </div>
       </div>
 
-      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }, { id: "shell", label: "Remote shell" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }, { id: "shell", label: "Remote shell & desktop" }]} />
 
       {tab === "overview" && <LapsCard id={e.id} />}
       {tab === "overview" && (
@@ -102,7 +103,7 @@ export default function EndpointDetail() {
       )}
       {tab === "policy" && <PolicyTab e={e} />}
       {tab === "scripts" && <ScriptsTab e={e} />}
-      {tab === "shell" && <RemoteShell endpoint={e} />}
+      {tab === "shell" && <div className="space-y-5"><RemoteShell endpoint={e} /><RemoteDesktop endpoint={e} /></div>}
 
       <Confirm open={confirm} onClose={() => setConfirm(false)} danger title={`Retire ${e.hostname}?`} confirmLabel="Retire endpoint"
         body="The agent's credentials are revoked and the endpoint is removed from the directory. Settings and accounts already applied stay on the computer. To manage it again, enroll it with a new token."

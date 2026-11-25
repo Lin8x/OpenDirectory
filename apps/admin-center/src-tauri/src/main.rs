@@ -261,6 +261,75 @@ async fn shell_send(
     Ok(())
 }
 
+/// Remote desktop through a tunnel: listen on a local port and carry each
+/// connection to a service on the endpoint (RDP 3389, VNC 5900, SSH 22)
+/// through the Management Server. Your usual client connects to 127.0.0.1.
+#[derive(Default)]
+struct Tunnels(Mutex<std::collections::HashMap<u16, tauri::async_runtime::JoinHandle<()>>>);
+
+#[tauri::command]
+async fn tunnel_start(
+    app: State<'_, Arc<App>>,
+    tunnels: State<'_, Arc<Tunnels>>,
+    endpoint_id: String,
+    port: u16,
+    token: String,
+) -> Result<u16, String> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    if !endpoint_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err("invalid endpoint".into());
+    }
+    let client = app.inner.lock().await.client.clone().ok_or("Not connected to a Management Server")?;
+    let admin = client.clone().with_session(&token);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.map_err(|e| e.to_string())?;
+    let local = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let task = tauri::async_runtime::spawn(async move {
+        while let Ok((tcp, _)) = listener.accept().await {
+            let (admin, client, endpoint_id) = (admin.clone(), client.clone(), endpoint_id.clone());
+            tokio::spawn(async move {
+                let opened = admin
+                    .request(
+                        od_client::Method::POST,
+                        &format!("/endpoints/{endpoint_id}/shell"),
+                        Some(&serde_json::json!({ "tunnel_port": port })),
+                    )
+                    .await;
+                let Ok(v) = opened else { return };
+                let (Some(sid), Some(ticket)) = (v["session_id"].as_str(), v["ticket"].as_str()) else { return };
+                let Ok(ws) = client.websocket(&format!("/shell/{sid}/ws?ticket={ticket}")).await else { return };
+                let (mut sink, mut stream) = ws.split();
+                let (mut rd, mut wr) = tcp.into_split();
+                let mut buf = vec![0u8; 32 * 1024];
+                loop {
+                    tokio::select! {
+                        n = rd.read(&mut buf) => match n {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => { if sink.send(od_client::WsMessage::Binary(buf[..n].to_vec().into())).await.is_err() { break; } }
+                        },
+                        m = stream.next() => match m {
+                            Some(Ok(od_client::WsMessage::Binary(b))) => { if wr.write_all(&b).await.is_err() { break; } }
+                            Some(Ok(od_client::WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                            _ => {}
+                        },
+                    }
+                }
+                let _ = sink.send(od_client::WsMessage::Close(None)).await;
+            });
+        }
+    });
+    tunnels.0.lock().await.insert(local, task);
+    Ok(local)
+}
+
+#[tauri::command]
+async fn tunnel_stop(tunnels: State<'_, Arc<Tunnels>>, local_port: u16) -> Result<(), String> {
+    if let Some(t) = tunnels.0.lock().await.remove(&local_port) {
+        t.abort();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn api_request(
     app: State<'_, Arc<App>>,
@@ -316,6 +385,7 @@ fn main() {
             let state = Arc::new(App { inner: Mutex::new(Inner::default()), config_path: config_dir.join("connection.json"), data_dir });
             app.manage(state.clone());
             app.manage(Arc::new(Shells::default()));
+            app.manage(Arc::new(Tunnels::default()));
 
             // Reconnect to whatever was used last time.
             let saved = state.load();

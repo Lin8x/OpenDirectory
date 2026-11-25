@@ -67,6 +67,13 @@ async fn shell_session_relays_both_ways() {
     admin_ws.close(None).await.unwrap();
     let end = tokio::time::timeout(std::time::Duration::from_secs(5), agent_ws.next()).await.unwrap();
     assert!(matches!(end, Some(Ok(WsMessage::Close(_))) | None));
+    // A tunnel request reaches the agent with its port.
+    admin
+        .post::<Value, _>(&format!("/endpoints/{}/shell", enr["endpoint_id"].as_str().unwrap()), &json!({"tunnel_port":3389}))
+        .await
+        .unwrap();
+    let ci: Value = agent.post("/agent/checkin", &json!({"agent_version":"0.5.0","inventory":null,"compliance":[]})).await.unwrap();
+    assert_eq!(ci["shells"][0]["tunnel_port"], 3389);
     server.shutdown();
     let _ = std::fs::remove_dir_all(dir);
 }

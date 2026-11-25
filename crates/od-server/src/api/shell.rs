@@ -31,6 +31,8 @@ struct Session {
     created: Instant,
     cols: u16,
     rows: u16,
+    /// Set for a TCP tunnel to this port on the endpoint (remote desktop, SSH).
+    tunnel_port: Option<u16>,
     delivered: bool,
     to_admin: Option<Tx>,
     to_agent: Option<Tx>,
@@ -63,7 +65,7 @@ impl Hub {
             .filter(|(_, s)| s.endpoint == endpoint && !s.delivered)
             .map(|(id, s)| {
                 s.delivered = true;
-                od_core::protocol::ShellRequest { session_id: *id, cols: s.cols, rows: s.rows }
+                od_core::protocol::ShellRequest { session_id: *id, cols: s.cols, rows: s.rows, tunnel_port: s.tunnel_port }
             })
             .collect()
     }
@@ -75,6 +77,9 @@ pub struct OpenInput {
     cols: u16,
     #[serde(default = "rows")]
     rows: u16,
+    /// Open a TCP tunnel to this port on the endpoint instead of a shell.
+    #[serde(default)]
+    tunnel_port: Option<u16>,
 }
 fn cols() -> u16 {
     120
@@ -104,6 +109,7 @@ pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>,
             created: Instant::now(),
             cols: inp.cols.clamp(20, 400),
             rows: inp.rows.clamp(5, 200),
+            tunnel_port: inp.tunnel_port.filter(|p| *p > 0),
             delivered: false,
             to_admin: None,
             to_agent: None,
@@ -112,8 +118,21 @@ pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>,
         },
     );
     s.hub.wake(id);
-    s.db.audit(admin.name(), "shell.open", &e.hostname, "Interactive remote shell");
+    match inp.tunnel_port {
+        Some(p) => s.db.audit(admin.name(), "tunnel.open", &e.hostname, &format!("TCP tunnel to port {p} ({})", port_name(p))),
+        None => s.db.audit(admin.name(), "shell.open", &e.hostname, "Interactive remote shell"),
+    }
     Ok(Json(Opened { session_id, ticket }))
+}
+
+fn port_name(p: u16) -> &'static str {
+    match p {
+        3389 => "Remote Desktop",
+        5900 => "VNC / Screen Sharing",
+        22 => "SSH",
+        5985 | 5986 => "WinRM",
+        _ => "custom",
+    }
 }
 
 #[derive(Deserialize)]
