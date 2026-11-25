@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/od-core", "crates/od-client", "crates/od-server", "crates/od-agent", "crates/od-cli", "apps/admin-center/src-tauri"]
+members = ["crates/od-core", "crates/od-client", "crates/od-server", "crates/od-agent", "crates/od-cli", "apps/admin-center/src-tauri", "xtask"]
 # The desktop app needs WebKitGTK/WebView2 to build, so it is not built by default.
-default-members = ["crates/od-core", "crates/od-client", "crates/od-server", "crates/od-agent", "crates/od-cli"]
+default-members = ["crates/od-core", "crates/od-client", "crates/od-server", "crates/od-agent", "crates/od-cli", "xtask"]
 
 [workspace.package]
 version = "0.1.0"

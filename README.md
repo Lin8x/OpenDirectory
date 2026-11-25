@@ -54,14 +54,33 @@ docs/              architecture and roadmap
 
 ## Development
 
-```bash
-cargo test                                   # unit + end-to-end API tests
-cargo check -p od-agent --target x86_64-pc-windows-gnu
+All developer tasks run through `cargo x`, a small Rust program in `xtask/`, so they work the same on Windows, macOS and Linux with nothing extra to install.
 
-# UI in a browser against a dev server
-OD_DEV_CORS=1 cargo run -p od-server -- --data-dir ./data --insecure-http --listen 127.0.0.1:8080
-cd apps/admin-center && npm run dev          # http://localhost:1420
+```bash
+cargo x setup        # first time: UI deps, rustfmt/clippy, git hooks, then doctor
+cargo x doctor       # check your toolchain and environment, with a fix for anything missing
+cargo x dev          # Admin Center with hot reload
+cargo x dev --browser   # dev Management Server + UI in your browser
+cargo x test         # Rust tests + UI typecheck
+cargo x lint         # rustfmt, clippy (warnings are errors), UI typecheck
+cargo x fmt          # format Rust code
+cargo x build --app  # release binaries + the Admin Center installer for this OS
+cargo x commit       # guided Conventional Commit
+cargo x help         # everything else
 ```
+
+### Releasing
+
+```bash
+cargo x release patch --dry-run   # preview the version bump and changelog
+cargo x release patch             # or minor / major / 1.4.0
+```
+
+`release` checks you're on an up-to-date `main` with a clean tree, runs lint and tests, bumps the version everywhere, prepends the changelog from Conventional Commits, commits `chore(release): vX.Y.Z`, tags it and pushes. GitHub Actions then builds installers for every OS and publishes the GitHub Release.
+
+**In-app updates.** The Admin Center checks the latest GitHub Release when it opens and offers *Update now* or *Remind me later*; admins can turn checks off in Settings. Updates are signed: run `cargo x updater-secrets` once, with your signing key, to give GitHub Actions the key it signs with.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the git hooks.
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the pieces fit together.
 
