@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  Activity, ArrowRight, BookOpen, Boxes, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, PlusCircle, ScrollText,
+  Activity, ArrowRight, BookOpen, Boxes, DatabaseBackup, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, PlusCircle, ScrollText,
   Search, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
 } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
@@ -31,6 +31,10 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
   {
     section: "Monitoring",
     items: [{ to: "/audit", label: "Audit Log", icon: <ScrollText className="size-4" /> }],
+  },
+  {
+    section: "Administration",
+    items: [{ to: "/backups", label: "Backup & Restore", icon: <DatabaseBackup className="size-4" /> }],
   },
 ];
 
@@ -130,7 +134,7 @@ const QUICK = [
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Script Library", to: "/scripts" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" },
+  { label: "Script Library", to: "/scripts" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 

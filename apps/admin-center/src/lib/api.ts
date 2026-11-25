@@ -73,6 +73,17 @@ export const desktop = {
   disconnect: () => invoke<ConnectionState>("disconnect"),
 };
 
+/** Saves binary data given as base64 (e.g. a backup file). Same locations as saveExport. */
+export async function saveBinary(fileName: string, base64: string): Promise<string | null> {
+  if (isDesktop) return invoke<string>("save_export", { fileName, contents: base64, base64: true });
+  const bin = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bin], { type: "application/octet-stream" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return null;
+}
+
 /** Saves a text export. Desktop: Downloads folder (returns the path). Browser: a normal download. */
 export async function saveExport(fileName: string, contents: string): Promise<string | null> {
   if (isDesktop) return invoke<string>("save_export", { fileName, contents });

@@ -2,6 +2,7 @@
 //! through these routes; nothing is UI-only.
 
 mod agent;
+pub mod backups;
 mod directory;
 mod endpoints;
 mod policies;
@@ -55,6 +56,15 @@ pub fn router(state: AppState) -> Router {
         .route("/policies", get(policies::list).post(policies::create))
         .route("/policies/catalog", get(policies::catalog))
         .route("/policies/{id}", get(policies::get).put(policies::update).delete(policies::remove))
+        .route("/backups/plans", get(backups::list).post(backups::create))
+        .route("/backups/plans/{id}", put(backups::update).delete(backups::remove))
+        .route("/backups/plans/{id}/run", post(backups::run_now))
+        .route("/backups/plans/{id}/test", post(backups::test_plan))
+        .route("/backups/plans/{id}/files", get(backups::files))
+        .route("/backups/plans/{id}/restore", post(backups::restore_from_plan))
+        .route("/backups/test", post(backups::test_new))
+        .route("/backups/download", post(backups::download_now))
+        .route("/backups/restore", post(backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)))
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))

@@ -13,6 +13,7 @@ import Enrollment from "./pages/Enrollment";
 import Policies from "./pages/Policies";
 import PolicyEditor from "./pages/PolicyEditor";
 import Scripts from "./pages/Scripts";
+import Backups from "./pages/Backups";
 import ScriptEditor from "./pages/ScriptEditor";
 import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
@@ -43,6 +44,7 @@ function Gate() {
             <Route path="/scripts" element={<Scripts />} />
             <Route path="/scripts/:id" element={<ScriptEditor />} />
             <Route path="/audit" element={<Audit />} />
+            <Route path="/backups" element={<Backups />} />
             <Route path="/learn" element={<Learn />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -75,6 +75,9 @@ CREATE TABLE IF NOT EXISTS scripts (
   params TEXT NOT NULL DEFAULT '[]', template TEXT, created_by TEXT NOT NULL,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS backup_plans (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, sealed BLOB NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -152,6 +155,15 @@ impl Db {
 
     pub fn lock(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A consistent copy of the whole database, taken while it's in use.
+    pub fn snapshot(&self) -> Result<Vec<u8>> {
+        let tmp = std::env::temp_dir().join(format!("od-snapshot-{}.db", Uuid::new_v4()));
+        self.lock().execute("VACUUM INTO ?", [tmp.to_string_lossy().to_string()])?;
+        let bytes = std::fs::read(&tmp);
+        let _ = std::fs::remove_file(&tmp);
+        Ok(bytes?)
     }
 
     // ---------- meta ----------
@@ -727,6 +739,28 @@ impl Db {
             "UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'queued'",
             params![ts(Utc::now()), id.to_string()],
         )? > 0)
+    }
+
+    // ---------- backup plans (sealed: destination credentials inside) ----------
+    pub fn list_backup_plans(&self) -> Result<Vec<(Uuid, Vec<u8>)>> {
+        let c = self.lock();
+        let mut st = c.prepare("SELECT id, sealed FROM backup_plans")?;
+        let rows = st.query_map([], |r| Ok((uid(r.get(0)?), r.get::<_, Vec<u8>>(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn get_backup_plan(&self, id: Uuid) -> Result<Option<Vec<u8>>> {
+        Ok(self.lock().query_row("SELECT sealed FROM backup_plans WHERE id = ?", [id.to_string()], |r| r.get(0)).optional()?)
+    }
+    pub fn upsert_backup_plan(&self, id: Uuid, name: &str, sealed: &[u8]) -> Result<()> {
+        self.lock().execute(
+            "INSERT INTO backup_plans(id, name, sealed, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET name = ?2, sealed = ?3, updated_at = ?4",
+            params![id.to_string(), name, sealed, ts(Utc::now())],
+        )?;
+        Ok(())
+    }
+    pub fn delete_backup_plan(&self, id: Uuid) -> Result<bool> {
+        Ok(self.lock().execute("DELETE FROM backup_plans WHERE id = ?", [id.to_string()])? > 0)
     }
 
     // ---------- scripts ----------

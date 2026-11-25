@@ -7,8 +7,10 @@
 
 pub mod api;
 pub mod auth;
+pub mod backup;
 pub mod crypto;
 pub mod db;
+pub mod destinations;
 pub mod error;
 pub mod service;
 pub mod tls;
@@ -98,13 +100,24 @@ impl RunningServer {
 
 pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppState> {
     std::fs::create_dir_all(data_dir).with_context(|| format!("create data dir {}", data_dir.display()))?;
+    if let Some(kept) = backup::apply_pending(data_dir)? {
+        tracing::info!("Restored from backup; the previous data is in {}", kept.display());
+    }
     let db = db::Db::open(&data_dir.join("directory.db"))?;
     let sealer = crypto::Sealer::load_or_create(&data_dir.join("master.key"))?;
     Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default() })
 }
 
-/// Daily maintenance: apply the audit log retention chosen at onboarding.
+/// Background work: scheduled backups (checked every minute) and the daily
+/// audit log retention chosen at onboarding.
 fn spawn_housekeeping(state: AppState) {
+    let s2 = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            api::backups::run_due(&s2).await;
+        }
+    });
     tokio::spawn(async move {
         loop {
             if let Ok(Some(d)) = state.db.meta_get("audit_retention_days") {
