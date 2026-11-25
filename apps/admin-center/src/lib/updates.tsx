@@ -76,7 +76,7 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
       setStatus("error");
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      if (manual) toast("bad", `Couldn't check for updates: ${msg}`);
+      if (manual) toast("bad", /release JSON|404/i.test(msg) ? "No update information has been published yet." : `Couldn't check for updates: ${msg}`);
     }
   }, [toast]);
 

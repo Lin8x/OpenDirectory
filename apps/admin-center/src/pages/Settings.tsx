@@ -54,7 +54,7 @@ function UpdatesCard() {
     u.status === "up-to-date" ? "You're on the latest version." :
     u.status === "available" ? `Version ${u.available?.version} is available.` :
     u.status === "downloading" ? "Downloading the update…" :
-    u.status === "error" ? `Last check failed: ${u.error}` : null;
+    u.status === "error" ? friendlyUpdateError(u.error) : null;
   return (
     <Card title="Updates">
       <div className="space-y-4">
@@ -77,5 +77,12 @@ function UpdatesCard() {
 }
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
-  return <div className="flex justify-between gap-4"><dt className="text-ink-3">{k}</dt><dd className="text-right">{v ?? "—"}</dd></div>;
+  return <div className="flex justify-between gap-4"><dt className="shrink-0 text-ink-3">{k}</dt><dd className="min-w-0 break-all text-right">{v ?? "—"}</dd></div>;
+}
+
+function friendlyUpdateError(e: string | null): string {
+  if (!e) return "Couldn't check for updates.";
+  if (/release JSON|404|Not Found/i.test(e)) return "No update information has been published yet.";
+  if (/network|dns|connect|timed? ?out|offline/i.test(e)) return "Couldn't reach GitHub. Check your internet connection.";
+  return `Couldn't check for updates: ${e}`;
 }
