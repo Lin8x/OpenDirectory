@@ -81,6 +81,20 @@ pub struct ShellRequest {
     pub tunnel_port: Option<u16>,
 }
 
+/// Certificate auto-enrollment: the agent sends a CSR for its own key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertEnrollRequest {
+    pub csr_pem: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertEnrollResponse {
+    pub cert_pem: String,
+    /// The issuing CA certificate.
+    pub ca_pem: String,
+    pub not_after: chrono::DateTime<chrono::Utc>,
+}
+
 /// The agent escrows a new LAPS password before it sets it locally.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LapsEscrow {

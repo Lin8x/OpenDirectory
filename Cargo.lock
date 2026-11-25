@@ -3701,6 +3701,7 @@ dependencies = [
  "od-core",
  "portable-pty",
  "rand 0.8.8",
+ "rcgen",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

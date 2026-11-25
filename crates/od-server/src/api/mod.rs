@@ -120,6 +120,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/jobs/{id}/result", post(agent::job_result))
         .route("/agent/script-runs", post(agent::script_run))
         .route("/agent/laps", post(agent::laps_escrow))
+        .route("/agent/certificate", post(ca::agent_enroll))
         .route("/agent/wait", get(shell::wait))
         .route("/agent/shell/{id}", get(shell::agent_ws));
 

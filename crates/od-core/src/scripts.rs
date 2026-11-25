@@ -433,6 +433,51 @@ realm list"#,
 dsconfigad -show"#,
             params: vec![param("DOMAIN", "Domain", "corp.example.com", true), param("JOIN_USER", "Account allowed to join computers", "Administrator", true), secret("JOIN_PASSWORD", "Its password")],
         },
+        // ---------------------------------------------------------- printing
+        ScriptTemplate {
+            key: "win-deploy-printer",
+            name: "Deploy a printer",
+            category: "Printing",
+            description: "Connects a shared printer from a print server (run as a sign-in script), or adds a TCP/IP printer by address (run as a startup script).",
+            os: vec![Windows],
+            shell: Shell::Powershell,
+            body: r#"if ($env:OD_PARAM_SHARE) {
+  Add-Printer -ConnectionName $env:OD_PARAM_SHARE -ErrorAction Stop
+  if ($env:OD_PARAM_DEFAULT -eq 'yes') { (New-Object -ComObject WScript.Network).SetDefaultPrinter($env:OD_PARAM_SHARE) }
+  "Connected $env:OD_PARAM_SHARE"
+} else {
+  $port = "IP_$env:OD_PARAM_ADDRESS"
+  if (-not (Get-PrinterPort -Name $port -ErrorAction SilentlyContinue)) { Add-PrinterPort -Name $port -PrinterHostAddress $env:OD_PARAM_ADDRESS }
+  if (-not (Get-Printer -Name $env:OD_PARAM_NAME -ErrorAction SilentlyContinue)) { Add-Printer -Name $env:OD_PARAM_NAME -PortName $port -DriverName $env:OD_PARAM_DRIVER }
+  "Added $env:OD_PARAM_NAME at $env:OD_PARAM_ADDRESS"
+}"#,
+            params: vec![
+                param("SHARE", "Shared printer (\\\\server\\queue), or leave empty", "", false),
+                param("ADDRESS", "Or printer IP address", "", false),
+                param("NAME", "Printer name (IP printers)", "Office Printer", false),
+                param("DRIVER", "Driver (IP printers)", "Microsoft IPP Class Driver", false),
+                param("DEFAULT", "Make it the default (yes/no)", "no", false),
+            ],
+        },
+        ScriptTemplate {
+            key: "unix-deploy-printer",
+            name: "Deploy a printer (CUPS)",
+            category: "Printing",
+            description: "Adds a network printer with IPP Everywhere (driverless) on macOS or Linux.",
+            os: vec![Macos, Linux],
+            shell: Shell::Bash,
+            body: r#"set -e
+NAME=$(printf '%s' "$OD_PARAM_NAME" | tr -c 'A-Za-z0-9_-' '_')
+lpadmin -p "$NAME" -E -v "ipp://$OD_PARAM_ADDRESS/ipp/print" -m everywhere -D "$OD_PARAM_NAME" -L "$OD_PARAM_LOCATION"
+[ "$OD_PARAM_DEFAULT" = "yes" ] && lpadmin -d "$NAME"
+lpstat -p "$NAME""#,
+            params: vec![
+                param("ADDRESS", "Printer IP address or name", "", true),
+                param("NAME", "Printer name", "Office Printer", true),
+                param("LOCATION", "Location", "", false),
+                param("DEFAULT", "Make it the default (yes/no)", "no", false),
+            ],
+        },
         // ---------------------------------------------------------- any OS
         ScriptTemplate {
             key: "any-uptime",

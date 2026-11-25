@@ -66,6 +66,7 @@ export type Setting =
   | { kind: "security_auditing"; enabled: boolean }
   | { kind: "update_deferral"; quality_days: number; feature_days: number }
   | { kind: "local_admin_password"; account: string; length: number; rotate_days: number }
+  | { kind: "certificate_auto_enrollment"; renew_days: number }
   | { kind: "trusted_root_certificate"; name: string; pem: string };
 export type SettingKind = Setting["kind"];
 

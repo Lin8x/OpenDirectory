@@ -9,7 +9,7 @@ use od_core::{ComplianceItem, JobKind, OsFamily};
 use tokio::sync::watch;
 
 use crate::state::AgentState;
-use crate::{accounts, inventory, jobs, laps, policy, policy_scripts};
+use crate::{accounts, certs, inventory, jobs, laps, policy, policy_scripts};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PATCH_SCAN_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
@@ -41,6 +41,7 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
         accounts: Default::default(),
         script_runs: Default::default(),
         laps: None,
+        cert_not_after: None,
     };
     state.save()?;
     Ok(state)
@@ -58,6 +59,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut compliance: Vec<ComplianceItem> = Vec::new();
     let mut account_item: Option<ComplianceItem> = None;
     let mut laps_item: Option<ComplianceItem> = None;
+    let mut cert_item: Option<ComplianceItem> = None;
     let mut backoff = Duration::from_secs(5);
     let mut force_inventory = false;
     let mut logons = policy_scripts::LogonWatcher::default();
@@ -90,6 +92,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
         let mut all_compliance = compliance.clone();
         all_compliance.extend(account_item.clone());
         all_compliance.extend(laps_item.clone());
+        all_compliance.extend(cert_item.clone());
         let req = CheckinRequest {
             agent_version: VERSION.into(),
             inventory: if send_inventory {
@@ -133,7 +136,9 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                 // LAPS: rotate the local admin password when due or requested.
                 let (item, changed) = laps::maintain(&resp.settings, resp.laps_rotate, &mut state, &client).await;
                 laps_item = item;
-                if changed {
+                let (item, cert_changed) = certs::maintain(&resp.settings, &mut state, &client).await;
+                cert_item = item;
+                if changed || cert_changed {
                     if let Err(e) = state.save() {
                         tracing::error!("saving agent state: {e:#}");
                     }

@@ -826,6 +826,39 @@ async fn certificate_authority_issues_verifiable_certs() {
 }
 
 #[tokio::test]
+async fn machine_certificate_auto_enrollment() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (_, ep_auth) = enroll(&app, auth, "linux", "web-01", None).await;
+    let key = rcgen::KeyPair::generate().unwrap();
+    let mut p = rcgen::CertificateParams::new(vec!["evil.example.com".to_string()]).unwrap();
+    p.distinguished_name.push(rcgen::DnType::CommonName, "evil.example.com");
+    let csr = p.serialize_request(&key).unwrap().pem().unwrap();
+    call(&app, Method::POST, "/ca", auth, Some(json!({}))).await;
+    let (st, _) = call(&app, Method::POST, "/agent/certificate", Some(&ep_auth), Some(json!({ "csr_pem": csr }))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "needs the GPO setting");
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/policies",
+        auth,
+        Some(json!({"name":"Certs","targets":{"all_endpoints":true},"settings":[{"kind":"certificate_auto_enrollment","renew_days":30}]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, r) = call(&app, Method::POST, "/agent/certificate", Some(&ep_auth), Some(json!({ "csr_pem": csr }))).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    let pem = r["cert_pem"].as_str().unwrap();
+    let parsed = rcgen::CertificateParams::from_ca_cert_pem(pem).unwrap();
+    let subject = format!("{:?} {:?}", parsed.distinguished_name, parsed.subject_alt_names);
+    assert!(subject.contains("web-01"), "{subject}");
+    assert!(!subject.contains("evil"), "names come from the directory, not the CSR");
+    let (_, ca) = call(&app, Method::GET, "/ca", auth, None).await;
+    assert_eq!(ca["issued"][0]["kind"], "machine");
+}
+
+#[tokio::test]
 async fn mobile_inventory_and_apple_profiles() {
     let app = app();
     let tok = setup(&app).await;
