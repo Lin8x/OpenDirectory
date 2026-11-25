@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { PrefsProvider, SessionProvider, useSession } from "./lib/session";
+import { PrefsProvider, SessionProvider, useLearnMode, useSession } from "./lib/session";
+import ClassicShell from "./components/ClassicShell";
 import { Loading, ToastProvider } from "./components/ui";
 import Shell from "./components/Shell";
 import { ConnectPage, LoginPage, SetupWizard, UnreachablePage } from "./pages/Onboarding";
@@ -24,6 +25,8 @@ import { BrandingProvider } from "./lib/branding";
 
 function Gate() {
   const { phase } = useSession();
+  const { ui } = useLearnMode();
+  const Frame = ui === "classic" ? ClassicShell : Shell;
   switch (phase) {
     case "loading": return <div className="grid h-full place-items-center"><Loading label="Starting OpenDirectory…" /></div>;
     case "connect": return <ConnectPage />;
@@ -32,7 +35,7 @@ function Gate() {
     case "login": return <LoginPage />;
     case "ready":
       return (
-        <Shell>
+        <Frame>
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/users" element={<Users />} />
@@ -52,7 +55,7 @@ function Gate() {
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </Shell>
+        </Frame>
       );
   }
 }

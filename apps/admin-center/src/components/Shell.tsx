@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity, ArrowRight, BookOpen, Boxes, DatabaseBackup, FolderTree, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, PlusCircle, ScrollText,
-  Plug, Search, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
+  PanelsTopLeft, Plug, Search, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal, Users as UsersIcon, UsersRound,
 } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
@@ -48,7 +48,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
 
 export default function Shell({ children }: { children: ReactNode }) {
   const { me, signOut } = useSession();
-  const { learn, setLearn, theme, setTheme } = useLearnMode();
+  const { learn, setLearn, theme, setTheme, setUi } = useLearnMode();
   const [palette, setPalette] = useState(false);
   const loc = useLocation();
   const [menu, setMenu] = useState(false);
@@ -105,6 +105,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               <div className="anim-pop absolute bottom-11 left-0 right-0 z-30 rounded-lg border border-line bg-panel p-1 shadow-xl" onMouseLeave={() => setMenu(false)}>
                 <MenuItem icon={dark ? <Sun className="size-4" /> : <Moon className="size-4" />} onClick={() => { setTheme(dark ? "light" : "dark"); setMenu(false); }}>{dark ? "Light theme" : "Dark theme"}</MenuItem>
                 <NavLink to="/settings" onClick={() => setMenu(false)} className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink-2 hover:bg-panel-2"><SettingsIcon className="size-4" />Server &amp; connection</NavLink>
+                <button onClick={() => { setMenu(false); setUi("classic"); }} className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink-2 hover:bg-panel-2"><PanelsTopLeft className="size-4" />Classic interface</button>
                 <MenuItem icon={<LogOut className="size-4" />} onClick={() => void signOut()}>Sign out</MenuItem>
               </div>
             )}

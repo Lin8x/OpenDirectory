@@ -11,7 +11,7 @@ import { Button, Card, CodeBlock, Explain, Field, Input, PageHeader, Select, Swi
 
 export default function Settings() {
   const { me, connection, setConnection } = useSession();
-  const { learn, setLearn, theme, setTheme } = useLearnMode();
+  const { learn, setLearn, theme, setTheme, ui, setUi } = useLearnMode();
   const s = me?.server;
   return (
     <>
@@ -38,6 +38,11 @@ export default function Settings() {
         <Card title="Preferences">
           <div className="space-y-4">
             <Switch checked={learn} onChange={setLearn} label="Learn mode: show explanations throughout the app" />
+            <Field label="Interface" hint="Classic mimics the console layout of Active Directory Users and Computers and Group Policy Management: a tree, a details list, right-click menus and property sheets.">
+              <Select value={ui} onChange={(e) => setUi(e.target.value as "modern" | "classic")} className="w-48">
+                <option value="modern">Modern</option><option value="classic">Classic (console)</option>
+              </Select>
+            </Field>
             <Field label="Theme">
               <Select value={theme} onChange={(e) => setTheme(e.target.value as "light" | "dark" | "system")} className="w-48">
                 <option value="system">Match system</option><option value="light">Light</option><option value="dark">Dark</option>
