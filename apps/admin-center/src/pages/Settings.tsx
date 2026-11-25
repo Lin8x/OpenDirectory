@@ -1,5 +1,6 @@
 import { RefreshCw, Server } from "lucide-react";
-import { useUpdates } from "../lib/updates";
+import { friendlyUpdateError, useUpdates } from "../lib/updates";
+import { ago } from "../lib/format";
 import { desktop, isDesktop } from "../lib/api";
 import { useLearnMode, useSession } from "../lib/session";
 import { Button, Card, CodeBlock, Explain, Field, PageHeader, Select, Switch } from "../components/ui";
@@ -51,7 +52,7 @@ function UpdatesCard() {
   if (!u.supported) return null;
   const line =
     u.status === "checking" ? "Checking…" :
-    u.status === "up-to-date" ? "You're on the latest version." :
+    u.status === "up-to-date" ? `You're up to date (v${u.currentVersion}).` :
     u.status === "available" ? `Version ${u.available?.version} is available.` :
     u.status === "downloading" ? "Downloading the update…" :
     u.status === "error" ? friendlyUpdateError(u.error) : null;
@@ -60,6 +61,8 @@ function UpdatesCard() {
       <div className="space-y-4">
         <dl className="space-y-3 text-sm">
           <Row k="Admin Center version" v={u.currentVersion} />
+          <Row k="Status" v={u.status === "up-to-date" ? <span className="text-good">Up to date</span> : u.status === "available" ? <span className="text-accent">Update available: {u.available?.version}</span> : u.status === "error" ? <span className="text-warn">Unknown</span> : u.status === "checking" ? "Checking…" : "Not checked yet"} />
+          <Row k="Last checked" v={u.lastChecked ? ago(new Date(u.lastChecked).toISOString()) : "Never"} />
         </dl>
         <Switch checked={u.autoCheck} onChange={u.setAutoCheck} label="Check for updates when the app opens" />
         <div className="flex items-center gap-3">
@@ -78,11 +81,4 @@ function UpdatesCard() {
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return <div className="flex justify-between gap-4"><dt className="shrink-0 text-ink-3">{k}</dt><dd className="min-w-0 break-all text-right">{v ?? "—"}</dd></div>;
-}
-
-function friendlyUpdateError(e: string | null): string {
-  if (!e) return "Couldn't check for updates.";
-  if (/release JSON|404|Not Found/i.test(e)) return "No update information has been published yet.";
-  if (/network|dns|connect|timed? ?out|offline/i.test(e)) return "Couldn't reach GitHub. Check your internet connection.";
-  return `Couldn't check for updates: ${e}`;
 }
