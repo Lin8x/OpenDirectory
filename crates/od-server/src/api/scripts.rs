@@ -299,11 +299,11 @@ pub async fn script_jobs(
     Path(id): Path<Uuid>,
     Query(q): Query<LimitQuery>,
 ) -> ApiResult<Json<Vec<Job>>> {
-    Ok(Json(s.db.list_script_jobs(id, q.limit.unwrap_or(100).min(1000))?))
+    Ok(Json(s.db.list_script_jobs(id, q.limit.unwrap_or(100).min(1000))?.into_iter().map(super::endpoints::redact).collect()))
 }
 
 pub async fn batch_jobs(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<Job>>> {
-    Ok(Json(s.db.list_batch_jobs(id)?))
+    Ok(Json(s.db.list_batch_jobs(id)?.into_iter().map(super::endpoints::redact).collect()))
 }
 
 #[derive(Serialize)]

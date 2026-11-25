@@ -94,7 +94,7 @@ export interface Overview {
 }
 export interface SearchHit { type: "user" | "group" | "endpoint" | "ou" | "policy"; id: Uuid; title: string; subtitle: string }
 
-export interface ScriptParam { name: string; label: string; default: string; required: boolean }
+export interface ScriptParam { name: string; label: string; default: string; required: boolean; secret?: boolean }
 export interface Script {
   id: Uuid; name: string; description: string; category: string; shell: Shell; body: string; os: OsFamily[];
   params: ScriptParam[]; template: string | null; created_by: string; created_at: string; updated_at: string;

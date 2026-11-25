@@ -268,7 +268,7 @@ function ScriptSettingForm({ v, onChange, scripts }: { v: Extract<Setting, { kin
       </Field>
       {sc && sc.params.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2">
-          {sc.params.map((p) => <Field key={p.name} label={`${p.label || p.name}${p.required ? " *" : ""}`}><Input value={v.params[p.name] ?? p.default} onChange={(e) => onChange({ ...v, params: { ...v.params, [p.name]: e.target.value } })} /></Field>)}
+          {sc.params.map((p) => <Field key={p.name} label={`${p.label || p.name}${p.required ? " *" : ""}`}><Input type={p.secret ? "password" : "text"} value={v.params[p.name] ?? p.default} onChange={(e) => onChange({ ...v, params: { ...v.params, [p.name]: e.target.value } })} /></Field>)}
         </div>
       )}
       {sc && sc.os.length > 0 && <p className="text-xs text-ink-3">Runs only on {sc.os.map((o) => (o === "macos" ? "macOS" : o[0]!.toUpperCase() + o.slice(1))).join(", ")} endpoints. <Link to={`/scripts/${sc.id}`} className="text-accent hover:underline">Open script</Link></p>}

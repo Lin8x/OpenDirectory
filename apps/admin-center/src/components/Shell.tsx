@@ -43,6 +43,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
   {
     section: "Integrations",
     items: [
+      { to: "/domain-controller", label: "Domain Controller", icon: <Server className="size-4" /> },
       { to: "/integrations?tab=windows", label: "Windows Services", icon: <Server className="size-4" /> },
       { to: "/integrations?tab=cloud", label: "Cloud & Alerts", icon: <Plug className="size-4" /> },
     ],
@@ -151,7 +152,7 @@ const QUICK = [
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Mobile Devices", to: "/mobile" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
+  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Domain Controller (Samba AD DC)", to: "/domain-controller" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 

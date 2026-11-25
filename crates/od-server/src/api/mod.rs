@@ -14,6 +14,7 @@ mod netsvc;
 pub mod passwords;
 mod policies;
 pub mod recycle;
+pub mod samba;
 mod scripts;
 pub mod shell;
 
@@ -89,6 +90,11 @@ pub fn router(state: AppState) -> Router {
         .route("/dns", get(netsvc::get_dns))
         .route("/dns/config", put(netsvc::set_dns_config))
         .route("/dns/records", put(netsvc::set_dns_records))
+        .route("/dc", get(samba::status))
+        .route("/dc/provision", post(samba::provision))
+        .route("/dc/sync", post(samba::sync))
+        .route("/dc/info", get(samba::info))
+        .route("/dc/action", post(samba::action))
         .route("/mobile-devices", get(mobile::list).post(mobile::create))
         .route("/mobile-devices/{id}", put(mobile::update).delete(mobile::remove))
         .route("/mobile-profiles/apple", post(mobile::apple_profile))
