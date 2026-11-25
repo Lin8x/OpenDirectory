@@ -53,6 +53,7 @@ pub fn parse_dnf(out: &str, security: &[String]) -> Vec<Patch> {
 }
 
 /// Parse `softwareupdate -l` output.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn parse_softwareupdate(out: &str) -> (Vec<Patch>, bool) {
     let mut v = vec![];
     let mut reboot = false;
