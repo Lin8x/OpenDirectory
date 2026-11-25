@@ -30,6 +30,24 @@
     "targets": "all",
     "category": "Utility",
     "shortDescription": "Directory, Group Policy and endpoint management for every OS",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE2RjcxNTEzRDgyMzQzRUMKUldUc1F5UFlFeFgzcHBaWDN0OGVCaTBFbkhaaTFWYzVXcVVqZGJ6Yy94a1hEVXFVMVpqVll3TDUK",
+      "endpoints": [
+        "https://github.com/Lin8x/OpenDirectory/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

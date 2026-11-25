@@ -16,6 +16,7 @@ import Jobs from "./pages/Jobs";
 import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
 import Settings from "./pages/Settings";
+import { UpdatesProvider } from "./lib/updates";
 
 function Gate() {
   const { phase } = useSession();
@@ -53,9 +54,11 @@ export default function App() {
   return (
     <PrefsProvider>
       <ToastProvider>
-        <SessionProvider>
-          <Gate />
-        </SessionProvider>
+        <UpdatesProvider>
+          <SessionProvider>
+            <Gate />
+          </SessionProvider>
+        </UpdatesProvider>
       </ToastProvider>
     </PrefsProvider>
   );

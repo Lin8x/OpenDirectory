@@ -104,7 +104,14 @@ async fn connect(app: &App, url: &str, fingerprint: Option<String>) -> Result<Co
         old.shutdown();
     }
     let error = client.request(od_client::Method::GET, "/health", None).await.err().map(|e| e.to_string());
-    inner.state = ConnectionState { mode: Some("remote".into()), url: Some(target.url.clone()), fingerprint: target.fingerprint.clone(), data_dir: None, endpoint_url: Some(target.url.clone()), error };
+    inner.state = ConnectionState {
+        mode: Some("remote".into()),
+        url: Some(target.url.clone()),
+        fingerprint: target.fingerprint.clone(),
+        data_dir: None,
+        endpoint_url: Some(target.url.clone()),
+        error,
+    };
     inner.client = Some(client);
     Ok(inner.state.clone())
 }
@@ -149,7 +156,13 @@ struct RawResponse {
 }
 
 #[tauri::command]
-async fn api_request(app: State<'_, Arc<App>>, method: String, path: String, body: Option<Value>, token: Option<String>) -> Result<RawResponse, String> {
+async fn api_request(
+    app: State<'_, Arc<App>>,
+    method: String,
+    path: String,
+    body: Option<Value>,
+    token: Option<String>,
+) -> Result<RawResponse, String> {
     if !path.starts_with('/') || path.contains("..") {
         return Err("invalid path".into());
     }
@@ -177,9 +190,13 @@ fn show_main(app: &AppHandle) {
 }
 
 fn main() {
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,tower_http=warn".into())).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,tower_http=warn".into()))
+        .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let data_dir = app.path().app_data_dir()?.join("server");
