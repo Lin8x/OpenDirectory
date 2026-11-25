@@ -9,6 +9,7 @@ pub mod directory;
 mod endpoints;
 pub mod integrations;
 mod lab;
+mod mobile;
 mod netsvc;
 pub mod passwords;
 mod policies;
@@ -88,6 +89,9 @@ pub fn router(state: AppState) -> Router {
         .route("/dns", get(netsvc::get_dns))
         .route("/dns/config", put(netsvc::set_dns_config))
         .route("/dns/records", put(netsvc::set_dns_records))
+        .route("/mobile-devices", get(mobile::list).post(mobile::create))
+        .route("/mobile-devices/{id}", put(mobile::update).delete(mobile::remove))
+        .route("/mobile-profiles/apple", post(mobile::apple_profile))
         .route("/ca", get(ca::get).post(ca::init))
         .route("/ca/issue", post(ca::issue))
         .route("/ca/certificates/{id}", get(ca::download))

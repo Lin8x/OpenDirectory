@@ -179,6 +179,7 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
               </>} />
             } />
             <T n={{ kind: "page", to: "/endpoints" }} depth={1} label="Endpoints" icon={<Monitor className="size-3.5 text-emerald-600" />} />
+            <T n={{ kind: "page", to: "/mobile" }} depth={1} label="Mobile Devices" icon={<Monitor className="size-3.5" />} />
             <T n={{ kind: "page", to: "/patches" }} depth={1} label="Patch Management" icon={<RefreshCw className="size-3.5" />} />
             <T n={{ kind: "page", to: "/scripts" }} depth={1} label="Script Library" icon={<Terminal className="size-3.5" />} />
             <T n={{ kind: "page", to: "/audit" }} depth={1} label="Event Viewer (Audit Log)" icon={<ScrollText className="size-3.5" />} />
