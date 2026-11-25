@@ -20,6 +20,7 @@ fn app() -> Router {
         info: Arc::new(ServerInfo { version: "test", endpoint_url: "http://test".into(), tls_fingerprint: None, data_dir: "mem".into() }),
         login_failures: Default::default(),
         hub: Default::default(),
+        services: Default::default(),
     };
     super::router(state).layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 5], 5555))))
 }
@@ -591,6 +592,7 @@ async fn webhook_integration_receives_signed_events() {
         info: Arc::new(ServerInfo { version: "test", endpoint_url: "http://test".into(), tls_fingerprint: None, data_dir: "mem".into() }),
         login_failures: Default::default(),
         hub: Default::default(),
+        services: Default::default(),
     };
     super::integrations::spawn_dispatcher(state.clone());
     let app = super::router(state).layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 5], 5555))));
