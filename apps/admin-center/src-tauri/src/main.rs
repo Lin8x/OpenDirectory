@@ -72,6 +72,8 @@ async fn start_local(app: &App, port: u16) -> Result<ConnectionState, String> {
         tls: true,
         local_listen: Some("127.0.0.1:0".parse().unwrap()),
         public_host: None,
+        web_ui: None,
+        tls_cert: None,
     };
     let server = od_server::start(cfg).await.map_err(|e| {
         let msg = format!("{e:#}");

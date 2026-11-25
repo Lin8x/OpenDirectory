@@ -1,0 +1,6 @@
+target
+data
+**/node_modules
+apps/admin-center/dist
+apps/admin-center/src-tauri/target
+.git

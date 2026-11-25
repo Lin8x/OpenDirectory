@@ -360,9 +360,13 @@ fn dev(browser: bool) -> Result<()> {
     }
     let data = root().join("data").join("dev-server");
     fs::create_dir_all(&data)?;
-    println!("Starting a dev Management Server on http://127.0.0.1:8080 (data in {})", data.display());
+    // OD_DEV_PORT picks another port if 8080 is taken on this machine.
+    let port = std::env::var("OD_DEV_PORT").unwrap_or_else(|_| "8080".into());
+    let listen = format!("127.0.0.1:{port}");
+    println!("Starting a dev Management Server on http://{listen} (data in {})", data.display());
+    std::env::set_var("VITE_OD_SERVER", format!("http://{listen}"));
     let mut server = Command::new("cargo")
-        .args(["run", "-p", "od-server", "--", "--insecure-http", "--listen", "127.0.0.1:8080", "--data-dir"])
+        .args(["run", "-p", "od-server", "--", "--insecure-http", "--listen", &listen, "--data-dir"])
         .arg(&data)
         .env("OD_DEV_CORS", "1")
         .spawn()

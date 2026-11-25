@@ -58,6 +58,11 @@ pub struct ServerConfig {
     pub local_listen: Option<SocketAddr>,
     /// Hostname or IP put in enrollment commands. Detected when empty.
     pub public_host: Option<String>,
+    /// Folder with the built Admin Center web UI. When set, the server also
+    /// serves the Admin Center to browsers (web mode).
+    pub web_ui: Option<PathBuf>,
+    /// Use this certificate and key (PEM) instead of the self-signed one.
+    pub tls_cert: Option<(PathBuf, PathBuf)>,
 }
 
 impl Default for ServerConfig {
@@ -68,6 +73,8 @@ impl Default for ServerConfig {
             tls: true,
             local_listen: None,
             public_host: None,
+            web_ui: None,
+            tls_cert: None,
         }
     }
 }
@@ -138,6 +145,24 @@ pub fn router(state: AppState) -> Router {
     api::router(state)
 }
 
+/// Serve the built Admin Center for browsers, with strict security headers.
+/// Unknown paths fall back to index.html (the UI routes on the URL hash).
+pub fn with_web_ui(app: Router, dir: &std::path::Path) -> Router {
+    use axum::http::{header, HeaderValue};
+    use tower_http::services::{ServeDir, ServeFile};
+    use tower_http::set_header::SetResponseHeaderLayer;
+    let ui = Router::new()
+        .fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")))
+        .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
+        .layer(SetResponseHeaderLayer::overriding(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")));
+    app.merge(ui)
+}
+
 fn detect_host() -> String {
     // Find the primary outbound interface address without sending anything.
     std::net::UdpSocket::bind("0.0.0.0:0")
@@ -160,7 +185,10 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let listen_addr = listener.local_addr()?;
 
     let (scheme, tls_cfg, fingerprint) = if config.tls {
-        let (cfg, fp) = tls::load_or_create(&config.data_dir, &host).await?;
+        let (cfg, fp) = match &config.tls_cert {
+            Some((cert, key)) => tls::load_provided(cert, key).await?,
+            None => tls::load_or_create(&config.data_dir, &host).await?,
+        };
         ("https", Some(cfg), Some(fp))
     } else {
         ("http", None, None)
@@ -176,7 +204,11 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let info = state.info.clone();
     spawn_housekeeping(state.clone());
     api::integrations::spawn_dispatcher(state.clone());
-    let app = router(state);
+    let mut app = router(state);
+    if let Some(dir) = config.web_ui.as_ref().filter(|d| d.join("index.html").exists()) {
+        tracing::info!("Serving the Admin Center web UI from {}", dir.display());
+        app = with_web_ui(app, dir);
+    }
 
     let mut tasks = Vec::new();
     let svc = app.clone().into_make_service_with_connect_info::<SocketAddr>();

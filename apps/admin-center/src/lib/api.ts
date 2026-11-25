@@ -5,7 +5,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export const isDesktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-const DEV_SERVER = (import.meta.env.VITE_OD_SERVER as string | undefined) ?? "http://127.0.0.1:8080";
+// In a browser the API is on the same origin (web mode, served by the
+// Management Server). During development VITE_OD_SERVER points at the dev server.
+const DEV_SERVER = (import.meta.env.VITE_OD_SERVER as string | undefined) ?? (import.meta.env.DEV ? "http://127.0.0.1:8080" : "");
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }

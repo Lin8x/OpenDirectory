@@ -21,6 +21,16 @@ struct Args {
     /// Hostname or IP put in enrollment commands (detected if omitted).
     #[arg(long, env = "OD_PUBLIC_HOST", global = true)]
     public_host: Option<String>,
+    /// Serve the Admin Center to browsers from this folder (web mode).
+    /// Defaults to a `web` folder next to the binary, if there is one.
+    #[arg(long, env = "OD_WEB_UI", global = true)]
+    web_ui: Option<PathBuf>,
+    /// TLS certificate (PEM) to use instead of the self-signed one.
+    #[arg(long, env = "OD_TLS_CERT", global = true, requires = "tls_key")]
+    tls_cert: Option<PathBuf>,
+    /// TLS private key (PEM) for --tls-cert.
+    #[arg(long, env = "OD_TLS_KEY", global = true)]
+    tls_key: Option<PathBuf>,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -61,6 +71,10 @@ fn main() -> anyhow::Result<()> {
         tls: !args.insecure_http,
         local_listen: None,
         public_host: args.public_host.clone(),
+        web_ui: args.web_ui.clone().or_else(|| {
+            std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("web"))).filter(|p| p.join("index.html").exists())
+        }),
+        tls_cert: args.tls_cert.clone().zip(args.tls_key.clone()),
     };
     let svc_args = || od_server::service::ServiceArgs {
         data_dir: std::path::absolute(&args.data_dir).unwrap_or(args.data_dir.clone()),
@@ -100,11 +114,15 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn run(config: od_server::ServerConfig) -> anyhow::Result<()> {
+    let web = config.web_ui.as_ref().is_some_and(|d| d.join("index.html").exists());
     let server = od_server::start(config).await?;
     println!("OpenDirectory Management Server {}", od_server::VERSION);
     println!("  Endpoint URL:     {}", server.info.endpoint_url);
     if let Some(fp) = &server.info.tls_fingerprint {
         println!("  TLS fingerprint:  {fp}");
+    }
+    if web {
+        println!("  Web Admin Center: {}/", server.info.endpoint_url);
     }
     println!("  Data directory:   {}", server.info.data_dir);
     tokio::select! {
