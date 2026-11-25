@@ -3,6 +3,7 @@
 
 mod agent;
 pub mod backups;
+mod branding;
 mod directory;
 mod endpoints;
 mod policies;
@@ -19,6 +20,7 @@ pub fn router(state: AppState) -> Router {
     let api = Router::new()
         .route("/health", get(directory::health))
         .route("/setup", get(directory::setup_status).post(directory::setup))
+        .route("/branding", get(branding::get).put(branding::set))
         .route("/baselines", get(directory::baselines))
         .route("/baselines/preview", post(directory::preview_baseline))
         .route("/auth/login", post(directory::login))

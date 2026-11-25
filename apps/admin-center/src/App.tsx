@@ -19,6 +19,7 @@ import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
 import Settings from "./pages/Settings";
 import { UpdatesProvider } from "./lib/updates";
+import { BrandingProvider } from "./lib/branding";
 
 function Gate() {
   const { phase } = useSession();
@@ -60,7 +61,9 @@ export default function App() {
       <ToastProvider>
         <UpdatesProvider>
           <SessionProvider>
-            <Gate />
+            <BrandingProvider>
+              <Gate />
+            </BrandingProvider>
           </SessionProvider>
         </UpdatesProvider>
       </ToastProvider>

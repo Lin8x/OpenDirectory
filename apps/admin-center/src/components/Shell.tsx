@@ -8,6 +8,7 @@ import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
 import type { SearchHit } from "../lib/types";
 import { Avatar, Switch, cx } from "./ui";
+import { BrandMark } from "../lib/branding";
 
 const NAV: { section: string; items: { to: string; label: string; icon: ReactNode }[] }[] = [
   { section: "", items: [{ to: "/", label: "Overview", icon: <LayoutDashboard className="size-4" /> }] },
@@ -57,11 +58,7 @@ export default function Shell({ children }: { children: ReactNode }) {
     <div className="flex h-full">
       <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-panel">
         <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-          <img src="/logo.svg" className="size-8" alt="" />
-          <div className="min-w-0 leading-tight">
-            <div className="text-[13px] font-semibold">OpenDirectory</div>
-            <div className="truncate text-xs text-ink-3">{me?.domain}</div>
-          </div>
+          <BrandMark sub={me?.domain} />
         </div>
         <button onClick={() => setPalette(true)} className="mx-3 mb-2 flex h-8 items-center gap-2 rounded-md border border-line bg-panel-2 px-2.5 text-[13px] text-ink-3 hover:text-ink">
           <Search className="size-3.5" /><span className="flex-1 text-left">Search</span><kbd className="rounded border border-line bg-panel px-1 text-[10px]">Ctrl K</kbd>
