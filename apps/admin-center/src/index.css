@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Noto Sans", Ubuntu, Cantarell, system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+}
+
+:root {
+  --bg: #f4f5f8;
+  --panel: #ffffff;
+  --panel-2: #f8f9fb;
+  --line: #e3e6ec;
+  --ink: #161a23;
+  --ink-2: #4a5160;
+  --ink-3: #7c8495;
+  --accent: #3a63f3;
+  --accent-ink: #ffffff;
+  --accent-soft: #e9eeff;
+  --good: #16a34a;
+  --good-soft: #e7f7ed;
+  --warn: #c27803;
+  --warn-soft: #fdf4e3;
+  --bad: #dc2626;
+  --bad-soft: #fdecec;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0f1218;
+  --panel: #161a22;
+  --panel-2: #1b2029;
+  --line: #2a303c;
+  --ink: #e8ebf1;
+  --ink-2: #aab2c0;
+  --ink-3: #7a8396;
+  --accent: #6488ff;
+  --accent-ink: #0b1020;
+  --accent-soft: #1d2747;
+  --good: #3ccf73;
+  --good-soft: #13291c;
+  --warn: #f0b13c;
+  --warn-soft: #2d2412;
+  --bad: #ff6b6b;
+  --bad-soft: #321819;
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+input, textarea, select, code, pre, .selectable { user-select: text; }
+::selection { background: var(--accent-soft); }
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.985) } to { opacity: 1; transform: none } }
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0 } to { transform: none; opacity: 1 } }
+.anim-fade { animation: fade-in .15s ease-out }
+.anim-pop { animation: pop-in .18s ease-out }
+.anim-slide { animation: slide-in .2s ease-out }

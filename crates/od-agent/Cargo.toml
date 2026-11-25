@@ -1,0 +1,30 @@
+[package]
+name = "od-agent"
+description = "OpenDirectory Endpoint Agent: inventory, policy, sign-in accounts and remote scripts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "opendirectory-agent"
+path = "src/main.rs"
+
+[dependencies]
+od-core.workspace = true
+od-client.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+hex.workspace = true
+sysinfo = { version = "0.33", default-features = false, features = ["system", "disk", "network"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"

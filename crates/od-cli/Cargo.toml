@@ -1,0 +1,22 @@
+[package]
+name = "od-cli"
+description = "od: command-line interface for OpenDirectory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "od"
+path = "src/main.rs"
+
+[dependencies]
+od-core.workspace = true
+od-client.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+clap.workspace = true
+rpassword = "7"

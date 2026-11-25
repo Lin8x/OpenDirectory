@@ -1,0 +1,28 @@
+[package]
+name = "od-admin-center"
+description = "OpenDirectory Admin Center desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "opendirectory-admin-center"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+od-server.workspace = true
+od-client.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tauri = { version = "2", features = ["tray-icon"] }
+
+[features]
+# Set by `tauri build`: serve the bundled UI instead of the Vite dev server.
+custom-protocol = ["tauri/custom-protocol"]
