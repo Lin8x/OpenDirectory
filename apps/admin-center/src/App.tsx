@@ -12,7 +12,8 @@ import EndpointDetail from "./pages/EndpointDetail";
 import Enrollment from "./pages/Enrollment";
 import Policies from "./pages/Policies";
 import PolicyEditor from "./pages/PolicyEditor";
-import Jobs from "./pages/Jobs";
+import Scripts from "./pages/Scripts";
+import ScriptEditor from "./pages/ScriptEditor";
 import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
 import Settings from "./pages/Settings";
@@ -39,7 +40,8 @@ function Gate() {
             <Route path="/enroll" element={<Enrollment />} />
             <Route path="/gpos" element={<Policies />} />
             <Route path="/gpos/:id" element={<PolicyEditor />} />
-            <Route path="/scripts" element={<Jobs />} />
+            <Route path="/scripts" element={<Scripts />} />
+            <Route path="/scripts/:id" element={<ScriptEditor />} />
             <Route path="/audit" element={<Audit />} />
             <Route path="/learn" element={<Learn />} />
             <Route path="/settings" element={<Settings />} />

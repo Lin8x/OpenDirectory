@@ -69,8 +69,28 @@ pub async fn checkin(
     let groups = s.db.list_groups()?;
     let users: HashMap<Uuid, od_core::User> = s.db.list_users()?.into_iter().map(|u| (u.id, u)).collect();
     let mut settings = Vec::new();
+    let mut scripts = Vec::new();
+    let endpoint_os = s.db.get_endpoint(auth.id)?.map(|e| e.os);
     for es in eff {
         match es.setting {
+            Setting::RunScript { script_id, trigger, params } => {
+                let Some(sc) = s.db.get_script(script_id)? else { continue };
+                if endpoint_os.map(|os| !sc.supports(os)).unwrap_or(false) {
+                    continue;
+                }
+                let Ok(env) = od_core::scripts::param_env(&sc.params, &params) else { continue };
+                let revision = sha256_hex(serde_json::to_string(&(&sc.shell, &sc.body, &env, &trigger)).unwrap_or_default().as_bytes());
+                scripts.push(od_core::scripts::PolicyScript {
+                    script_id,
+                    name: sc.name.clone(),
+                    revision: revision[..16].to_string(),
+                    shell: sc.shell,
+                    body: sc.body,
+                    env,
+                    trigger,
+                    source: format!("GPO \"{}\"", es.policy_name),
+                });
+            }
             Setting::LocalAccounts { group_id, admin } => {
                 let Some(g) = groups.iter().find(|g| g.id == group_id) else { continue };
                 for uid in &g.member_ids {
@@ -105,6 +125,7 @@ pub async fn checkin(
         settings,
         accounts,
         want_inventory: auth.want_inventory,
+        scripts,
     }))
 }
 
@@ -123,5 +144,36 @@ pub async fn job_result(
     if !s.db.finish_job(id, auth.id, res.success, res.exit_code, &output)? {
         return Err(ApiError::not_found("Running job"));
     }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// A GPO script ran on the endpoint: record it in the script history.
+pub async fn script_run(
+    State(s): State<AppState>,
+    EndpointCaller(auth): EndpointCaller,
+    Json(r): Json<od_core::scripts::ScriptRunReport>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut output = r.output;
+    if output.len() > 1024 * 1024 {
+        let cut = output.char_indices().map(|(i, _)| i).take_while(|i| *i <= 1024 * 1024).last().unwrap_or(0);
+        output.truncate(cut);
+        output.push_str("\n… output truncated at 1 MB");
+    }
+    let source: String = r.source.chars().take(200).collect();
+    let job = od_core::Job {
+        id: Uuid::new_v4(),
+        endpoint_id: auth.id,
+        kind: od_core::JobKind::Script { shell: r.shell, script: r.body, env: Default::default() },
+        status: if r.success { od_core::JobStatus::Succeeded } else { od_core::JobStatus::Failed },
+        script_id: s.db.get_script(r.script_id)?.map(|sc| sc.id),
+        batch_id: None,
+        exit_code: r.exit_code,
+        output,
+        created_by: source,
+        created_at: r.started_at,
+        started_at: Some(r.started_at),
+        finished_at: Some(Utc::now()),
+    };
+    s.db.insert_finished_job(&job)?;
     Ok(Json(serde_json::json!({ "ok": true })))
 }

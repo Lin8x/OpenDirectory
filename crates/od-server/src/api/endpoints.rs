@@ -104,6 +104,8 @@ pub async fn create_job(
         endpoint_id: id,
         kind,
         status: JobStatus::Queued,
+        script_id: None,
+        batch_id: None,
         exit_code: None,
         output: String::new(),
         created_by: admin.name().to_string(),

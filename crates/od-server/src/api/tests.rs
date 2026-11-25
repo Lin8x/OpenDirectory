@@ -299,3 +299,184 @@ async fn repeated_wrong_passwords_lock_the_account_temporarily() {
     let (st, v) = call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"dan","password":"s3cure-pass!"}))).await;
     assert_eq!(st, StatusCode::TOO_MANY_REQUESTS, "{v}");
 }
+
+async fn enroll(app: &Router, auth: Option<&str>, os: &str, host: &str, ou: Option<&str>) -> (String, String) {
+    let (_, t) = call(app, Method::POST, "/enrollment-tokens", auth, Some(json!({"ou_id": ou}))).await;
+    let inv = json!({"hostname": host, "os_name":"x","os_version":"1","os_edition":"","kernel_version":"","arch":"x86_64","manufacturer":"","model":"","serial_number":"","cpu_model":"","cpu_cores":1,"memory_bytes":1,"uptime_secs":1,"disks":[],"interfaces":[],"logged_in_users":[],"disk_encrypted":null,"firewall_enabled":null});
+    let (st, enr) =
+        call(app, Method::POST, "/agent/enroll", None, Some(json!({"token":t["token"],"os":os,"agent_version":"0.3.0","inventory":inv})))
+            .await;
+    assert_eq!(st, StatusCode::OK, "{enr}");
+    let id = enr["endpoint_id"].as_str().unwrap().to_string();
+    (id.clone(), format!("Endpoint {}.{}", id, enr["endpoint_secret"].as_str().unwrap()))
+}
+
+#[tokio::test]
+async fn script_library_targets_and_gpo_scripts() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+
+    let (_, ous) = call(&app, Method::GET, "/ous", auth, None).await;
+    let ws = ous.as_array().unwrap().iter().find(|o| o["name"] == "Workstations").unwrap()["id"].as_str().unwrap().to_string();
+    let (win, win_auth) = enroll(&app, auth, "windows", "PC-01", Some(&ws)).await;
+    let (_lin, _) = enroll(&app, auth, "linux", "web-01", None).await;
+    let (mac, _) = enroll(&app, auth, "macos", "MAC-01", None).await;
+
+    let (st, tpls) = call(&app, Method::GET, "/scripts/templates", auth, None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(tpls.as_array().unwrap().len() >= 15);
+
+    // From a template: Windows-only with a required parameter.
+    let (st, sc) = call(&app, Method::POST, "/scripts", auth, Some(json!({"template":"win-restart-service"}))).await;
+    assert_eq!(st, StatusCode::CREATED, "{sc}");
+    let sid = sc["id"].as_str().unwrap().to_string();
+
+    // Custom script for every OS.
+    let (st, any) = call(
+        &app,
+        Method::POST,
+        "/scripts",
+        auth,
+        Some(
+            json!({"name":"Hello","shell":"default","body":"echo $OD_PARAM_WHO","params":[{"name":"WHO","label":"Who","default":"world"}]}),
+        ),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{any}");
+    let (st, _) =
+        call(&app, Method::POST, "/scripts", auth, Some(json!({"name":"bad","body":"x","params":[{"name":"lower","label":"x"}]}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // A group of computers.
+    let (_, g) = call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Kiosks"}))).await;
+    let gid = g["id"].as_str().unwrap().to_string();
+    let (st, g) = call(&app, Method::PUT, &format!("/groups/{gid}/endpoints"), auth, Some(json!({"ids":[mac]}))).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(g["endpoint_ids"].as_array().unwrap().len(), 1);
+
+    // Dry run: OU + group reach PC-01 and MAC-01; the Windows script skips the Mac.
+    let (st, pv) = call(
+        &app,
+        Method::POST,
+        &format!("/scripts/{sid}/run"),
+        auth,
+        Some(json!({"targets":{"ou_ids":[ws],"group_ids":[gid]},"dry_run":true})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{pv}");
+    assert_eq!(pv["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(pv["skipped"].as_array().unwrap().len(), 1);
+
+    // Run for real against all endpoints with a parameter.
+    let aid = any["id"].as_str().unwrap().to_string();
+    let (st, run) = call(
+        &app,
+        Method::POST,
+        &format!("/scripts/{aid}/run"),
+        auth,
+        Some(json!({"targets":{"all_endpoints":true},"params":{"WHO":"admins"}})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{run}");
+    assert_eq!(run["jobs"].as_array().unwrap().len(), 3);
+    assert_eq!(run["jobs"][0]["kind"]["env"]["OD_PARAM_WHO"], "admins");
+    let batch = run["batch_id"].as_str().unwrap();
+    let (_, bj) = call(&app, Method::GET, &format!("/batches/{batch}/jobs"), auth, None).await;
+    assert_eq!(bj.as_array().unwrap().len(), 3);
+
+    // Required parameter left empty is refused when the template default is cleared.
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        &format!("/scripts/{sid}/run"),
+        auth,
+        Some(json!({"targets":{"endpoint_ids":[win]},"params":{"SERVICE":""}})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // Attach to a GPO linked to Workstations as a startup script.
+    let (st, p) = call(
+        &app,
+        Method::POST,
+        "/policies",
+        auth,
+        Some(json!({"name":"Workstation scripts","targets":{"ou_ids":[ws]},
+        "settings":[{"kind":"run_script","script_id":sid,"trigger":{"type":"startup"},"params":{"SERVICE":"Spooler"}}]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{p}");
+    let (st, _) = call(&app, Method::DELETE, &format!("/scripts/{sid}"), auth, None).await;
+    assert_eq!(st, StatusCode::CONFLICT, "in use by a GPO");
+
+    let (st, ci) = call(
+        &app,
+        Method::POST,
+        "/agent/checkin",
+        Some(&win_auth),
+        Some(json!({"agent_version":"0.3.0","inventory":null,"compliance":[]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{ci}");
+    let scripts = ci["scripts"].as_array().unwrap();
+    assert_eq!(scripts.len(), 1);
+    assert_eq!(scripts[0]["env"]["OD_PARAM_SERVICE"], "Spooler");
+    assert_eq!(scripts[0]["trigger"]["type"], "startup");
+    assert!(scripts[0]["source"].as_str().unwrap().contains("Workstation scripts"));
+
+    // The agent reports the run; it shows up in the script's history.
+    let (st, _) = call(&app, Method::POST, "/agent/script-runs", Some(&win_auth), Some(json!({"script_id":sid,"trigger":{"type":"startup"},"source":"GPO \"Workstation scripts\" (at startup)","shell":"powershell","body":"x","exit_code":0,"output":"ok","success":true,"started_at":"2026-11-25T10:00:00Z"}))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, hist) = call(&app, Method::GET, &format!("/scripts/{sid}/jobs"), auth, None).await;
+    assert_eq!(hist.as_array().unwrap().len(), 1);
+    assert_eq!(hist[0]["status"], "succeeded");
+}
+
+#[tokio::test]
+async fn onboarding_with_a_baseline_and_modifiers() {
+    let app = app();
+    let (st, cat) = call(&app, Method::GET, "/baselines", None, None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(cat["baselines"].as_array().unwrap().len(), 7);
+
+    let body = json!({"baseline":"enterprise","modifiers":{"compliance":["soc2"],"usb":"block","time_server":"time.corp.contoso.com"}});
+    let (st, plan) = call(&app, Method::POST, "/baselines/preview", None, Some(body.clone())).await;
+    assert_eq!(st, StatusCode::OK, "{plan}");
+    assert!(plan["ous"].as_array().unwrap().iter().any(|o| o["name"] == "Finance" && o["parent"] == "Departments"));
+
+    let (st, v) = call(
+        &app,
+        Method::POST,
+        "/setup",
+        None,
+        Some(json!({
+            "organization": "Contoso", "domain": "corp.contoso.com", "admin_username": "dan",
+            "admin_display_name": "Dan", "admin_password": "s3cure-pass!",
+            "baseline": "enterprise", "modifiers": body["modifiers"]
+        })),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{v}");
+    let tok = format!("Bearer {}", v["token"].as_str().unwrap());
+    let auth = Some(tok.as_str());
+
+    let (_, ous) = call(&app, Method::GET, "/ous", auth, None).await;
+    let names: Vec<&str> = ous.as_array().unwrap().iter().map(|o| o["name"].as_str().unwrap()).collect();
+    for n in ["Departments", "Finance", "Workstations", "Laptops", "Admin", "Tier 0", "Pilot"] {
+        assert!(names.contains(&n), "missing OU {n}: {names:?}");
+    }
+    let (_, gpos) = call(&app, Method::GET, "/policies", auth, None).await;
+    let gpos = gpos.as_array().unwrap();
+    let def = gpos.iter().find(|p| p["name"] == "Default Endpoint Policy").unwrap();
+    let kinds: Vec<&str> = def["settings"].as_array().unwrap().iter().map(|s| s["kind"].as_str().unwrap()).collect();
+    assert!(kinds.contains(&"usb_storage") && kinds.contains(&"time_server") && kinds.contains(&"security_auditing"), "{kinds:?}");
+    assert!(gpos.iter().any(|p| p["name"] == "Patch Ring: Pilot"));
+    assert!(gpos.iter().any(|p| p["name"] == "Sign-in Accounts"));
+
+    // The admin is a Domain Admin and in Tier 0.
+    let (_, me) = call(&app, Method::GET, "/auth/me", auth, None).await;
+    let (_, groups) = call(&app, Method::GET, "/groups", auth, None).await;
+    let t0 = groups.as_array().unwrap().iter().find(|g| g["name"] == "Tier 0 Admins").unwrap();
+    assert!(t0["member_ids"].as_array().unwrap().contains(&me["user"]["id"]));
+}

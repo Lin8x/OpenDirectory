@@ -23,6 +23,7 @@ interface UpdatesCtx {
   autoCheck: boolean;
   setAutoCheck: (v: boolean) => void;
   status: Status;
+  lastChecked: number;
   error: string | null;
   available: AvailableUpdate | null;
   progress: number | null;
@@ -48,6 +49,7 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
   const [available, setAvailable] = useState<AvailableUpdate | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [lastChecked, setLastChecked] = useLocalStorage<number>("od.updates.lastChecked", 0);
   const handle = useRef<UpdateHandle>(null);
 
   useEffect(() => {
@@ -70,15 +72,19 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
       } else {
         setAvailable(null);
         setStatus("up-to-date");
-        if (manual) toast("good", "You're on the latest version.");
+        setLastChecked(Date.now());
+        // Say so after the launch check too, so it's clear the check ran.
+        const v = await import("@tauri-apps/api/app").then((m) => m.getVersion()).catch(() => "");
+        toast("good", v ? `You're up to date (v${v}).` : "You're up to date.");
       }
     } catch (e) {
       setStatus("error");
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      if (manual) toast("bad", /release JSON|404/i.test(msg) ? "No update information has been published yet." : `Couldn't check for updates: ${msg}`);
+      setLastChecked(Date.now());
+      if (manual) toast("bad", friendlyUpdateError(msg));
     }
-  }, [toast]);
+  }, [toast, setLastChecked]);
 
   // Check once when the app opens, unless turned off or snoozed.
   const checkedOnLaunch = useRef(false);
@@ -126,6 +132,7 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
     autoCheck,
     setAutoCheck,
     status,
+    lastChecked,
     error,
     available,
     progress,
@@ -169,4 +176,12 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
       </Dialog>
     </Ctx.Provider>
   );
+}
+
+/** Plain-language reason an update check failed. */
+export function friendlyUpdateError(e: string | null): string {
+  if (!e) return "Couldn't check for updates.";
+  if (/release JSON|404|Not Found/i.test(e)) return "Couldn't tell whether you're up to date: the latest release was published without update information.";
+  if (/network|dns|connect|timed? ?out|offline/i.test(e)) return "Couldn't reach GitHub to check for updates. Check your internet connection.";
+  return `Couldn't check for updates: ${e}`;
 }

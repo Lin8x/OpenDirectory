@@ -10,6 +10,7 @@ pub mod auth;
 pub mod crypto;
 pub mod db;
 pub mod error;
+pub mod service;
 pub mod tls;
 
 use std::net::SocketAddr;
@@ -102,6 +103,24 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
     Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default() })
 }
 
+/// Daily maintenance: apply the audit log retention chosen at onboarding.
+fn spawn_housekeeping(state: AppState) {
+    tokio::spawn(async move {
+        loop {
+            if let Ok(Some(d)) = state.db.meta_get("audit_retention_days") {
+                if let Ok(days) = d.parse::<u32>() {
+                    match state.db.prune_audit(days.max(1)) {
+                        Ok(n) if n > 0 => tracing::info!("audit retention: removed {n} entries older than {days} days"),
+                        Err(e) => tracing::warn!("audit retention: {e:#}"),
+                        _ => {}
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+        }
+    });
+}
+
 pub fn router(state: AppState) -> Router {
     api::router(state)
 }
@@ -142,6 +161,7 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     };
     let state = build_state(&config.data_dir, info)?;
     let info = state.info.clone();
+    spawn_housekeeping(state.clone());
     let app = router(state);
 
     let mut tasks = Vec::new();

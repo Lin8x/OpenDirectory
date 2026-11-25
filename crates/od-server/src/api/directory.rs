@@ -50,8 +50,14 @@ pub struct SetupRequest {
     admin_username: String,
     admin_display_name: String,
     admin_password: String,
+    /// Legacy flag from v0.2: true means the Small Business baseline.
     #[serde(default = "yes")]
     create_defaults: bool,
+    /// Security baseline to start from; overrides `create_defaults`.
+    #[serde(default)]
+    baseline: Option<od_core::baselines::Baseline>,
+    #[serde(default)]
+    modifiers: od_core::baselines::Modifiers,
 }
 fn yes() -> bool {
     true
@@ -99,46 +105,13 @@ pub async fn setup(State(s): State<AppState>, Json(req): Json<SetupRequest>) -> 
     s.db.meta_set("setup_at", &Utc::now().to_rfc3339())?;
 
     let now = Utc::now();
-    let mut admin_ou = None;
-    let mut admin_groups = vec![];
-    if req.create_defaults {
-        let mk_ou = |name: &str, desc: &str| -> ApiResult<Uuid> {
-            let ou = OrgUnit { id: Uuid::new_v4(), name: name.into(), description: desc.into(), parent_id: None, created_at: now };
-            s.db.insert_ou(&ou)?;
-            Ok(ou.id)
-        };
-        let staff = mk_ou("Staff", "People in the organization")?;
-        mk_ou("Workstations", "Desktops and laptops")?;
-        mk_ou("Servers", "Servers and infrastructure")?;
-        admin_ou = Some(mk_ou("IT", "IT administrators")?);
-        let _ = staff;
-
-        for (name, desc) in [("Domain Admins", "Full control of the directory and every endpoint"), ("Domain Users", "Every user account")]
-        {
-            let g =
-                Group { id: Uuid::new_v4(), name: name.into(), description: desc.into(), ou_id: None, member_ids: vec![], created_at: now };
-            s.db.insert_group(&g)?;
-            admin_groups.push(g.id);
-        }
-
-        let policy = Policy {
-            id: Uuid::new_v4(),
-            name: "Default Endpoint Policy".into(),
-            description: "Security baseline for every endpoint, like the Default Domain Policy in AD.".into(),
-            enabled: true,
-            priority: 1000,
-            targets: PolicyTargets { all_endpoints: true, ou_ids: vec![] },
-            settings: vec![
-                Setting::Firewall { enabled: true },
-                Setting::ScreenLock { minutes: 15 },
-                Setting::DiskEncryption { required: true },
-                Setting::AutomaticUpdates { enabled: true },
-            ],
-            created_at: now,
-            updated_at: now,
-        };
-        s.db.upsert_policy(&policy)?;
-    }
+    let baseline = req.baseline.unwrap_or(if req.create_defaults {
+        od_core::baselines::Baseline::SmallBusiness
+    } else {
+        od_core::baselines::Baseline::Custom
+    });
+    let plan = od_core::baselines::plan(baseline, &req.modifiers);
+    let (admin_ou, admin_groups) = apply_plan(&s, &plan)?;
 
     let user = User {
         id: Uuid::new_v4(),
@@ -165,6 +138,122 @@ pub async fn setup(State(s): State<AppState>, Json(req): Json<SetupRequest>) -> 
 
     let session = new_session(&s, user.id)?;
     Ok((StatusCode::CREATED, Json(session)))
+}
+
+/// Create the OUs, groups and GPOs of a baseline plan. Returns the admin's
+/// OU and the built-in groups the first admin joins.
+fn apply_plan(s: &AppState, plan: &od_core::baselines::Plan) -> ApiResult<(Option<Uuid>, Vec<Uuid>)> {
+    use od_core::baselines::Rollout;
+    let now = Utc::now();
+    let mut ou_ids: HashMap<String, Uuid> = HashMap::new();
+    for o in &plan.ous {
+        let parent = o.parent.as_ref().and_then(|p| ou_ids.get(p).copied());
+        let ou =
+            OrgUnit { id: Uuid::new_v4(), name: o.name.clone(), description: o.description.clone(), parent_id: parent, created_at: now };
+        s.db.insert_ou(&ou)?;
+        ou_ids.insert(o.name.clone(), ou.id);
+    }
+    let mut group_ids: HashMap<String, Uuid> = HashMap::new();
+    let builtin = [(DOMAIN_ADMINS, "Full control of the directory and every endpoint"), ("Domain Users", "Every user account")];
+    for (name, desc) in builtin.iter().copied().chain(plan.groups.iter().map(|g| (g.name.as_str(), g.description.as_str()))) {
+        if group_ids.contains_key(name) {
+            continue;
+        }
+        let g = Group {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            description: desc.into(),
+            ou_id: None,
+            member_ids: vec![],
+            endpoint_ids: vec![],
+            created_at: now,
+        };
+        s.db.insert_group(&g)?;
+        group_ids.insert(name.to_string(), g.id);
+    }
+    let mut policies: Vec<Policy> = plan
+        .policies
+        .iter()
+        .map(|p| Policy {
+            id: Uuid::new_v4(),
+            name: p.name.clone(),
+            description: p.description.clone(),
+            enabled: p.enabled,
+            priority: p.priority,
+            targets: PolicyTargets {
+                all_endpoints: p.all_endpoints,
+                ou_ids: p.ou_links.iter().filter_map(|n| ou_ids.get(n).copied()).collect(),
+            },
+            settings: p.settings.clone(),
+            created_at: now,
+            updated_at: now,
+        })
+        .collect();
+    if let Some(gid) = plan.signin_group.as_ref().and_then(|g| group_ids.get(g)) {
+        let pilot = plan.rollout == Rollout::Pilot;
+        policies.push(Policy {
+            id: Uuid::new_v4(),
+            name: "Sign-in Accounts".into(),
+            description: "Members of this group can sign in to managed computers with their directory username and password.".into(),
+            enabled: plan.rollout != Rollout::Review,
+            priority: 500,
+            targets: PolicyTargets {
+                all_endpoints: !pilot,
+                ou_ids: if pilot { ou_ids.get("Pilot").copied().into_iter().collect() } else { vec![] },
+            },
+            settings: vec![Setting::LocalAccounts { group_id: *gid, admin: plan.signin_admin }],
+            created_at: now,
+            updated_at: now,
+        });
+    }
+    for p in &policies {
+        s.db.upsert_policy(p)?;
+    }
+    let tag = |v: serde_json::Result<serde_json::Value>| v.ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
+    s.db.meta_set("baseline", &tag(serde_json::to_value(plan.baseline)))?;
+    if let Some(l) = plan.level {
+        s.db.meta_set("security_level", &tag(serde_json::to_value(l)))?;
+    }
+    if let Some(d) = plan.audit_retention_days {
+        s.db.meta_set("audit_retention_days", &d.to_string())?;
+    }
+    if let Some(n) = &plan.naming_convention {
+        s.db.meta_set("naming_convention", n)?;
+    }
+    let admin_ou = plan.admin_ou.as_ref().and_then(|n| ou_ids.get(n).copied());
+    let mut admin_groups: Vec<Uuid> = [DOMAIN_ADMINS, "Domain Users"].iter().filter_map(|n| group_ids.get(*n).copied()).collect();
+    if let Some(t0) = group_ids.get("Tier 0 Admins") {
+        admin_groups.push(*t0);
+    }
+    Ok((admin_ou, admin_groups))
+}
+
+#[derive(Deserialize)]
+pub struct BaselinePreview {
+    baseline: od_core::baselines::Baseline,
+    #[serde(default)]
+    modifiers: od_core::baselines::Modifiers,
+}
+
+#[derive(Serialize)]
+pub struct BaselineCatalog {
+    baselines: Vec<od_core::baselines::BaselineInfo>,
+    levels: Vec<(od_core::baselines::SecurityLevel, String)>,
+}
+
+/// Baselines and security levels, for the onboarding wizard.
+pub async fn baselines() -> Json<BaselineCatalog> {
+    use od_core::baselines::SecurityLevel::*;
+    Json(BaselineCatalog {
+        baselines: od_core::baselines::catalog(),
+        levels: [Relaxed, Balanced, Strict, Maximum].into_iter().map(|l| (l, od_core::baselines::level_summary(l))).collect(),
+    })
+}
+
+/// Exactly what a baseline plus modifiers would create. Pure computation, so
+/// it works before setup.
+pub async fn preview_baseline(Json(req): Json<BaselinePreview>) -> Json<od_core::baselines::Plan> {
+    Json(od_core::baselines::plan(req.baseline, &req.modifiers))
 }
 
 fn new_session(s: &AppState, user_id: Uuid) -> ApiResult<SessionResponse> {
@@ -743,6 +832,7 @@ pub async fn create_group(State(s): State<AppState>, admin: Admin, Json(inp): Js
         description: inp.description.unwrap_or_default(),
         ou_id,
         member_ids: vec![],
+        endpoint_ids: vec![],
         created_at: Utc::now(),
     };
     s.db.insert_group(&g)?;
@@ -799,6 +889,22 @@ pub async fn set_group_members(
     }
     s.db.set_group_members(id, &inp.ids)?;
     s.db.audit(admin.name(), "group.members", &g.name, &format!("{} members", inp.ids.len()));
+    Ok(Json(s.db.get_group(id)?.expect("exists")))
+}
+
+/// Computer members: which endpoints belong to this group.
+pub async fn set_group_endpoints(
+    State(s): State<AppState>,
+    admin: Admin,
+    Path(id): Path<Uuid>,
+    Json(inp): Json<IdList>,
+) -> ApiResult<Json<Group>> {
+    let g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
+    for e in &inp.ids {
+        s.db.get_endpoint(*e)?.ok_or_else(|| ApiError::bad_request("An endpoint in the list no longer exists"))?;
+    }
+    s.db.set_group_endpoints(id, &inp.ids)?;
+    s.db.audit(admin.name(), "group.computers", &g.name, &format!("{} computers", inp.ids.len()));
     Ok(Json(s.db.get_group(id)?.expect("exists")))
 }
 

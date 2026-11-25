@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import { RefreshCw, Server } from "lucide-react";
-import { useUpdates } from "../lib/updates";
+import { autostartEnabled, setAutostart } from "../lib/autostart";
+import { friendlyUpdateError, useUpdates } from "../lib/updates";
+import { ago } from "../lib/format";
 import { desktop, isDesktop } from "../lib/api";
 import { useLearnMode, useSession } from "../lib/session";
-import { Button, Card, CodeBlock, Explain, Field, PageHeader, Select, Switch } from "../components/ui";
+import { Button, Card, CodeBlock, Explain, Field, PageHeader, Select, Switch, useToast } from "../components/ui";
 
 export default function Settings() {
   const { me, connection, setConnection } = useSession();
@@ -41,8 +44,29 @@ export default function Settings() {
           </div>
         </Card>
         <UpdatesCard />
+        <StartupCard hosting={connection?.mode === "local"} />
       </div>
     </>
+  );
+}
+
+function StartupCard({ hosting }: { hosting: boolean }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const toast = useToast();
+  useEffect(() => { void autostartEnabled().then(setOn); }, []);
+  if (!isDesktop) return null;
+  return (
+    <Card title="Startup">
+      <div className="space-y-3">
+        <Switch checked={!!on} disabled={on === null} onChange={async (v) => {
+          try { await setAutostart(v); setOn(v); toast("good", v ? "The Admin Center will start when you sign in" : "Launch at startup turned off"); } catch (e) { toast("bad", String(e)); }
+        }} label="Launch the Admin Center at startup (in the tray)" />
+        {hosting && !on && <p className="text-xs text-warn">This computer hosts the directory. Without launch at startup, endpoints can't check in after a restart until someone opens the app.</p>}
+        <p className="text-xs text-ink-3">On a server that runs with nobody signed in, install the Management Server as a system service instead:</p>
+        <CodeBlock code="sudo opendirectory-server install-service" />
+        <p className="text-xs text-ink-3">Windows: run <code className="font-mono">opendirectory-server.exe install-service</code> from an elevated prompt. Then create the domain with <code className="font-mono">od init</code> or connect this Admin Center to it.</p>
+      </div>
+    </Card>
   );
 }
 
@@ -51,7 +75,7 @@ function UpdatesCard() {
   if (!u.supported) return null;
   const line =
     u.status === "checking" ? "Checking…" :
-    u.status === "up-to-date" ? "You're on the latest version." :
+    u.status === "up-to-date" ? `You're up to date (v${u.currentVersion}).` :
     u.status === "available" ? `Version ${u.available?.version} is available.` :
     u.status === "downloading" ? "Downloading the update…" :
     u.status === "error" ? friendlyUpdateError(u.error) : null;
@@ -60,6 +84,8 @@ function UpdatesCard() {
       <div className="space-y-4">
         <dl className="space-y-3 text-sm">
           <Row k="Admin Center version" v={u.currentVersion} />
+          <Row k="Status" v={u.status === "up-to-date" ? <span className="text-good">Up to date</span> : u.status === "available" ? <span className="text-accent">Update available: {u.available?.version}</span> : u.status === "error" ? <span className="text-warn">Unknown</span> : u.status === "checking" ? "Checking…" : "Not checked yet"} />
+          <Row k="Last checked" v={u.lastChecked ? ago(new Date(u.lastChecked).toISOString()) : "Never"} />
         </dl>
         <Switch checked={u.autoCheck} onChange={u.setAutoCheck} label="Check for updates when the app opens" />
         <div className="flex items-center gap-3">
@@ -78,11 +104,4 @@ function UpdatesCard() {
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return <div className="flex justify-between gap-4"><dt className="shrink-0 text-ink-3">{k}</dt><dd className="min-w-0 break-all text-right">{v ?? "—"}</dd></div>;
-}
-
-function friendlyUpdateError(e: string | null): string {
-  if (!e) return "Couldn't check for updates.";
-  if (/release JSON|404|Not Found/i.test(e)) return "No update information has been published yet.";
-  if (/network|dns|connect|timed? ?out|offline/i.test(e)) return "Couldn't reach GitHub. Check your internet connection.";
-  return `Couldn't check for updates: ${e}`;
 }

@@ -214,7 +214,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // "Launch at startup": the OS login item starts us hidden in the tray.
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .setup(|app| {
+            if std::env::args().any(|a| a == "--minimized") {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
             let config_dir = app.path().app_config_dir()?;
             let data_dir = app.path().app_data_dir()?.join("server");
             let state = Arc::new(App { inner: Mutex::new(Inner::default()), config_path: config_dir.join("connection.json"), data_dir });

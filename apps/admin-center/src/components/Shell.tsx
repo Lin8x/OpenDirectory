@@ -24,7 +24,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
     items: [
       { to: "/endpoints", label: "Endpoints", icon: <Monitor className="size-4" /> },
       { to: "/enroll", label: "Enrollment", icon: <PlusCircle className="size-4" /> },
-      { to: "/scripts", label: "Remote Scripts", icon: <Terminal className="size-4" /> },
+      { to: "/scripts", label: "Script Library", icon: <Terminal className="size-4" /> },
     ],
   },
   { section: "Policy", items: [{ to: "/gpos", label: "Group Policy", icon: <ShieldCheck className="size-4" /> }] },
@@ -122,7 +122,7 @@ const QUICK = [
   { label: "Enroll an endpoint", to: "/enroll", icon: <PlusCircle className="size-4" /> },
   { label: "Create a user", to: "/users?new=1", icon: <UsersIcon className="size-4" /> },
   { label: "Create a Group Policy Object", to: "/gpos/new", icon: <ShieldCheck className="size-4" /> },
-  { label: "Run a remote script", to: "/scripts", icon: <Terminal className="size-4" /> },
+  { label: "Run a script from the library", to: "/scripts", icon: <Terminal className="size-4" /> },
   { label: "View audit log", to: "/audit", icon: <Activity className="size-4" /> },
   { label: "Learn the concepts", to: "/learn", icon: <Boxes className="size-4" /> },
 ];
@@ -130,7 +130,7 @@ const QUICK = [
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Remote Scripts", to: "/scripts" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" },
+  { label: "Script Library", to: "/scripts" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 

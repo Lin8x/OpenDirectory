@@ -33,8 +33,24 @@ impl Output {
 }
 
 pub async fn run_with(program: &str, args: &[&str], stdin: Option<&str>, timeout: Duration) -> Result<Output> {
+    run_full(program, args, stdin, &Default::default(), timeout).await
+}
+
+/// Run with extra environment variables (script parameters).
+pub async fn run_env(program: &str, args: &[&str], env: &std::collections::BTreeMap<String, String>, timeout: Duration) -> Result<Output> {
+    run_full(program, args, None, env, timeout).await
+}
+
+async fn run_full(
+    program: &str,
+    args: &[&str],
+    stdin: Option<&str>,
+    env: &std::collections::BTreeMap<String, String>,
+    timeout: Duration,
+) -> Result<Output> {
     let mut cmd = Command::new(program);
     cmd.args(args)
+        .envs(env)
         .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

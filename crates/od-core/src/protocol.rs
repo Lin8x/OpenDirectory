@@ -60,6 +60,9 @@ pub struct CheckinResponse {
     pub accounts: Vec<ManagedAccount>,
     /// Ask the agent to send full inventory next time.
     pub want_inventory: bool,
+    /// GPO startup, sign-in and scheduled scripts for this endpoint.
+    #[serde(default)]
+    pub scripts: Vec<crate::scripts::PolicyScript>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

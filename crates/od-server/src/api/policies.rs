@@ -73,6 +73,37 @@ fn validate(s: &AppState, inp: &PolicyInput) -> ApiResult<()> {
                     }
                 }
             }
+            Setting::RunScript { script_id, trigger, params } => {
+                let sc = s.db.get_script(*script_id)?.ok_or_else(|| ApiError::bad_request("Choose a script from the Script Library"))?;
+                od_core::scripts::param_env(&sc.params, params).map_err(|e| ApiError::bad_request(format!("{}: {e}", sc.name)))?;
+                if let od_core::scripts::ScriptTrigger::Interval { minutes } = trigger {
+                    if !(5..=10080).contains(minutes) {
+                        return Err(ApiError::bad_request("Scheduled scripts run every 5 minutes to 7 days"));
+                    }
+                }
+            }
+            Setting::AccountLockout { threshold, duration_minutes }
+                if !(1..=999).contains(threshold) || !(1..=99999).contains(duration_minutes) =>
+            {
+                return Err(ApiError::bad_request("Lockout needs 1 to 999 attempts and a duration of at least 1 minute"))
+            }
+            Setting::PasswordMaxAge { days } if *days > 999 => return Err(ApiError::bad_request("Maximum password age is 0 to 999 days")),
+            Setting::PasswordHistory { count } if *count > 24 => {
+                return Err(ApiError::bad_request("Password history is 0 to 24 passwords"))
+            }
+            Setting::UsbStorage { mode } if !["allow", "read_only", "block"].contains(&mode.as_str()) => {
+                return Err(ApiError::bad_request("USB storage mode must be allow, read_only or block"))
+            }
+            Setting::TimeServer { server }
+                if server.is_empty()
+                    || server.len() > 253
+                    || !server.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':') =>
+            {
+                return Err(ApiError::bad_request("Enter a time server host name or IP address"))
+            }
+            Setting::UpdateDeferral { quality_days, feature_days } if *quality_days > 30 || *feature_days > 365 => {
+                return Err(ApiError::bad_request("Quality updates can be deferred up to 30 days and feature updates up to 365"))
+            }
             Setting::LoginBanner { title, text } if title.len() > 200 || text.len() > 4000 => {
                 return Err(ApiError::bad_request("The login notice is too long"))
             }

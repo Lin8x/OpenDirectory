@@ -38,6 +38,18 @@ pub struct AgentState {
     /// Accounts created by OpenDirectory. Accounts not listed here are never touched.
     #[serde(default)]
     pub accounts: BTreeMap<String, ManagedAccountState>,
+    /// When each GPO script last ran, keyed by script id and trigger.
+    #[serde(default)]
+    pub script_runs: BTreeMap<String, ScriptRunState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ScriptRunState {
+    pub revision: String,
+    pub last_run: Option<chrono::DateTime<chrono::Utc>>,
+    /// Boot time (unix minutes) of the last startup run.
+    #[serde(default)]
+    pub boot: i64,
 }
 
 impl AgentState {

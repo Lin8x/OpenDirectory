@@ -18,7 +18,7 @@ pub async fn apply_all(settings: &[Setting]) -> Vec<ComplianceItem> {
     for s in settings {
         match s {
             Setting::InstallPackages { packages: p } => packages.extend(p.iter().cloned()),
-            Setting::LocalAccounts { .. } => {}
+            Setting::LocalAccounts { .. } | Setting::RunScript { .. } => {}
             other => {
                 let r = apply(other).await;
                 out.push(match r {
@@ -180,7 +180,8 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             let b = ensure_file(Path::new("/etc/issue.net"), &body)?;
             item(s, if a || b { Applied } else { Compliant }, "Shown on console and SSH login")
         }
-        Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } => unreachable!("handled elsewhere"),
+        Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } | Setting::RunScript { .. } => unreachable!("handled elsewhere"),
+        _ => return crate::policy_ext::apply(s).await,
     })
 }
 
@@ -300,7 +301,8 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
             let changed = ensure_file(Path::new("/Library/Security/PolicyBanner.txt"), &format!("{title}\n\n{text}\n"))?;
             item(s, if changed { Applied } else { Compliant }, "Shown at the login window")
         }
-        Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } => unreachable!("handled elsewhere"),
+        Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } | Setting::RunScript { .. } => unreachable!("handled elsewhere"),
+        _ => return crate::policy_ext::apply(s).await,
     })
 }
 
@@ -415,7 +417,8 @@ async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
                 item(s, Failed, a.message())
             }
         }
-        Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } => unreachable!("handled elsewhere"),
+        Setting::InstallPackages { .. } | Setting::LocalAccounts { .. } | Setting::RunScript { .. } => unreachable!("handled elsewhere"),
+        _ => return crate::policy_ext::apply(s).await,
     })
 }
 
@@ -470,7 +473,7 @@ async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 async fn apply(s: &Setting) -> anyhow::Result<ComplianceItem> {
-    Ok(item(s, ComplianceState::Unsupported, "Unsupported OS"))
+    crate::policy_ext::apply(s).await
 }
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 async fn install_packages(pkgs: &[String]) -> anyhow::Result<ComplianceItem> {

@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL, expires_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS group_endpoints (
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+  PRIMARY KEY (group_id, endpoint_id)
+);
+CREATE TABLE IF NOT EXISTS scripts (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, description TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '', shell TEXT NOT NULL, body TEXT NOT NULL, os TEXT NOT NULL DEFAULT '[]',
+  params TEXT NOT NULL DEFAULT '[]', template TEXT, created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -111,16 +122,31 @@ pub struct EndpointAuth {
     pub want_inventory: bool,
 }
 
+/// Columns added after v0.2. `CREATE TABLE IF NOT EXISTS` doesn't add
+/// columns to existing databases, so each is added here when missing.
+const ADDED_COLUMNS: &[(&str, &str, &str)] = &[("jobs", "script_id", "TEXT"), ("jobs", "batch_id", "TEXT")];
+
+fn migrate(conn: &Connection) -> Result<()> {
+    conn.execute_batch(SCHEMA)?;
+    for (table, col, def) in ADDED_COLUMNS {
+        let exists: bool = conn.prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?"))?.exists([col])?;
+        if !exists {
+            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {def}"))?;
+        }
+    }
+    Ok(())
+}
+
 impl Db {
     pub fn open(path: &Path) -> Result<Db> {
         let conn = Connection::open(path).with_context(|| format!("open database {}", path.display()))?;
-        conn.execute_batch(SCHEMA)?;
+        migrate(&conn)?;
         Ok(Db { conn: Arc::new(Mutex::new(conn)) })
     }
 
     pub fn open_in_memory() -> Result<Db> {
         let conn = Connection::open_in_memory()?;
-        conn.execute_batch(SCHEMA)?;
+        migrate(&conn)?;
         Ok(Db { conn: Arc::new(Mutex::new(conn)) })
     }
 
@@ -145,6 +171,12 @@ impl Db {
             params![ts(Utc::now()), actor, action, target, details],
         );
     }
+    /// Delete audit entries older than `days`. Returns how many were removed.
+    pub fn prune_audit(&self, days: u32) -> Result<usize> {
+        let cutoff = ts(Utc::now() - chrono::Duration::days(days as i64));
+        Ok(self.lock().execute("DELETE FROM audit WHERE at < ?", [cutoff])?)
+    }
+
     pub fn list_audit(&self, limit: u32, query: Option<&str>) -> Result<Vec<AuditEntry>> {
         let c = self.lock();
         let like = format!("%{}%", query.unwrap_or(""));
@@ -353,6 +385,7 @@ impl Db {
             description: r.get(2)?,
             ou_id: opt_uid(r.get(3)?),
             member_ids: vec![],
+            endpoint_ids: vec![],
             created_at: req_ts(r.get(4)?),
         })
     }
@@ -360,6 +393,10 @@ impl Db {
         let mut st = c.prepare("SELECT user_id FROM group_members WHERE group_id = ?")?;
         for g in groups.iter_mut() {
             g.member_ids = st.query_map([g.id.to_string()], |r| r.get::<_, String>(0))?.filter_map(|u| u.ok().map(uid)).collect();
+        }
+        let mut st = c.prepare("SELECT endpoint_id FROM group_endpoints WHERE group_id = ?")?;
+        for g in groups.iter_mut() {
+            g.endpoint_ids = st.query_map([g.id.to_string()], |r| r.get::<_, String>(0))?.filter_map(|u| u.ok().map(uid)).collect();
         }
         Ok(())
     }
@@ -405,6 +442,16 @@ impl Db {
         tx.execute("DELETE FROM group_members WHERE group_id = ?", [group.to_string()])?;
         for m in members {
             tx.execute("INSERT OR IGNORE INTO group_members(group_id, user_id) VALUES (?, ?)", [group.to_string(), m.to_string()])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn set_group_endpoints(&self, group: Uuid, endpoints: &[Uuid]) -> Result<()> {
+        let mut c = self.lock();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM group_endpoints WHERE group_id = ?", [group.to_string()])?;
+        for e in endpoints {
+            tx.execute("INSERT OR IGNORE INTO group_endpoints(group_id, endpoint_id) VALUES (?, ?)", [group.to_string(), e.to_string()])?;
         }
         tx.commit()?;
         Ok(())
@@ -581,16 +628,55 @@ impl Db {
             created_at: req_ts(r.get(7)?),
             started_at: parse_ts(r.get(8)?),
             finished_at: parse_ts(r.get(9)?),
+            script_id: opt_uid(r.get(10)?),
+            batch_id: opt_uid(r.get(11)?),
         })
     }
-    const JOB_COLS: &'static str = "id, endpoint_id, kind, status, exit_code, output, created_by, created_at, started_at, finished_at";
+    const JOB_COLS: &'static str =
+        "id, endpoint_id, kind, status, exit_code, output, created_by, created_at, started_at, finished_at, script_id, batch_id";
 
     pub fn insert_job(&self, j: &Job) -> Result<()> {
         self.lock().execute(
-            "INSERT INTO jobs(id, endpoint_id, kind, status, created_by, created_at) VALUES (?, ?, ?, 'queued', ?, ?)",
-            params![j.id.to_string(), j.endpoint_id.to_string(), serde_json::to_string(&j.kind)?, j.created_by, ts(j.created_at)],
+            "INSERT INTO jobs(id, endpoint_id, kind, status, created_by, created_at, script_id, batch_id) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)",
+            params![
+                j.id.to_string(), j.endpoint_id.to_string(), serde_json::to_string(&j.kind)?, j.created_by, ts(j.created_at),
+                opt_str(j.script_id), opt_str(j.batch_id)
+            ],
         )?;
         Ok(())
+    }
+    /// Record a run that already happened on the endpoint (GPO scripts).
+    pub fn insert_finished_job(&self, j: &Job) -> Result<()> {
+        self.lock().execute(
+            "INSERT INTO jobs(id, endpoint_id, kind, status, exit_code, output, created_by, created_at, started_at, finished_at, script_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                j.id.to_string(),
+                j.endpoint_id.to_string(),
+                serde_json::to_string(&j.kind)?,
+                if j.status == JobStatus::Succeeded { "succeeded" } else { "failed" },
+                j.exit_code,
+                j.output,
+                j.created_by,
+                ts(j.created_at),
+                j.started_at.map(ts),
+                j.finished_at.map(ts),
+                opt_str(j.script_id)
+            ],
+        )?;
+        Ok(())
+    }
+    pub fn list_batch_jobs(&self, batch: Uuid) -> Result<Vec<Job>> {
+        let c = self.lock();
+        let mut st = c.prepare(&format!("SELECT {} FROM jobs WHERE batch_id = ? ORDER BY created_at", Self::JOB_COLS))?;
+        let rows = st.query_map([batch.to_string()], Self::map_job)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn list_script_jobs(&self, script: Uuid, limit: u32) -> Result<Vec<Job>> {
+        let c = self.lock();
+        let mut st = c.prepare(&format!("SELECT {} FROM jobs WHERE script_id = ? ORDER BY created_at DESC LIMIT ?", Self::JOB_COLS))?;
+        let rows = st.query_map(params![script.to_string(), limit], Self::map_job)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
     pub fn list_jobs(&self, endpoint: Option<Uuid>, limit: u32) -> Result<Vec<Job>> {
         let c = self.lock();
@@ -641,6 +727,58 @@ impl Db {
             "UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'queued'",
             params![ts(Utc::now()), id.to_string()],
         )? > 0)
+    }
+
+    // ---------- scripts ----------
+    fn map_script(r: &Row) -> rusqlite::Result<od_core::scripts::Script> {
+        let shell: String = r.get(4)?;
+        let os: String = r.get(6)?;
+        let ps: String = r.get(7)?;
+        Ok(od_core::scripts::Script {
+            id: uid(r.get(0)?),
+            name: r.get(1)?,
+            description: r.get(2)?,
+            category: r.get(3)?,
+            shell: serde_json::from_value(serde_json::Value::String(shell)).unwrap_or(Shell::Default),
+            body: r.get(5)?,
+            os: serde_json::from_str(&os).unwrap_or_default(),
+            params: serde_json::from_str(&ps).unwrap_or_default(),
+            template: r.get(8)?,
+            created_by: r.get(9)?,
+            created_at: req_ts(r.get(10)?),
+            updated_at: req_ts(r.get(11)?),
+        })
+    }
+    const SCRIPT_COLS: &'static str =
+        "id, name, description, category, shell, body, os, params, template, created_by, created_at, updated_at";
+    pub fn list_scripts(&self) -> Result<Vec<od_core::scripts::Script>> {
+        let c = self.lock();
+        let mut st =
+            c.prepare(&format!("SELECT {} FROM scripts ORDER BY category COLLATE NOCASE, name COLLATE NOCASE", Self::SCRIPT_COLS))?;
+        let rows = st.query_map([], Self::map_script)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+    pub fn get_script(&self, id: Uuid) -> Result<Option<od_core::scripts::Script>> {
+        Ok(self
+            .lock()
+            .query_row(&format!("SELECT {} FROM scripts WHERE id = ?", Self::SCRIPT_COLS), [id.to_string()], Self::map_script)
+            .optional()?)
+    }
+    pub fn upsert_script(&self, sc: &od_core::scripts::Script) -> Result<()> {
+        let shell = serde_json::to_value(&sc.shell)?.as_str().unwrap_or("default").to_string();
+        self.lock().execute(
+            "INSERT INTO scripts(id, name, description, category, shell, body, os, params, template, created_by, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO UPDATE SET name = ?2, description = ?3, category = ?4, shell = ?5, body = ?6, os = ?7, params = ?8, updated_at = ?12",
+            params![
+                sc.id.to_string(), sc.name, sc.description, sc.category, shell, sc.body, serde_json::to_string(&sc.os)?,
+                serde_json::to_string(&sc.params)?, sc.template, sc.created_by, ts(sc.created_at), ts(sc.updated_at)
+            ],
+        )?;
+        Ok(())
+    }
+    pub fn delete_script(&self, id: Uuid) -> Result<bool> {
+        Ok(self.lock().execute("DELETE FROM scripts WHERE id = ?", [id.to_string()])? > 0)
     }
 
     // ---------- policies ----------

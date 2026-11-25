@@ -1,4 +1,4 @@
 #!/bin/sh
 # Run the same lint CI runs before pushing. Skip once with --no-verify.
-echo "Running 'cargo x lint' before push…"
-exec cargo x lint
+echo "Running the lint task before push…"
+exec ./scripts/lint.sh

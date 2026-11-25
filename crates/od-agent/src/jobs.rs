@@ -12,7 +12,7 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 pub async fn run(job: &AgentJob) -> JobResult {
     match &job.kind {
-        JobKind::Script { shell, script } => match run_script(&job.id.to_string(), shell, script).await {
+        JobKind::Script { shell, script, env } => match run_script(&job.id.to_string(), shell, script, env).await {
             Ok(r) => r,
             Err(e) => JobResult { exit_code: None, output: format!("Couldn't run the script: {e:#}"), success: false },
         },
@@ -44,7 +44,12 @@ fn plan(shell: &Shell) -> (&'static str, &'static str, Vec<&'static str>) {
     }
 }
 
-async fn run_script(id: &str, shell: &Shell, script: &str) -> anyhow::Result<JobResult> {
+pub async fn run_script(
+    id: &str,
+    shell: &Shell,
+    script: &str,
+    env: &std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<JobResult> {
     let (ext, program, mut args) = plan(shell);
     let dir = data_dir().join("jobs");
     std::fs::create_dir_all(&dir)?;
@@ -58,7 +63,7 @@ async fn run_script(id: &str, shell: &Shell, script: &str) -> anyhow::Result<Job
     }
     let p = path.to_string_lossy().to_string();
     args.push(&p);
-    let res = util::run_with(program, &args, None, SCRIPT_TIMEOUT).await;
+    let res = util::run_env(program, &args, env, SCRIPT_TIMEOUT).await;
     let _ = std::fs::remove_file(&path);
     let out = match res {
         Ok(o) => o,
@@ -85,12 +90,16 @@ mod tests {
         std::env::set_var("OD_AGENT_DIR", &dir);
         let job = AgentJob {
             id: Uuid::new_v4(),
-            kind: JobKind::Script { shell: Shell::Default, script: "echo hello\necho oops >&2\nexit 3".into() },
+            kind: JobKind::Script {
+                shell: Shell::Default,
+                script: "echo hello $OD_PARAM_X\necho oops >&2\nexit 3".into(),
+                env: [("OD_PARAM_X".to_string(), "world".to_string())].into(),
+            },
         };
         let r = run(&job).await;
         assert_eq!(r.exit_code, Some(3));
         assert!(!r.success);
-        assert!(r.output.contains("hello"));
+        assert!(r.output.contains("hello world"));
         assert!(r.output.contains("oops"));
         let _ = std::fs::remove_dir_all(dir);
     }
