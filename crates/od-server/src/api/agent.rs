@@ -40,7 +40,16 @@ pub async fn enroll(
         public_ip: peer.ip().to_string(),
     };
     s.db.insert_endpoint(&e, &sha256_hex(secret.as_bytes()))?;
-    s.db.audit("Endpoint Agent", "endpoint.enroll", &hostname, &format!("{} via token \"{}\"", e.os.label(), token.description));
+    s.db.audit(
+        "Endpoint Agent",
+        "endpoint.enroll",
+        &hostname,
+        &if token.description.is_empty() {
+            format!("{} via enrollment token", e.os.label())
+        } else {
+            format!("{} via enrollment token \"{}\"", e.os.label(), token.description)
+        },
+    );
     Ok(Json(EnrollResponse { endpoint_id: e.id, endpoint_secret: secret, checkin_interval_secs: CHECKIN_INTERVAL_SECS }))
 }
 

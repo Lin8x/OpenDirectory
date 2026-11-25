@@ -18,6 +18,7 @@ fn app() -> Router {
         db: Db::open_in_memory().unwrap(),
         sealer: Sealer::from_key([1u8; 32]),
         info: Arc::new(ServerInfo { version: "test", endpoint_url: "http://test".into(), tls_fingerprint: None, data_dir: "mem".into() }),
+        login_failures: Default::default(),
     };
     super::router(state).layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 5], 5555))))
 }
@@ -251,4 +252,50 @@ async fn endpoint_enrollment_checkin_accounts_and_jobs() {
     let (_, ep) = call(&app, Method::GET, &format!("/endpoints/{eid}"), auth, None).await;
     assert_eq!(ep["public_ip"], "10.0.0.5");
     assert_eq!(ep["online"], true);
+}
+
+#[tokio::test]
+async fn domain_admin_role_and_group_stay_in_sync() {
+    let app = app();
+    let auth = setup(&app).await;
+    let (_, groups) = call(&app, Method::GET, "/groups", Some(&auth), None).await;
+    let da = groups.as_array().unwrap().iter().find(|g| g["name"] == "Domain Admins").unwrap()["id"].as_str().unwrap().to_string();
+
+    // Creating a user with the Admin role puts them in Domain Admins.
+    let (st, u) =
+        call(&app, Method::POST, "/users", Some(&auth), Some(json!({"username":"eve","display_name":"Eve","role":"admin"}))).await;
+    assert_eq!(st, StatusCode::CREATED, "{u}");
+    let eve = u["id"].as_str().unwrap().to_string();
+    let (_, g) = call(&app, Method::GET, &format!("/groups/{da}"), Some(&auth), None).await;
+    assert!(g["member_ids"].as_array().unwrap().iter().any(|m| m == &json!(eve)));
+
+    // Removing her from the group takes the role away.
+    let (_, g) = call(&app, Method::GET, &format!("/groups/{da}"), Some(&auth), None).await;
+    let others: Vec<Value> = g["member_ids"].as_array().unwrap().iter().filter(|m| *m != &json!(eve)).cloned().collect();
+    let (st, _) = call(&app, Method::PUT, &format!("/groups/{da}/members"), Some(&auth), Some(json!({ "ids": others }))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, u) = call(&app, Method::GET, &format!("/users/{eve}"), Some(&auth), None).await;
+    assert_eq!(u["role"], "user");
+
+    // Emptying Domain Admins is refused.
+    let (st, _) = call(&app, Method::PUT, &format!("/groups/{da}/members"), Some(&auth), Some(json!({ "ids": [] }))).await;
+    assert_eq!(st, StatusCode::CONFLICT);
+
+    // Built-in groups can't be renamed or duplicated.
+    let (st, _) = call(&app, Method::PATCH, &format!("/groups/{da}"), Some(&auth), Some(json!({"name":"Admins"}))).await;
+    assert_eq!(st, StatusCode::CONFLICT);
+    let (st, _) = call(&app, Method::POST, "/groups", Some(&auth), Some(json!({"name":"domain admins"}))).await;
+    assert_eq!(st, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn repeated_wrong_passwords_lock_the_account_temporarily() {
+    let app = app();
+    setup(&app).await;
+    for _ in 0..5 {
+        let (st, _) = call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"dan","password":"wrong"}))).await;
+        assert_eq!(st, StatusCode::UNAUTHORIZED);
+    }
+    let (st, v) = call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"dan","password":"s3cure-pass!"}))).await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS, "{v}");
 }

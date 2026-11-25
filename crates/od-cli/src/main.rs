@@ -54,6 +54,7 @@ enum Cmd {
     Endpoint(EndpointCmd),
     /// Create an enrollment token and print the enroll commands.
     Enroll {
+        /// Label shown in the Admin Center, e.g. "Lab laptops".
         #[arg(long, default_value = "")]
         description: String,
         /// Put new endpoints in this OU.
@@ -78,16 +79,22 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum UserCmd {
+    /// List every user with status and role.
     List,
-    Show {
-        username: String,
-    },
+    /// Show one user's details and group membership.
+    Show { username: String },
+    /// Create a user (prompts for the initial password).
     Add {
+        /// Sign-in name, e.g. alex.morgan (max 20 characters).
         username: String,
+        /// Full name, e.g. "Alex Morgan".
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
         email: Option<String>,
+        /// Organizational unit to place the user in (default: Staff, if it exists).
+        #[arg(long)]
+        ou: Option<String>,
         /// Make this user a Domain Admin.
         #[arg(long)]
         admin: bool,
@@ -95,48 +102,40 @@ enum UserCmd {
         #[arg(long = "group")]
         groups: Vec<String>,
     },
-    Disable {
-        username: String,
-    },
-    Enable {
-        username: String,
-    },
+    /// Disable a user; their endpoint accounts are locked at the next check-in.
+    Disable { username: String },
+    /// Re-enable a disabled user.
+    Enable { username: String },
     /// Reset a password (synced to endpoints on their next check-in).
-    Passwd {
-        username: String,
-    },
-    Delete {
-        username: String,
-    },
+    Passwd { username: String },
+    /// Delete a user. Their endpoint accounts are disabled, never deleted.
+    Delete { username: String },
 }
 
 #[derive(Subcommand)]
 enum GroupCmd {
+    /// List security groups with member counts.
     List,
+    /// Create a security group.
     Add {
         name: String,
         #[arg(long, default_value = "")]
         description: String,
     },
-    Members {
-        group: String,
-    },
-    AddMember {
-        group: String,
-        username: String,
-    },
-    RemoveMember {
-        group: String,
-        username: String,
-    },
+    /// List a group's members.
+    Members { group: String },
+    /// Add a user to a group.
+    AddMember { group: String, username: String },
+    /// Remove a user from a group.
+    RemoveMember { group: String, username: String },
 }
 
 #[derive(Subcommand)]
 enum EndpointCmd {
+    /// List endpoints with OS, status and compliance.
     List,
-    Show {
-        hostname: String,
-    },
+    /// Show an endpoint's inventory and compliance.
+    Show { hostname: String },
     /// Run a script and wait for the output.
     Run {
         hostname: String,
@@ -150,13 +149,9 @@ enum EndpointCmd {
         no_wait: bool,
     },
     /// Show the Resultant Set of Policy for an endpoint.
-    Rsop {
-        hostname: String,
-    },
+    Rsop { hostname: String },
     /// Revoke an endpoint's agent credentials and remove it.
-    Retire {
-        hostname: String,
-    },
+    Retire { hostname: String },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -498,7 +493,11 @@ async fn user(cmd: UserCmd, json_out: bool) -> Result<()> {
             println!("  Member of:   {}", names.join(", "));
             println!("  Password:    set {}", ago(u.password_set_at));
         }
-        UserCmd::Add { username, name, email, admin, groups } => {
+        UserCmd::Add { username, name, email, ou, admin, groups } => {
+            let ou_id = match ou {
+                Some(o) => Some(find_ou(&c, &o).await?.id),
+                None => c.get::<Vec<OrgUnit>>("/ous").await?.into_iter().find(|o| o.name == "Staff" && o.parent_id.is_none()).map(|o| o.id),
+            };
             let password = prompt_password(&format!("Initial password for {username}: "))?;
             let mut gids = vec![];
             for g in groups {
@@ -507,7 +506,7 @@ async fn user(cmd: UserCmd, json_out: bool) -> Result<()> {
             let u: User = c
                 .post(
                     "/users",
-                    &json!({ "username": username, "display_name": name, "email": email, "role": if admin { "admin" } else { "user" }, "password": password, "group_ids": gids }),
+                    &json!({ "username": username, "display_name": name, "email": email, "role": if admin { "admin" } else { "user" }, "password": password, "group_ids": gids, "ou_id": ou_id }),
                 )
                 .await?;
             println!("Created {} ({}).", u.username, u.display_name);

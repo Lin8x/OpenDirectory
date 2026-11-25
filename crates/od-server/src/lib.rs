@@ -29,6 +29,8 @@ pub struct AppState {
     pub db: db::Db,
     pub sealer: crypto::Sealer,
     pub info: Arc<ServerInfo>,
+    /// Failed Admin Center sign-ins per username, for lockout.
+    pub login_failures: Arc<std::sync::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
 }
 
 /// Facts about this server shown in the Admin Center and enrollment commands.
@@ -97,7 +99,7 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
     std::fs::create_dir_all(data_dir).with_context(|| format!("create data dir {}", data_dir.display()))?;
     let db = db::Db::open(&data_dir.join("directory.db"))?;
     let sealer = crypto::Sealer::load_or_create(&data_dir.join("master.key"))?;
-    Ok(AppState { db, sealer, info: Arc::new(info) })
+    Ok(AppState { db, sealer, info: Arc::new(info), login_failures: Default::default() })
 }
 
 pub fn router(state: AppState) -> Router {

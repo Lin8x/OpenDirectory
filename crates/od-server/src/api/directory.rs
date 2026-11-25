@@ -184,6 +184,11 @@ pub struct LoginRequest {
     password: String,
 }
 
+/// After this many wrong passwords for one username, sign-in is refused for
+/// LOCKOUT_SECS (AD's account lockout threshold and duration).
+const LOCKOUT_THRESHOLD: u32 = 5;
+const LOCKOUT_SECS: u64 = 300;
+
 pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> ApiResult<Json<SessionResponse>> {
     let fail = || ApiError::new(StatusCode::UNAUTHORIZED, "Incorrect username or password");
     let name = req.username.trim().to_lowercase();
@@ -191,28 +196,54 @@ pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> 
     let name = name.rsplit('\\').next().unwrap_or(&name).to_string();
     let name = name.split('@').next().unwrap_or(&name).to_string();
 
+    let window = std::time::Duration::from_secs(LOCKOUT_SECS);
+    let locked_for = {
+        let mut f = s.login_failures.lock().unwrap_or_else(|e| e.into_inner());
+        f.retain(|_, (_, at)| at.elapsed() < window);
+        f.get(&name).filter(|(n, _)| *n >= LOCKOUT_THRESHOLD).map(|(_, at)| window.saturating_sub(at.elapsed()))
+    };
+    if let Some(left) = locked_for {
+        let mins = left.as_secs().div_ceil(60).max(1);
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("Too many failed attempts. Try again in {mins} minute{}.", if mins == 1 { "" } else { "s" }),
+        ));
+    }
+    let record_failure = |reason: &str| {
+        let mut f = s.login_failures.lock().unwrap_or_else(|e| e.into_inner());
+        let e = f.entry(name.clone()).or_insert((0, std::time::Instant::now()));
+        e.0 += 1;
+        e.1 = std::time::Instant::now();
+        let detail =
+            if e.0 >= LOCKOUT_THRESHOLD { format!("{reason}; locked out for {} minutes", LOCKOUT_SECS / 60) } else { reason.to_string() };
+        drop(f);
+        s.db.audit(&name, "auth.failed", "", &detail);
+    };
+
     let Some(user) = s.db.get_user_by_username(&name)? else {
         // Spend comparable time so usernames can't be probed by timing.
         static DUMMY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
         let dummy = DUMMY.get_or_init(|| hash_password("timing-equalizer").unwrap_or_default());
         let _ = verify_password(&req.password, dummy);
-        s.db.audit(&name, "auth.failed", &name, "Unknown account");
+        record_failure("Unknown account");
         return Err(fail());
     };
     let secrets = s.db.user_secrets(user.id)?;
     let ok = secrets.password_hash.as_deref().map(|h| verify_password(&req.password, h)).unwrap_or(false);
     if !ok {
-        s.db.audit(&user.username, "auth.failed", &user.username, "Wrong password");
+        record_failure("Wrong password");
         return Err(fail());
     }
     if !user.enabled {
-        s.db.audit(&user.username, "auth.failed", &user.username, "Account disabled");
+        s.db.audit(&user.username, "auth.failed", "", "Account disabled");
         return Err(ApiError::forbidden("This account is disabled"));
     }
     if user.role != Role::Admin {
+        s.db.audit(&user.username, "auth.failed", "", "Not a Domain Admin");
         return Err(ApiError::forbidden("Only Domain Admins can sign in to the Admin Center"));
     }
-    s.db.audit(&user.username, "auth.login", &user.username, "");
+    s.login_failures.lock().unwrap_or_else(|e| e.into_inner()).remove(&name);
+    s.db.audit(&user.username, "auth.login", "", "");
     Ok(Json(new_session(&s, user.id)?))
 }
 
@@ -496,6 +527,16 @@ pub async fn create_user(State(s): State<AppState>, admin: Admin, Json(inp): Jso
             groups.push(du.id);
         }
     }
+    let mut user = user;
+    if let Some(da) = domain_admins(&s)? {
+        if groups.contains(&da.id) || user.role == Role::Admin {
+            user.role = Role::Admin;
+            s.db.update_user(&user)?;
+            if !groups.contains(&da.id) {
+                groups.push(da.id);
+            }
+        }
+    }
     s.db.set_user_groups(user.id, &groups)?;
     s.db.audit(admin.name(), "user.create", &username, if user.role == Role::Admin { "Role: Admin" } else { "" });
     Ok((StatusCode::CREATED, Json(s.db.get_user(user.id)?.expect("just inserted"))))
@@ -553,7 +594,8 @@ pub async fn update_user(
         return Err(ApiError::conflict("This is the last enabled Domain Admin; add another admin first"));
     }
     s.db.update_user(&u)?;
-    if !u.enabled {
+    sync_group_from_role(&s, &u)?;
+    if !u.enabled || !still_admin {
         s.db.delete_user_sessions(u.id)?;
     }
     s.db.audit(admin.name(), "user.update", &u.username, &changes.join(", "));
@@ -610,9 +652,63 @@ pub async fn set_user_groups(
     Json(inp): Json<IdList>,
 ) -> ApiResult<Json<User>> {
     let u = s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?;
+    if let Some(da) = domain_admins(&s)? {
+        let mut members: Vec<Uuid> = da.member_ids.iter().copied().filter(|m| *m != id).collect();
+        if inp.ids.contains(&da.id) {
+            members.push(id);
+        }
+        apply_domain_admin_members(&s, &members)?;
+    }
     s.db.set_user_groups(id, &inp.ids)?;
     s.db.audit(admin.name(), "user.groups", &u.username, &format!("{} groups", inp.ids.len()));
     Ok(Json(s.db.get_user(id)?.expect("exists")))
+}
+
+// ---------------------------------------------------------------- Domain Admins
+//
+// Like AD, being a Domain Admin and being a member of the Domain Admins group
+// are the same thing. These helpers keep the user's role and the group's
+// membership in step whichever side an admin edits.
+
+const DOMAIN_ADMINS: &str = "Domain Admins";
+const BUILTIN_GROUPS: [&str; 2] = [DOMAIN_ADMINS, "Domain Users"];
+
+fn domain_admins(s: &AppState) -> ApiResult<Option<Group>> {
+    Ok(s.db.list_groups()?.into_iter().find(|g| g.name == DOMAIN_ADMINS))
+}
+
+/// Role changed: add or remove the user from Domain Admins to match.
+fn sync_group_from_role(s: &AppState, user: &User) -> ApiResult<()> {
+    let Some(g) = domain_admins(s)? else { return Ok(()) };
+    let mut members = g.member_ids.clone();
+    let is_member = members.contains(&user.id);
+    match (user.role == Role::Admin, is_member) {
+        (true, false) => members.push(user.id),
+        (false, true) => members.retain(|m| *m != user.id),
+        _ => return Ok(()),
+    }
+    s.db.set_group_members(g.id, &members)?;
+    Ok(())
+}
+
+/// Domain Admins membership is about to change: refuse if no enabled admin
+/// would remain, otherwise give or take the Admin role to match.
+fn apply_domain_admin_members(s: &AppState, members: &[Uuid]) -> ApiResult<()> {
+    let users = s.db.list_users()?;
+    if !users.iter().any(|u| u.enabled && members.contains(&u.id)) {
+        return Err(ApiError::conflict("Domain Admins must keep at least one enabled member"));
+    }
+    for mut u in users {
+        let want = members.contains(&u.id);
+        if (u.role == Role::Admin) != want {
+            u.role = if want { Role::Admin } else { Role::User };
+            s.db.update_user(&u)?;
+            if !want {
+                s.db.delete_user_sessions(u.id)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------- groups
@@ -636,6 +732,9 @@ pub async fn get_group(State(s): State<AppState>, _admin: Admin, Path(id): Path<
 
 pub async fn create_group(State(s): State<AppState>, admin: Admin, Json(inp): Json<GroupInput>) -> ApiResult<(StatusCode, Json<Group>)> {
     let name = required("Name", inp.name.as_deref().unwrap_or(""))?;
+    if s.db.list_groups()?.iter().any(|g| g.name.eq_ignore_ascii_case(&name)) {
+        return Err(ApiError::conflict(format!("A group named \"{name}\" already exists")));
+    }
     let ou_id = inp.ou_id.flatten();
     check_ou(&s, ou_id)?;
     let g = Group {
@@ -662,7 +761,11 @@ pub async fn update_group(
 ) -> ApiResult<Json<Group>> {
     let mut g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
     if let Some(n) = inp.name {
-        g.name = required("Name", &n)?;
+        let n = required("Name", &n)?;
+        if n != g.name && BUILTIN_GROUPS.contains(&g.name.as_str()) {
+            return Err(ApiError::conflict("Built-in groups can't be renamed"));
+        }
+        g.name = n;
     }
     if let Some(d) = inp.description {
         g.description = d;
@@ -670,6 +773,11 @@ pub async fn update_group(
     if let Some(o) = inp.ou_id {
         check_ou(&s, o)?;
         g.ou_id = o;
+    }
+    if let Some(m) = &inp.member_ids {
+        if g.name == DOMAIN_ADMINS {
+            apply_domain_admin_members(&s, m)?;
+        }
     }
     s.db.update_group(&g)?;
     if let Some(m) = inp.member_ids {
@@ -686,6 +794,9 @@ pub async fn set_group_members(
     Json(inp): Json<IdList>,
 ) -> ApiResult<Json<Group>> {
     let g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
+    if g.name == DOMAIN_ADMINS {
+        apply_domain_admin_members(&s, &inp.ids)?;
+    }
     s.db.set_group_members(id, &inp.ids)?;
     s.db.audit(admin.name(), "group.members", &g.name, &format!("{} members", inp.ids.len()));
     Ok(Json(s.db.get_group(id)?.expect("exists")))
@@ -693,7 +804,7 @@ pub async fn set_group_members(
 
 pub async fn delete_group(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<StatusCode> {
     let g = s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?;
-    if g.name == "Domain Admins" || g.name == "Domain Users" {
+    if BUILTIN_GROUPS.contains(&g.name.as_str()) {
         return Err(ApiError::conflict("Built-in groups can't be deleted"));
     }
     let used_by: Vec<String> =

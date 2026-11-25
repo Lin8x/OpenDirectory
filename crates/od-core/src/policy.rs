@@ -167,7 +167,7 @@ pub fn catalog() -> Vec<CatalogEntry> {
             ad_equivalent: "Domain logon / Restricted Groups",
             support: vec![
                 ps(Windows, Enforced, "Local accounts via the LocalAccounts PowerShell module"),
-                ps(Macos, Enforced, "Local accounts via sysadminctl and dseditgroup"),
+                ps(Macos, Enforced, "Local accounts via dscl and dseditgroup"),
                 ps(Linux, Enforced, "Local accounts via useradd, chpasswd and the sudo/wheel group"),
             ],
             default: Setting::LocalAccounts { group_id: Uuid::nil(), admin: false },
@@ -193,7 +193,7 @@ pub fn catalog() -> Vec<CatalogEntry> {
             ad_equivalent: "Interactive logon: Machine inactivity limit",
             support: vec![
                 ps(Windows, Enforced, "InactivityTimeoutSecs machine policy"),
-                ps(Macos, Enforced, "sysadminctl -screenLock and the screensaver idle time"),
+                ps(Macos, Enforced, "Screen saver idle time with password on wake"),
                 ps(Linux, Enforced, "GNOME dconf system defaults (idle-delay, lock-enabled)"),
             ],
             default: Setting::ScreenLock { minutes: 10 },
@@ -218,9 +218,9 @@ pub fn catalog() -> Vec<CatalogEntry> {
             summary: "Checks that the system drive is encrypted, so a lost or stolen laptop doesn't leak data. Turning it on needs the user present, so this reports rather than forces it.",
             ad_equivalent: "BitLocker Drive Encryption",
             support: vec![
-                ps(Windows, ReportOnly, "BitLocker status (manage-bde)"),
+                ps(Windows, ReportOnly, "BitLocker status (Get-BitLockerVolume)"),
                 ps(Macos, ReportOnly, "FileVault status (fdesetup)"),
-                ps(Linux, ReportOnly, "LUKS on the root endpoint (lsblk)"),
+                ps(Linux, ReportOnly, "LUKS on the root filesystem (lsblk)"),
             ],
             default: Setting::DiskEncryption { required: true },
         },
@@ -232,7 +232,7 @@ pub fn catalog() -> Vec<CatalogEntry> {
             ad_equivalent: "Configure Automatic Updates",
             support: vec![
                 ps(Windows, Enforced, "Windows Update AU policy (NoAutoUpdate = 0)"),
-                ps(Macos, Enforced, "softwareupdate --schedule on and automatic install preferences"),
+                ps(Macos, Enforced, "Software Update automatic check, download and install preferences"),
                 ps(Linux, Enforced, "unattended-upgrades (Debian/Ubuntu) or dnf-automatic (Fedora/RHEL)"),
             ],
             default: Setting::AutomaticUpdates { enabled: true },
