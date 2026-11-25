@@ -212,7 +212,7 @@ fn message_authenticator_ok(req: &Request, secret: &[u8]) -> bool {
     crate::crypto::ct_eq(&hex::encode(m.finalize().into_bytes()), &hex::encode(ma))
 }
 
-fn client_for<'a>(cfg: &'a RadiusConfig, ip: IpAddr) -> Option<&'a RadiusClient> {
+fn client_for(cfg: &RadiusConfig, ip: IpAddr) -> Option<&RadiusClient> {
     cfg.clients.iter().find(|c| {
         if let Ok(a) = c.address.parse::<IpAddr>() {
             return a == ip;

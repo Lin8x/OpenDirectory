@@ -67,7 +67,7 @@ async fn radius_pap_accepts_group_members_only() {
     assert_eq!(st["running"], true, "{st}");
 
     let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let mut ask = async |id: u8, user: &str, pw: &str| {
+    let ask = async |id: u8, user: &str, pw: &str| {
         let (p, ra) = access_request(id, user, pw, secret.as_bytes());
         sock.send_to(&p, ("127.0.0.1", port)).await.unwrap();
         let mut buf = [0u8; 1024];
