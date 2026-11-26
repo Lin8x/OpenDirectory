@@ -135,6 +135,16 @@ function Resources({ wikipedia, video, links }: { wikipedia?: KbLink; video?: Kb
   );
 }
 
+/** The featured Microsoft Learn documentation card. */
+function LearnCard({ l }: { l: KbLink }) {
+  return (
+    <a href={l.url} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-lg border border-accent/40 bg-accent-soft p-3 hover:brightness-105">
+      <BookOpen className="mt-0.5 size-6 shrink-0 text-accent" />
+      <span><span className="block text-sm font-medium">{l.label.replace(/ \(Microsoft Learn\)$/, "")}</span><span className="text-xs text-ink-3">Microsoft Learn · official documentation</span></span>
+    </a>
+  );
+}
+
 type View = "standard" | "ours" | "microsoft";
 
 function Topic({ e }: { e: KbEntry }) {
@@ -154,7 +164,14 @@ function Topic({ e }: { e: KbEntry }) {
           {e.ours.to && <Link to={e.ours.to} className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"><BookOpen className="size-4" />Open it in the Admin Center</Link>}
           <Resources links={e.ours.links} />
         </>}
-        {view === "microsoft" && e.microsoft && <><h3 className="font-semibold">{e.microsoft.name}</h3>{para(e.microsoft.text)}<Resources wikipedia={e.microsoft.wikipedia} video={e.microsoft.video} links={e.microsoft.links} /></>}
+        {view === "microsoft" && e.microsoft && <>
+          <h3 className="font-semibold">{e.microsoft.name}</h3>
+          {para(e.microsoft.text)}
+          <div className="mt-5 grid gap-3 border-t border-line pt-4 md:grid-cols-2">
+            <LearnCard l={e.microsoft.learn} />
+            <VideoCard v={e.microsoft.video} label="YouTube · Windows Server how-to" />
+          </div>
+        </>}
       </div>
     </Card>
   );

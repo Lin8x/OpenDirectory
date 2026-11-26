@@ -14,15 +14,14 @@ export interface KbEntry {
   standard: { text: string[]; wikipedia: KbLink; video: KbVideo; links: KbLink[] };
   /** How OpenDirectory provides it. */
   ours: { text: string[]; to?: string; links: KbLink[] };
-  /** The Microsoft product for the same job, and how it works. */
-  microsoft?: { name: string; text: string[]; wikipedia?: KbLink; video?: KbVideo; links: KbLink[] };
+  /** How Windows Server does it differently: Microsoft Learn docs and a Windows how-to video. */
+  microsoft?: { name: string; text: string[]; learn: KbLink; video: KbVideo };
 }
 
 const yt = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 const wiki = (title: string): KbLink => ({ label: title.replace(/_/g, " "), url: `https://en.wikipedia.org/wiki/${title}` });
 const ms = (label: string, path: string): KbLink => ({ label, url: `https://learn.microsoft.com/en-us/${path}` });
 const rfc = (n: number, label: string): KbLink => ({ label: `RFC ${n}: ${label}`, url: `https://www.rfc-editor.org/rfc/rfc${n}` });
-const repo = (label: string, path: string): KbLink => ({ label, url: `https://github.com/Lin8x/OpenDirectory/blob/main/${path}` });
 
 export const KB: KbEntry[] = [
   {
@@ -44,7 +43,7 @@ export const KB: KbEntry[] = [
         "Deleted objects go to the Recycle Bin for 180 days with their passwords and memberships, and fine-grained password policies apply per group.",
       ],
       to: "/users",
-      links: [repo("README: Quick start", "README.md#quick-start"), repo("Admin guide", "docs/GUIDE.md")],
+      links: [],
     },
     microsoft: {
       name: "Active Directory Domain Services (AD DS)",
@@ -53,9 +52,8 @@ export const KB: KbEntry[] = [
         "Domain controllers replicate changes to each other (multi-master), using sites and site links to plan traffic over WAN links. Five FSMO roles, such as the PDC emulator and RID master, are held by one DC each.",
         "Admins work in Active Directory Users and Computers (ADUC), Active Directory Administrative Center and the ActiveDirectory PowerShell module.",
       ],
-      wikipedia: wiki("Active_Directory"),
-      video: { title: "Active Directory Domain Service Deep Dive", channel: "John Savill's Technical Training", url: yt("4qC7H-y7oKI") },
-      links: [ms("AD DS overview (Microsoft Learn)", "windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview")],
+      video: { title: "Install Active Directory & Promote Windows Server 2022 to Domain Controller", channel: "HKTECH-HUB", url: yt("6BZBqb-5tLI") },
+      learn: ms("AD DS overview (Microsoft Learn)", "windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview"),
     },
   },
   {
@@ -77,7 +75,7 @@ export const KB: KbEntry[] = [
         "When the Domain Controller role is on, Samba runs the domain's DNS instead, so turn OpenDirectory's DNS off there.",
       ],
       to: "/network-services",
-      links: [repo("README: Network Services", "README.md#network-services")],
+      links: [],
     },
     microsoft: {
       name: "Windows Server DNS",
@@ -86,9 +84,8 @@ export const KB: KbEntry[] = [
         "Active Directory depends on DNS: computers find domain controllers through SRV records such as _ldap._tcp.dc._msdcs.<domain>, so broken DNS means broken sign-in and Group Policy.",
         "It's managed in DNS Manager or with the DnsServer PowerShell module, and supports conditional forwarders, scavenging of stale records and DNSSEC.",
       ],
-      wikipedia: wiki("Microsoft_DNS"),
       video: { title: "Install and Configure DNS Server in Windows Server 2022", channel: "IT-Tutorials", url: yt("9qd_3Oniowk") },
-      links: [ms("DNS in Windows Server (Microsoft Learn)", "windows-server/networking/dns/dns-overview")],
+      learn: ms("DNS in Windows Server (Microsoft Learn)", "windows-server/networking/dns/dns-overview"),
     },
   },
   {
@@ -110,7 +107,7 @@ export const KB: KbEntry[] = [
         "It's off by default so it never clashes with the DHCP server in your router. Only run one DHCP server per subnet.",
       ],
       to: "/network-services",
-      links: [repo("README: Network Services", "README.md#network-services")],
+      links: [],
     },
     microsoft: {
       name: "Windows Server DHCP",
@@ -119,7 +116,7 @@ export const KB: KbEntry[] = [
         "Two servers can share scopes with DHCP failover (load balance or hot standby). The server can also register clients in DNS on their behalf.",
       ],
       video: { title: "Windows Server 2025: Deploy DHCP Server, Configure DHCP Scope & Options", channel: "ITOpsTalk (Microsoft)", url: yt("cZSJlE4V1pI") },
-      links: [ms("DHCP in Windows Server (Microsoft Learn)", "windows-server/networking/technologies/dhcp/dhcp-top")],
+      learn: ms("DHCP in Windows Server (Microsoft Learn)", "windows-server/networking/technologies/dhcp/dhcp-top"),
     },
   },
   {
@@ -141,7 +138,7 @@ export const KB: KbEntry[] = [
         "It's read-only on purpose: manage objects in the Admin Center, and let apps only look them up.",
       ],
       to: "/network-services",
-      links: [repo("README: Network Services", "README.md#network-services")],
+      links: [],
     },
     microsoft: {
       name: "AD DS over LDAP",
@@ -149,9 +146,8 @@ export const KB: KbEntry[] = [
         "Every Active Directory domain controller is an LDAP server, and the global catalog (ports 3268/3269) answers forest-wide searches. Tools like ADSI Edit and ldp.exe talk to it directly.",
         "Microsoft recommends requiring LDAP signing and channel binding, and newer Windows versions sign or encrypt LDAP by default.",
       ],
-      wikipedia: wiki("Active_Directory"),
-      video: { title: "Introduction to Active Directory Domain Services (AD DS)", channel: "ITOpsTalk (Microsoft)", url: yt("ovioOqoq--A") },
-      links: [ms("LDAP signing for Active Directory (Microsoft Learn)", "windows-server/identity/ad-ds/ldap-signing")],
+      video: { title: "Configure Secure LDAP (LDAPS) Using AD CS Certificates", channel: "Labs Hands On", url: yt("yc_ROKH89Xo") },
+      learn: ms("LDAP signing for Active Directory (Microsoft Learn)", "windows-server/identity/ad-ds/ldap-signing"),
     },
   },
   {
@@ -173,7 +169,7 @@ export const KB: KbEntry[] = [
         "Without the DC role, endpoints use local accounts that the agent keeps in sync with the directory instead.",
       ],
       to: "/domain-controller",
-      links: [repo("README: Domain Controller", "README.md#domain-controller-experimental")],
+      links: [],
     },
     microsoft: {
       name: "Kerberos in Windows",
@@ -181,9 +177,8 @@ export const KB: KbEntry[] = [
         "Every AD domain controller runs the KDC service, and the krbtgt account's key signs every TGT. Windows prefers Kerberos and falls back to NTLM when it can't get a ticket.",
         "Misconfigured service accounts (weak passwords on accounts with SPNs, unconstrained delegation) are a common attack path, so audit them and prefer group managed service accounts.",
       ],
-      wikipedia: wiki("NTLM"),
-      video: { title: "'Kerberos' in Active Directory", channel: "IdentityGuy", url: yt("37xy5x1zDtw") },
-      links: [ms("Kerberos authentication overview (Microsoft Learn)", "windows-server/security/kerberos/kerberos-authentication-overview")],
+      video: { title: "Configure Kerberos Policy Settings in Active Directory", channel: "MSFT WebCast", url: yt("mBjvUsFiXUs") },
+      learn: ms("Kerberos authentication overview (Microsoft Learn)", "windows-server/security/kerberos/kerberos-authentication-overview"),
     },
   },
   {
@@ -204,7 +199,7 @@ export const KB: KbEntry[] = [
         "GPOs link to OUs, child OUs inherit, the lower priority number wins, and each endpoint shows its Resultant Set of Policy with compliance per setting. GPOs can also run scripts at startup, at sign-in or on a schedule.",
       ],
       to: "/gpos",
-      links: [repo("README: Script Library and GPO scripts", "README.md#script-library-and-gpo-scripts")],
+      links: [],
     },
     microsoft: {
       name: "Group Policy (GPMC)",
@@ -212,9 +207,8 @@ export const KB: KbEntry[] = [
         "GPOs are stored in AD and in SYSVOL on every domain controller, and linked to sites, domains and OUs in the Group Policy Management Console. Processing order is Local, Site, Domain, OU (LSDOU), with Enforced and Block Inheritance as overrides.",
         "Clients refresh policy every 90 minutes or so (gpupdate forces it) and gpresult shows the result. Windows Home can't join a domain, so it gets no domain Group Policy.",
       ],
-      wikipedia: wiki("Group_Policy"),
-      video: { title: "Introduction to Group Policy", channel: "ITOpsTalk (Microsoft)", url: yt("o5AEb4eI6H4") },
-      links: [ms("Group Policy overview (Microsoft Learn)", "windows-server/identity/ad-ds/manage/group-policy/group-policy-overview")],
+      video: { title: "How to Create and Configure OUs & GPOs in Active Directory", channel: "Love Story With Technology", url: yt("lvyOHAVOmEg") },
+      learn: ms("Group Policy overview (Microsoft Learn)", "windows-server/identity/ad-ds/manage/group-policy/group-policy-overview"),
     },
   },
   {
@@ -236,7 +230,7 @@ export const KB: KbEntry[] = [
         "The Trusted root certificate GPO setting makes endpoints trust it, and Machine certificate auto-enrollment has each endpoint request and renew its own certificate. On Windows the certificate is saved as files and not yet imported into the certificate store.",
       ],
       to: "/network-services",
-      links: [repo("README: Network Services", "README.md#network-services")],
+      links: [],
     },
     microsoft: {
       name: "Active Directory Certificate Services (AD CS)",
@@ -245,7 +239,7 @@ export const KB: KbEntry[] = [
         "A typical design has an offline root CA and an online issuing CA. Overly permissive templates are a well-known attack path, so review template permissions.",
       ],
       video: { title: "Install & Configure AD CS on Windows Server 2022", channel: "Digital IT Lab", url: yt("C_yyFuRSey0") },
-      links: [ms("AD CS overview (Microsoft Learn)", "windows-server/identity/ad-cs/active-directory-certificate-services-overview")],
+      learn: ms("AD CS overview (Microsoft Learn)", "windows-server/identity/ad-cs/active-directory-certificate-services-overview"),
     },
   },
   {
@@ -267,7 +261,7 @@ export const KB: KbEntry[] = [
         "EAP (needed for WPA2/3-Enterprise Wi-Fi) isn't supported yet; use it for VPNs and switch or firewall admin sign-in today.",
       ],
       to: "/network-services",
-      links: [repo("README: Network Services", "README.md#network-services")],
+      links: [],
     },
     microsoft: {
       name: "Network Policy Server (NPS)",
@@ -275,9 +269,8 @@ export const KB: KbEntry[] = [
         "NPS is Microsoft's RADIUS server. Connection request policies decide which requests it handles; network policies check conditions such as AD group membership and choose the EAP method.",
         "It's the usual backend for 802.1X Wi-Fi (with PEAP or EAP-TLS using AD CS certificates) and for Always On VPN.",
       ],
-      wikipedia: wiki("Network_Policy_Server"),
-      video: { title: "Introduction to, and installation of, NPS", channel: "David Dalton", url: yt("CpaN61SGyWU") },
-      links: [ms("Network Policy Server (Microsoft Learn)", "windows-server/networking/technologies/nps/nps-top")],
+      video: { title: "How to Configure RADIUS Server with NPS on Windows Server 2022", channel: "MSFT WebCast", url: yt("_WmPofLXM6c") },
+      learn: ms("Network Policy Server (Microsoft Learn)", "windows-server/networking/technologies/nps/nps-top"),
     },
   },
   {
@@ -325,9 +318,8 @@ export const KB: KbEntry[] = [
         "Routing and Remote Access Service (RRAS) is Windows Server's VPN server. Always On VPN is the Windows client feature that connects automatically, with a device tunnel before sign-in and a user tunnel after.",
         "It usually authenticates through NPS with certificates from AD CS, and replaced the older DirectAccess.",
       ],
-      wikipedia: wiki("Routing_and_Remote_Access_Service"),
-      video: { title: "Always On VPN", channel: "Now Micro", url: yt("spaGFrQBqns") },
-      links: [ms("Always On VPN (Microsoft Learn)", "windows-server/remote/remote-access/overview-always-on-vpn")],
+      video: { title: "Client-to-Site VPN with RRAS and NPS on Windows Server", channel: "Troy Berg", url: yt("q_aaU_AqF20") },
+      learn: ms("Always On VPN (Microsoft Learn)", "windows-server/remote/remote-access/overview-always-on-vpn"),
     },
   },
   {
@@ -356,8 +348,8 @@ export const KB: KbEntry[] = [
         "Windows LAPS is built into current Windows versions. It backs the password up to Active Directory (encrypted, readable only by authorized groups) or to Microsoft Entra ID, configured with Group Policy or Intune.",
         "Admins read the password with Get-LapsADPassword or in ADUC, and can force rotation after use.",
       ],
-      video: { title: "Ask Microsoft Anything: Windows LAPS", channel: "Windows At Work (Microsoft)", url: yt("A-gVqcSOGjY") },
-      links: [ms("Windows LAPS overview (Microsoft Learn)", "windows-server/identity/laps/laps-overview")],
+      video: { title: "Setup Windows LAPS in just 5 Minutes", channel: "CloudManagement.Community", url: yt("leo_rQXegtU") },
+      learn: ms("Windows LAPS overview (Microsoft Learn)", "windows-server/identity/laps/laps-overview"),
     },
   },
   {
@@ -383,9 +375,8 @@ export const KB: KbEntry[] = [
         "Windows Server Update Services downloads updates from Microsoft once and serves them inside the network. Admins approve updates per computer group, and a Group Policy setting points clients at the WSUS server.",
         "Microsoft has deprecated WSUS in favor of cloud services such as Windows Autopatch and Intune update rings.",
       ],
-      wikipedia: wiki("Windows_Server_Update_Services"),
       video: { title: "How to Install and Configure WSUS on Windows Server", channel: "Digital IT Lab", url: yt("teL2Sw7vDLw") },
-      links: [ms("WSUS overview (Microsoft Learn)", "windows-server/administration/windows-server-update-services/get-started/windows-server-update-services-wsus")],
+      learn: ms("WSUS overview (Microsoft Learn)", "windows-server/administration/windows-server-update-services/get-started/windows-server-update-services-wsus"),
     },
   },
   {
@@ -403,7 +394,7 @@ export const KB: KbEntry[] = [
     ours: {
       text: ["Each endpoint's page has Remote Shell. Remote Desktop tunnels RDP or VNC through the agent's existing outbound connection, so endpoints need no inbound ports. Sessions are audited."],
       to: "/endpoints",
-      links: [repo("README: Identity and remote support", "README.md#identity-and-remote-support")],
+      links: [],
     },
     microsoft: {
       name: "Remote Desktop Services",
@@ -411,9 +402,8 @@ export const KB: KbEntry[] = [
         "RDP is built into Windows Pro and Server. Remote Desktop Services adds session hosts for many users, a connection broker, a web client and an RD Gateway that publishes RDP safely over HTTPS.",
         "PowerShell remoting (WinRM) is the Windows remote shell.",
       ],
-      wikipedia: wiki("Remote_Desktop_Services"),
       video: { title: "How to Deploy Remote Desktop Services RDS on Windows Server 2022", channel: "MSFT WebCast", url: yt("p_OOmOe7E1Y") },
-      links: [ms("Remote Desktop Services (Microsoft Learn)", "windows-server/remote/remote-desktop-services/remote-desktop-services-overview")],
+      learn: ms("Remote Desktop Services (Microsoft Learn)", "windows-server/remote/remote-desktop-services/remote-desktop-services-overview"),
     },
   },
   {
@@ -431,16 +421,15 @@ export const KB: KbEntry[] = [
     ours: {
       text: ["Mobile Devices keeps an inventory by serial, IMEI, owner and OS, and builds Apple configuration profiles for Wi-Fi, passcode rules and your root CA. Over-the-air enrollment isn't supported yet."],
       to: "/mobile",
-      links: [repo("README: Mobile devices", "README.md#mobile-devices")],
+      links: [],
     },
     microsoft: {
       name: "Microsoft Intune",
       text: [
         "Intune is Microsoft's cloud MDM for Windows, iOS, Android and macOS. Devices enroll through Entra ID, receive configuration and compliance policies, and Conditional Access can block non-compliant devices from company apps.",
       ],
-      wikipedia: wiki("Microsoft_Intune"),
-      video: { title: "Introduction to Microsoft Intune", channel: "Microsoft Reactor", url: yt("vajMJhuIP4g") },
-      links: [ms("Microsoft Intune overview (Microsoft Learn)", "mem/intune/fundamentals/what-is-intune")],
+      video: { title: "Enroll Windows Devices in Intune", channel: "BTNHD", url: yt("wqNc4weNB-k") },
+      learn: ms("Microsoft Intune overview (Microsoft Learn)", "mem/intune/fundamentals/what-is-intune"),
     },
   },
   {
@@ -463,9 +452,8 @@ export const KB: KbEntry[] = [
     microsoft: {
       name: "Windows Defender Firewall",
       text: ["The host firewall built into Windows has Domain, Private and Public profiles and is managed centrally with Group Policy (Windows Defender Firewall with Advanced Security) or Intune."],
-      wikipedia: wiki("Windows_Firewall"),
       video: { title: "Configure Windows Firewall using Group Policy in Active Directory", channel: "MSFT WebCast", url: yt("lffLuaY1wLE") },
-      links: [ms("Windows Firewall overview (Microsoft Learn)", "windows/security/operating-system-security/network-security/windows-firewall/")],
+      learn: ms("Windows Firewall overview (Microsoft Learn)", "windows/security/operating-system-security/network-security/windows-firewall/"),
     },
   },
   {
@@ -489,7 +477,7 @@ export const KB: KbEntry[] = [
       name: "Microsoft Zero Trust",
       text: ["Microsoft's approach combines Entra ID Conditional Access, Intune device compliance, Defender and network segmentation, built around verify explicitly, use least privilege and assume breach."],
       video: { title: "Introduction to Zero Trust", channel: "Microsoft Developer", url: yt("Vqd0rFZlU68") },
-      links: [{ label: "Zero Trust overview (Microsoft Learn)", url: "https://learn.microsoft.com/en-us/security/zero-trust/zero-trust-overview" }],
+      learn: { label: "Zero Trust overview (Microsoft Learn)", url: "https://learn.microsoft.com/en-us/security/zero-trust/zero-trust-overview" },
     },
   },
   {
@@ -510,7 +498,7 @@ export const KB: KbEntry[] = [
         "The Recycle Bin restores single deleted objects with their passwords and memberships for 180 days.",
       ],
       to: "/backups",
-      links: [repo("README: Backup & Restore", "README.md#backup--restore")],
+      links: [],
     },
     microsoft: {
       name: "AD Recycle Bin and system state backup",
@@ -519,7 +507,7 @@ export const KB: KbEntry[] = [
         "For disasters, Windows Server Backup takes system state backups of domain controllers for authoritative or non-authoritative restore.",
       ],
       video: { title: "How to Enable Active Directory Recycle Bin and Restore Deleted Objects", channel: "TheWhyNet", url: yt("dZNZNH1lVQI") },
-      links: [ms("AD Recycle Bin (Microsoft Learn)", "windows-server/identity/ad-ds/get-started/adac/active-directory-recycle-bin")],
+      learn: ms("AD Recycle Bin (Microsoft Learn)", "windows-server/identity/ad-ds/get-started/adac/active-directory-recycle-bin"),
     },
   },
 ];
