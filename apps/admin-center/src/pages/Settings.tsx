@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { put } from "../lib/api";
+import { post, put } from "../lib/api";
+import { useQuery } from "../lib/hooks";
+import type { OrgUnit } from "../lib/types";
 import { useBranding, type Branding } from "../lib/branding";
 import { RefreshCw, Server } from "lucide-react";
 import { autostartEnabled, setAutostart } from "../lib/autostart";
@@ -7,7 +9,7 @@ import { friendlyUpdateError, useUpdates } from "../lib/updates";
 import { ago } from "../lib/format";
 import { desktop, isDesktop } from "../lib/api";
 import { useLearnMode, useSession } from "../lib/session";
-import { Button, Card, CodeBlock, Explain, Field, Input, PageHeader, Select, Switch, useToast } from "../components/ui";
+import { Badge, Button, Card, CodeBlock, Explain, Field, Input, PageHeader, Select, Switch, useToast } from "../components/ui";
 
 export default function Settings() {
   const { me, connection, setConnection } = useSession();
@@ -52,6 +54,7 @@ export default function Settings() {
         </Card>
         <BrandingCard />
         <UpdatesCard />
+        <AgentUpdatesCard />
         <StartupCard hosting={connection?.mode === "local"} />
       </div>
     </>
@@ -159,4 +162,75 @@ function UpdatesCard() {
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return <div className="flex justify-between gap-4"><dt className="shrink-0 text-ink-3">{k}</dt><dd className="min-w-0 break-all text-right">{v ?? "—"}</dd></div>;
+}
+
+interface AgentUpdateStatus {
+  policy: { mode: "off" | "pilot" | "all"; pilot_ou_ids: string[] };
+  version: string;
+  builds: { platform: string; cached: boolean; size?: number }[];
+  versions: [string, number][];
+  outdated: number;
+  manual: number;
+}
+
+/** Endpoint Agent updates: rollout ring and build status. */
+function AgentUpdatesCard() {
+  const st = useQuery<AgentUpdateStatus>("/agent-updates");
+  const ous = useQuery<OrgUnit[]>("/ous");
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const s = st.data;
+  if (!s) return null;
+  const save = async (p: AgentUpdateStatus["policy"]) => {
+    try { await put("/agent-updates", p); toast("good", "Agent update ring saved"); void st.reload(); } catch (e) { toast("bad", (e as Error).message); }
+  };
+  return (
+    <Card title="Endpoint Agent updates" subtitle={`Agents older than ${s.version} update themselves from this server, then restart. A failed update rolls back on its own.`}>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Rollout ring">
+          <Select value={s.policy.mode} onChange={(e) => {
+            const mode = e.target.value as AgentUpdateStatus["policy"]["mode"];
+            if (mode === "pilot" && s.policy.pilot_ou_ids.length === 0) { st.setData?.({ ...s, policy: { ...s.policy, mode } }); return; }
+            void save({ ...s.policy, mode });
+          }}>
+            <option value="all">All endpoints (automatic)</option>
+            <option value="pilot">Pilot OUs only</option>
+            <option value="off">Off (update agents yourself)</option>
+          </Select>
+        </Field>
+        {s.policy.mode === "pilot" && (
+          <Field label="Pilot OUs" hint="Endpoints in these OUs (and their child OUs) update first. Switch to All endpoints when you're happy.">
+            <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line p-2">
+              {(ous.data ?? []).map((o) => (
+                <label key={o.id} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={s.policy.pilot_ou_ids.includes(o.id)} onChange={(e) => {
+                    const ids = e.target.checked ? [...s.policy.pilot_ou_ids, o.id] : s.policy.pilot_ou_ids.filter((x) => x !== o.id);
+                    if (ids.length) void save({ mode: "pilot", pilot_ou_ids: ids }); else st.setData?.({ ...s, policy: { mode: "pilot", pilot_ou_ids: [] } });
+                  }} />{o.name}
+                </label>
+              ))}
+              {(ous.data ?? []).length === 0 && <p className="text-xs text-ink-3">Create an OU first.</p>}
+            </div>
+          </Field>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-ink-3">Agent builds for {s.version}:</span>
+        {s.builds.map((b) => <Badge key={b.platform} tone={b.cached ? "good" : "neutral"}>{b.platform}{b.cached ? "" : " (not downloaded)"}</Badge>)}
+        <Button size="sm" loading={busy} icon={<RefreshCw className="size-3.5" />} onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await post<{ platform: string; ok: boolean; error?: string }[]>("/agent-updates/fetch");
+            const bad = r.filter((x) => !x.ok);
+            toast(bad.length ? "bad" : "good", bad.length ? `Couldn't download: ${bad.map((b) => b.platform).join(", ")}. ${bad[0]?.error ?? ""}` : "Downloaded every agent build");
+            void st.reload();
+          } finally { setBusy(false); }
+        }}>Download now</Button>
+      </div>
+      <div className="mt-3 text-sm">
+        {s.outdated === 0 ? <span className="text-good">Every endpoint runs agent {s.version}.</span> : <span>{s.outdated} endpoint(s) run an older agent: {s.versions.filter(([v]) => v !== s.version).map(([v, n]) => `${n} on ${v}`).join(", ")}.</span>}
+      </div>
+      {s.manual > 0 && <div className="mt-2"><Explain>{s.manual} endpoint(s) run an agent from before automatic updates (0.11 or older). Update those once by running the install command again; after that they update themselves. Builds download on demand from the GitHub release; on a network without internet access, upload them with POST /api/v1/agent-updates/upload/&lt;platform&gt;.</Explain></div>}
+    </Card>
+  );
 }

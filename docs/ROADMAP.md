@@ -64,6 +64,11 @@
 - Knowledge Base links open from the desktop app; each topic has The standard, In OpenDirectory and Microsoft / AD views.
 - Replica servers: join codes, a full copy every minute, read-only replicas that serve agents, sign-in, DNS, RADIUS and LDAP, automatic agent failover, and promotion with an epoch so a returning old primary is detected. Single writable primary (no multi-master); up to a minute of changes can be lost if the primary fails; no DHCP failover yet.
 
+## Done (v0.12)
+
+- Version-aware check-ins: older agents get only the settings and jobs they understand; agents skip unknown ones.
+- Agent self-update from the Management Server with SHA-256 check, automatic rollback, and rollout rings (all, pilot OUs, off).
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 and macOS 14+, and of the Domain Controller role on a clean Ubuntu or Debian server. Ship signed installers.
@@ -71,5 +76,4 @@
 3. **Windows certificate store import** for auto-enrolled certificates, and EAP-TLS in the RADIUS server.
 4. **Over-the-air MDM.** Apple MDM (needs an APNs certificate) and Android Enterprise.
 5. **Delegated administration.** Roles narrower than Domain Admin (help desk, read-only), scoped to OUs.
-6. **Agent self-update** from GitHub Releases, staged by OU.
 7. **DHCP failover** between primary and replica, and automatic promotion with a witness.

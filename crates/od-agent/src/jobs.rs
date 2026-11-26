@@ -20,6 +20,9 @@ pub async fn run(job: &AgentJob) -> JobResult {
             JobResult { exit_code: Some(0), output: "Inventory will be sent with the next check-in".into(), success: true }
         }
         JobKind::RestartAgent => JobResult { exit_code: Some(0), output: "Agent restarting".into(), success: true },
+        JobKind::Unknown => {
+            JobResult { exit_code: None, output: "This job type needs a newer Endpoint Agent; update the agent".into(), success: false }
+        }
         JobKind::ScanUpdates => {
             let r = crate::patches::scan().await;
             crate::agent::set_patch_report(r.clone());

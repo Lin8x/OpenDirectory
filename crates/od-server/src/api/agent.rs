@@ -118,8 +118,28 @@ pub async fn checkin(
         }
     }
 
+    // Older agents can't read settings or jobs added after them: a single
+    // unknown entry would make the whole reply unreadable. Send each agent
+    // only what its version understands.
+    let agent_v = req.agent_version.as_str();
+    let mut settings: Vec<Setting> =
+        settings.into_iter().filter(|st| od_core::policy::version_at_least(agent_v, st.min_agent_version())).collect();
+    settings.retain(|st| !matches!(st, Setting::Unknown));
     // Jobs and shells only come from the primary, so nothing runs twice.
-    let jobs = if replica { vec![] } else { s.db.claim_jobs(auth.id)?.into_iter().map(|j| AgentJob { id: j.id, kind: j.kind }).collect() };
+    let mut jobs = vec![];
+    if !replica {
+        for j in s.db.claim_jobs(auth.id)? {
+            if od_core::policy::version_at_least(agent_v, j.kind.min_agent_version()) {
+                jobs.push(AgentJob { id: j.id, kind: j.kind });
+            } else {
+                let msg = format!(
+                    "This endpoint's agent ({agent_v}) is too old for this job. Update the Endpoint Agent to {} or later.",
+                    j.kind.min_agent_version()
+                );
+                let _ = s.db.finish_job(j.id, auth.id, false, None, &msg);
+            }
+        }
+    }
     let (servers, epoch) = super::replication::servers_for_agents(&s);
     let mut accounts: Vec<ManagedAccount> = accounts.into_values().collect();
     accounts.sort_by(|a, b| a.username.cmp(&b.username));
@@ -134,6 +154,7 @@ pub async fn checkin(
         shells: if replica { vec![] } else { s.hub.take_requests(auth.id) },
         servers,
         epoch,
+        update: super::agent_updates::offer(&s, &req.agent_version, &req.platform, auth.ou_id, &ou_parent),
     }))
 }
 

@@ -58,6 +58,10 @@ It also has a read-only **LDAP/LDAPS server** with an AD-style schema for apps a
 
 Add **replica servers** for redundancy. On the primary, open **Replication & Failover**, add a replica and copy its join code. On the new server, choose **Join an existing domain as a replica** on the first-run screen. Each replica copies the whole directory every minute and serves agents, Admin Center sign-in, DNS, RADIUS and LDAP all the time. Agents learn every server and fail over automatically. Replicas are read-only; if the primary is lost, **promote** a replica. DHCP, jobs, remote shells and scheduled backups run on the primary only.
 
+### Agent updates
+
+Endpoint Agents update themselves from the Management Server: agents older than the server download the matching build over their pinned connection, check its SHA-256, swap it in and restart, and roll back on their own if the new version can't check in. Choose the rollout ring in **Settings > Endpoint Agent updates**: all endpoints, pilot OUs only, or off. The server fetches builds from this version's GitHub release, or you upload them for networks without internet access. Agents from 0.11 and earlier need one manual update first. Older agents keep working with a newer server: they're sent only the settings and jobs they understand.
+
 ### Domain Controller (experimental)
 
 On a Linux Management Server with Samba installed, **Domain Controller** provisions a Samba Active Directory domain controller and keeps it in sync with OpenDirectory (users, groups and passwords). Windows, macOS and Linux computers can then do a real domain join and sign in with Kerberos; the Script Library has join templates for each. The page shows FSMO roles, sites, replication and trusts. It hasn't been tested on real hardware yet, so try it on a test server first.
