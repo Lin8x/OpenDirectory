@@ -135,6 +135,21 @@ function Resources({ wikipedia, video, links }: { wikipedia?: KbLink; video?: Kb
   );
 }
 
+/** The featured Microsoft Learn documentation card. */
+function LearnCard({ l }: { l: KbLink }) {
+  return (
+    <a href={l.url} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-lg border border-line p-3 hover:bg-panel-2">
+      <BookOpen className="mt-0.5 size-6 shrink-0 text-accent" />
+      <span><span className="block text-sm font-medium">{l.label.replace(/ \(Microsoft Learn\)$/, "")}</span><span className="text-xs text-ink-3">Microsoft Learn · official documentation</span></span>
+    </a>
+  );
+}
+
+const PAGE_NAMES: Record<string, string> = {
+  "/users": "Users", "/network-services": "Network Services", "/domain-controller": "Domain Controller", "/gpos": "Group Policy",
+  "/lab": "Network Lab", "/patches": "Patch Management", "/endpoints": "Endpoints", "/mobile": "Mobile Devices", "/backups": "Backup & Restore",
+};
+
 type View = "standard" | "ours" | "microsoft";
 
 function Topic({ e }: { e: KbEntry }) {
@@ -151,10 +166,27 @@ function Topic({ e }: { e: KbEntry }) {
         {view === "standard" && <>{para(e.standard.text)}<Resources wikipedia={e.standard.wikipedia} video={e.standard.video} links={e.standard.links} /></>}
         {view === "ours" && <>
           {para(e.ours.text)}
-          {e.ours.to && <Link to={e.ours.to} className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"><BookOpen className="size-4" />Open it in the Admin Center</Link>}
+          {e.ours.to && (
+            <div className="mt-5 border-t border-line pt-4">
+              <Link to={e.ours.to} className="flex max-w-sm items-start gap-3 rounded-lg border border-line p-3 hover:bg-panel-2">
+                <ArrowRight className="mt-0.5 size-6 shrink-0 text-accent" />
+                <span><span className="block text-sm font-medium">Open {PAGE_NAMES[e.ours.to] ?? "it"}</span><span className="text-xs text-ink-3">In the Admin Center</span></span>
+              </Link>
+            </div>
+          )}
           <Resources links={e.ours.links} />
         </>}
-        {view === "microsoft" && e.microsoft && <><h3 className="font-semibold">{e.microsoft.name}</h3>{para(e.microsoft.text)}<Resources wikipedia={e.microsoft.wikipedia} video={e.microsoft.video} links={e.microsoft.links} /></>}
+        {view === "microsoft" && e.microsoft && <>
+          <h3 className="font-semibold">{e.microsoft.name}</h3>
+          {para(e.microsoft.text)}
+          <div className="mt-5 border-t border-line pt-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-3">Learn more</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <LearnCard l={e.microsoft.learn} />
+              <VideoCard v={e.microsoft.video} label="YouTube · Windows Server how-to" />
+            </div>
+          </div>
+        </>}
       </div>
     </Card>
   );
