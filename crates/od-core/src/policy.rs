@@ -665,6 +665,46 @@ pub fn effective_settings(
     out
 }
 
+/// Settings added after v0.2, with the first agent version that understands them.
+const SETTING_SINCE: &[(&str, &str)] =
+    &[("local_admin_password", "0.5.0"), ("trusted_root_certificate", "0.6.0"), ("certificate_auto_enrollment", "0.7.0")];
+const V02_SETTINGS: &[&str] = &[
+    "automatic_updates",
+    "disk_encryption",
+    "firewall",
+    "install_packages",
+    "local_accounts",
+    "login_banner",
+    "password_min_length",
+    "screen_lock",
+];
+
+impl Setting {
+    /// The oldest Endpoint Agent version that can read this setting.
+    pub fn min_agent_version(&self) -> &'static str {
+        let k = self.kind();
+        if let Some((_, v)) = SETTING_SINCE.iter().find(|(n, _)| *n == k) {
+            return v;
+        }
+        if V02_SETTINGS.contains(&k) {
+            "0.0.0"
+        } else {
+            "0.3.0"
+        }
+    }
+}
+
+/// Compare dotted versions like "0.10.2" numerically. Anything unreadable
+/// counts as 0.0.0.
+pub fn version_at_least(version: &str, min: &str) -> bool {
+    parse_version(version) >= parse_version(min)
+}
+
+pub fn parse_version(v: &str) -> (u64, u64, u64) {
+    let mut it = v.trim().trim_start_matches('v').split(['.', '-', '+']).map(|p| p.parse::<u64>().unwrap_or(0));
+    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -755,44 +795,4 @@ mod tests {
         let s = Setting::ScreenLock { minutes: 10 };
         assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"kind":"screen_lock","minutes":10}"#);
     }
-}
-
-/// Settings added after v0.2, with the first agent version that understands them.
-const SETTING_SINCE: &[(&str, &str)] =
-    &[("local_admin_password", "0.5.0"), ("trusted_root_certificate", "0.6.0"), ("certificate_auto_enrollment", "0.7.0")];
-const V02_SETTINGS: &[&str] = &[
-    "automatic_updates",
-    "disk_encryption",
-    "firewall",
-    "install_packages",
-    "local_accounts",
-    "login_banner",
-    "password_min_length",
-    "screen_lock",
-];
-
-impl Setting {
-    /// The oldest Endpoint Agent version that can read this setting.
-    pub fn min_agent_version(&self) -> &'static str {
-        let k = self.kind();
-        if let Some((_, v)) = SETTING_SINCE.iter().find(|(n, _)| *n == k) {
-            return v;
-        }
-        if V02_SETTINGS.contains(&k) {
-            "0.0.0"
-        } else {
-            "0.3.0"
-        }
-    }
-}
-
-/// Compare dotted versions like "0.10.2" numerically. Anything unreadable
-/// counts as 0.0.0.
-pub fn version_at_least(version: &str, min: &str) -> bool {
-    parse_version(version) >= parse_version(min)
-}
-
-pub fn parse_version(v: &str) -> (u64, u64, u64) {
-    let mut it = v.trim().trim_start_matches('v').split(|c: char| c == '.' || c == '-' || c == '+').map(|p| p.parse::<u64>().unwrap_or(0));
-    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
 }
