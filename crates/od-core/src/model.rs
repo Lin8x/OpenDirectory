@@ -235,6 +235,19 @@ pub enum JobKind {
         #[serde(default)]
         reboot: bool,
     },
+    /// A job type from a newer version.
+    #[serde(other)]
+    Unknown,
+}
+
+impl JobKind {
+    /// The oldest Endpoint Agent version that can run this job.
+    pub fn min_agent_version(&self) -> &'static str {
+        match self {
+            JobKind::ScanUpdates | JobKind::InstallUpdates { .. } => "0.5.0",
+            _ => "0.0.0",
+        }
+    }
 }
 
 impl JobKind {
@@ -253,6 +266,7 @@ impl JobKind {
             JobKind::ScanUpdates => "Scan for updates".into(),
             JobKind::InstallUpdates { security_only: true, .. } => "Install security updates".into(),
             JobKind::InstallUpdates { .. } => "Install updates".into(),
+            JobKind::Unknown => "Unknown job type".into(),
         }
     }
 }

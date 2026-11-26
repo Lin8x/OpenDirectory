@@ -100,6 +100,9 @@ pub async fn create_job(
     Json(kind): Json<JobKind>,
 ) -> ApiResult<(StatusCode, Json<Job>)> {
     let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    if matches!(kind, JobKind::Unknown) {
+        return Err(ApiError::bad_request("Unknown job type"));
+    }
     if let JobKind::Script { script, .. } = &kind {
         if script.trim().is_empty() {
             return Err(ApiError::bad_request("The script is empty"));

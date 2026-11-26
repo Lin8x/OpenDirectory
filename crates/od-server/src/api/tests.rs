@@ -1049,3 +1049,38 @@ async fn samba_dc_sync_user_lifecycle() {
     assert_eq!(d["users"]["administrator"]["info"], "");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn older_agents_only_get_settings_and_jobs_they_understand() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (eid, ep_auth) = enroll(&app, auth, "linux", "old-01", None).await;
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/policies",
+        auth,
+        Some(json!({"name":"Mixed","targets":{"all_endpoints":true},"settings":[
+            {"kind":"firewall","enabled":true},
+            {"kind":"local_admin_password","account":"odadmin","length":20,"rotate_days":30},
+            {"kind":"certificate_auto_enrollment","renew_days":30}
+        ]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{eid}/jobs"), auth, Some(json!({"type":"scan_updates"}))).await;
+    assert_eq!(st, StatusCode::CREATED);
+    let ci = |v: &'static str| json!({"agent_version": v, "inventory": null, "compliance": []});
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(ci("0.4.0"))).await;
+    let kinds: Vec<&str> = r["settings"].as_array().unwrap().iter().map(|s| s["kind"].as_str().unwrap()).collect();
+    assert!(kinds.contains(&"firewall"), "{kinds:?}");
+    assert!(!kinds.contains(&"local_admin_password") && !kinds.contains(&"certificate_auto_enrollment"), "{kinds:?}");
+    assert_eq!(r["jobs"].as_array().unwrap().len(), 0, "scan_updates needs 0.5.0");
+    let (_, jobs) = call(&app, Method::GET, &format!("/endpoints/{eid}/jobs"), auth, None).await;
+    assert!(jobs.to_string().contains("too old"), "{jobs}");
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&ep_auth), Some(ci("0.7.0"))).await;
+    assert!(r["settings"].to_string().contains("certificate_auto_enrollment"));
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{eid}/jobs"), auth, Some(json!({"type":"nonsense"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+}

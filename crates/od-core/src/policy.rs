@@ -85,11 +85,15 @@ pub enum Setting {
         #[serde(default)]
         params: std::collections::BTreeMap<String, String>,
     },
+    /// A setting from a newer version. Agents skip it and report it as unsupported.
+    #[serde(other)]
+    Unknown,
 }
 
 impl Setting {
     pub fn kind(&self) -> &'static str {
         match self {
+            Setting::Unknown => "unknown",
             Setting::PasswordMinLength { .. } => "password_min_length",
             Setting::ScreenLock { .. } => "screen_lock",
             Setting::Firewall { .. } => "firewall",
@@ -137,6 +141,7 @@ impl Setting {
 
     pub fn describe(&self) -> String {
         match self {
+            Setting::Unknown => "A setting this version doesn't know".into(),
             Setting::PasswordMinLength { length } => format!("Passwords at least {length} characters"),
             Setting::ScreenLock { minutes } => format!("Lock screen after {minutes} min idle"),
             Setting::Firewall { enabled } => {
@@ -679,6 +684,17 @@ mod tests {
     }
 
     #[test]
+    fn unknown_settings_and_versions() {
+        let v: Vec<Setting> = serde_json::from_str(r#"[{"kind":"firewall","enabled":true},{"kind":"from_the_future","x":1}]"#).unwrap();
+        assert!(matches!(v[1], Setting::Unknown));
+        assert!(version_at_least("0.10.0", "0.7.0"));
+        assert!(!version_at_least("0.6.3", "0.7.0"));
+        assert!(!version_at_least("", "0.3.0"));
+        assert_eq!(Setting::CertificateAutoEnrollment { renew_days: 30 }.min_agent_version(), "0.7.0");
+        assert_eq!(Setting::Firewall { enabled: true }.min_agent_version(), "0.0.0");
+    }
+
+    #[test]
     fn lower_priority_number_wins_and_lists_overrides() {
         let all = PolicyTargets { all_endpoints: true, ou_ids: vec![] };
         let a = pol("Baseline", 100, all.clone(), vec![Setting::ScreenLock { minutes: 15 }]);
@@ -739,4 +755,44 @@ mod tests {
         let s = Setting::ScreenLock { minutes: 10 };
         assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"kind":"screen_lock","minutes":10}"#);
     }
+}
+
+/// Settings added after v0.2, with the first agent version that understands them.
+const SETTING_SINCE: &[(&str, &str)] =
+    &[("local_admin_password", "0.5.0"), ("trusted_root_certificate", "0.6.0"), ("certificate_auto_enrollment", "0.7.0")];
+const V02_SETTINGS: &[&str] = &[
+    "automatic_updates",
+    "disk_encryption",
+    "firewall",
+    "install_packages",
+    "local_accounts",
+    "login_banner",
+    "password_min_length",
+    "screen_lock",
+];
+
+impl Setting {
+    /// The oldest Endpoint Agent version that can read this setting.
+    pub fn min_agent_version(&self) -> &'static str {
+        let k = self.kind();
+        if let Some((_, v)) = SETTING_SINCE.iter().find(|(n, _)| *n == k) {
+            return v;
+        }
+        if V02_SETTINGS.contains(&k) {
+            "0.0.0"
+        } else {
+            "0.3.0"
+        }
+    }
+}
+
+/// Compare dotted versions like "0.10.2" numerically. Anything unreadable
+/// counts as 0.0.0.
+pub fn version_at_least(version: &str, min: &str) -> bool {
+    parse_version(version) >= parse_version(min)
+}
+
+pub fn parse_version(v: &str) -> (u64, u64, u64) {
+    let mut it = v.trim().trim_start_matches('v').split(|c: char| c == '.' || c == '-' || c == '+').map(|p| p.parse::<u64>().unwrap_or(0));
+    (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0))
 }
