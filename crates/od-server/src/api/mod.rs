@@ -14,6 +14,7 @@ mod netsvc;
 pub mod passwords;
 mod policies;
 pub mod recycle;
+pub mod replication;
 pub mod samba;
 mod scripts;
 pub mod shell;
@@ -115,6 +116,14 @@ pub fn router(state: AppState) -> Router {
         .route("/backups/test", post(backups::test_new))
         .route("/backups/download", post(backups::download_now))
         .route("/backups/restore", post(backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)))
+        .route("/replication", get(replication::status))
+        .route("/replication/role", get(replication::role))
+        .route("/replication/replicas", post(replication::add))
+        .route("/replication/replicas/{id}", delete(replication::remove))
+        .route("/replication/pull", post(replication::serve_pull))
+        .route("/replication/join", post(replication::join))
+        .route("/replication/sync", post(replication::sync))
+        .route("/replication/promote", post(replication::promote))
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))
@@ -124,6 +133,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/wait", get(shell::wait))
         .route("/agent/shell/{id}", get(shell::agent_ws));
 
+    let api = api.layer(axum::middleware::from_fn_with_state(state.clone(), replication::read_only_guard));
     let mut router = Router::new().nest("/api/v1", api);
     // Only for running the Admin Center UI in a browser during development.
     if std::env::var("OD_DEV_CORS").as_deref() == Ok("1") {

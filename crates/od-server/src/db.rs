@@ -185,6 +185,36 @@ impl Db {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Replace the whole database with `bytes` (a snapshot from another
+    /// server), keeping this server's own rows in `keep` tables.
+    pub fn restore_from(&self, bytes: &[u8], keep: &[&str]) -> Result<()> {
+        let tmp = std::env::temp_dir().join(format!("od-restore-{}.db", Uuid::new_v4()));
+        crate::crypto::write_private(&tmp, bytes)?;
+        let res = (|| -> Result<()> {
+            let mut conn = self.lock();
+            let mut saved: Vec<(String, Vec<Vec<rusqlite::types::Value>>, usize)> = vec![];
+            for t in keep {
+                let mut st = conn.prepare(&format!("SELECT * FROM {t}"))?;
+                let n = st.column_count();
+                let rows = st
+                    .query_map([], |r| (0..n).map(|i| r.get::<_, rusqlite::types::Value>(i)).collect::<rusqlite::Result<Vec<_>>>())?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                saved.push((t.to_string(), rows, n));
+            }
+            conn.restore(rusqlite::DatabaseName::Main, &tmp, None::<fn(rusqlite::backup::Progress)>)?;
+            migrate(&conn)?;
+            for (t, rows, n) in saved {
+                let sql = format!("INSERT OR IGNORE INTO {t} VALUES ({})", vec!["?"; n].join(","));
+                for row in rows {
+                    let _ = conn.execute(&sql, rusqlite::params_from_iter(row));
+                }
+            }
+            Ok(())
+        })();
+        let _ = std::fs::remove_file(&tmp);
+        res
+    }
+
     /// A consistent copy of the whole database, taken while it's in use.
     pub fn snapshot(&self) -> Result<Vec<u8>> {
         let tmp = std::env::temp_dir().join(format!("od-snapshot-{}.db", Uuid::new_v4()));

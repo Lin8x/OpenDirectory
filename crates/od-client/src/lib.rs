@@ -77,11 +77,22 @@ pub struct ServerTarget {
 }
 
 #[derive(Clone)]
-pub struct Client {
+struct Conn {
     http: reqwest::Client,
     base: String,
-    auth: Option<String>,
     tls: Option<Arc<rustls::ClientConfig>>,
+}
+
+/// How long to stay on a fallback server before trying the preferred one again.
+const RETRY_PREFERRED: Duration = Duration::from_secs(300);
+
+#[derive(Clone)]
+pub struct Client {
+    /// The preferred server first, then fallbacks (replica servers).
+    conns: Arc<std::sync::RwLock<Vec<Conn>>>,
+    active: Arc<std::sync::atomic::AtomicUsize>,
+    switched_at: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    auth: Option<String>,
 }
 
 /// A WebSocket to the Management Server (remote shell and tunnels).
@@ -90,6 +101,39 @@ pub use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 impl Client {
     pub fn new(target: &ServerTarget) -> Result<Client> {
+        let conn = Self::conn(target)?;
+        Ok(Client {
+            conns: Arc::new(std::sync::RwLock::new(vec![conn])),
+            active: Default::default(),
+            switched_at: Default::default(),
+            auth: None,
+        })
+    }
+
+    /// Use these servers, in order of preference, and fail over between them
+    /// when one can't be reached. Targets that can't be used are skipped.
+    pub fn set_servers(&self, targets: &[ServerTarget]) {
+        let conns: Vec<Conn> = targets.iter().filter_map(|t| Self::conn(t).ok()).collect();
+        if conns.is_empty() {
+            return;
+        }
+        let cur = self.base_url();
+        let idx = conns.iter().position(|c| c.base == cur).unwrap_or(0);
+        *self.conns.write().unwrap_or_else(|e| e.into_inner()) = conns;
+        self.active.store(idx, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Stop using the current server and move to the next one.
+    pub fn fail_over(&self) {
+        let n = self.conns.read().unwrap_or_else(|e| e.into_inner()).len();
+        if n > 1 {
+            let next = (self.active.load(std::sync::atomic::Ordering::SeqCst) + 1) % n;
+            self.active.store(next, std::sync::atomic::Ordering::SeqCst);
+            *self.switched_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+        }
+    }
+
+    fn conn(target: &ServerTarget) -> Result<Conn> {
         let base = target.url.trim_end_matches('/').to_string();
         let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
@@ -111,11 +155,17 @@ impl Client {
                 .with_no_client_auth();
             let cfg = Arc::new(cfg);
             builder = builder.use_preconfigured_tls((*cfg).clone());
-            return Ok(Client { http: builder.build()?, base, auth: None, tls: Some(cfg) });
+            return Ok(Conn { http: builder.build()?, base, tls: Some(cfg) });
         } else if !base.starts_with("http://") {
             bail!("Server URL must start with https:// or http://");
         }
-        Ok(Client { http: builder.build()?, base, auth: None, tls: None })
+        Ok(Conn { http: builder.build()?, base, tls: None })
+    }
+
+    fn active_conn(&self) -> (usize, Conn) {
+        let conns = self.conns.read().unwrap_or_else(|e| e.into_inner());
+        let i = self.active.load(std::sync::atomic::Ordering::SeqCst).min(conns.len() - 1);
+        (i, conns[i].clone())
     }
 
     /// Authenticate as an administrator with a session token.
@@ -130,20 +180,22 @@ impl Client {
         self
     }
 
-    pub fn base_url(&self) -> &str {
-        &self.base
+    /// The server currently in use.
+    pub fn base_url(&self) -> String {
+        self.active_conn().1.base
     }
 
     /// Open a WebSocket to `/api/v1{path}`, with the same certificate pinning
     /// and credentials as normal requests.
     pub async fn websocket(&self, path: &str) -> Result<WebSocket> {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        let url = format!("{}/api/v1{}", self.base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1), path);
+        let (_, conn) = self.active_conn();
+        let url = format!("{}/api/v1{}", conn.base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1), path);
         let mut req = url.into_client_request()?;
         if let Some(a) = &self.auth {
             req.headers_mut().insert("authorization", a.parse()?);
         }
-        let connector = self.tls.clone().map(tokio_tungstenite::Connector::Rustls);
+        let connector = conn.tls.clone().map(tokio_tungstenite::Connector::Rustls);
         let (ws, _) =
             tokio::time::timeout(Duration::from_secs(20), tokio_tungstenite::connect_async_tls_with_config(req, None, false, connector))
                 .await
@@ -153,8 +205,41 @@ impl Client {
 
     /// Send a request to `/api/v1{path}` and return the JSON body (or `null`).
     pub async fn request(&self, method: Method, path: &str, body: Option<&serde_json::Value>) -> Result<serde_json::Value, ApiError> {
-        let url = format!("{}/api/v1{}", self.base, path);
-        let mut req = self.http.request(method, &url);
+        use std::sync::atomic::Ordering;
+        let (active, _) = self.active_conn();
+        let count = self.conns.read().unwrap_or_else(|e| e.into_inner()).len();
+        // Order: the preferred server first if it's time to retry it, then
+        // the active one, then the rest.
+        let retry_preferred = active != 0
+            && self.switched_at.lock().unwrap_or_else(|e| e.into_inner()).map(|t| t.elapsed() > RETRY_PREFERRED).unwrap_or(true);
+        let mut order: Vec<usize> = if retry_preferred { vec![0, active] } else { vec![active] };
+        let rest: Vec<usize> = (0..count).filter(|i| !order.contains(i)).collect();
+        order.extend(rest);
+        let mut last_err = None;
+        for i in order {
+            let conn = match self.conns.read().unwrap_or_else(|e| e.into_inner()).get(i) {
+                Some(c) => c.clone(),
+                None => continue,
+            };
+            match self.send(&conn, method.clone(), path, body).await {
+                Err(e) if e.status.is_none() && count > 1 => last_err = Some(e),
+                other => {
+                    if i != active {
+                        self.active.store(i, Ordering::SeqCst);
+                        *self.switched_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+                    } else if retry_preferred {
+                        *self.switched_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+                    }
+                    return other;
+                }
+            }
+        }
+        Err(last_err.unwrap_or(ApiError { status: None, message: "No Management Server is reachable".into() }))
+    }
+
+    async fn send(&self, conn: &Conn, method: Method, path: &str, body: Option<&serde_json::Value>) -> Result<serde_json::Value, ApiError> {
+        let url = format!("{}/api/v1{}", conn.base, path);
+        let mut req = conn.http.request(method, &url);
         if let Some(a) = &self.auth {
             req = req.header("authorization", a);
         }
