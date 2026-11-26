@@ -9,7 +9,7 @@
     "core:default",
     "updater:default",
     "process:allow-restart",
-    "opener:allow-open-url",
+    "opener:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled"
