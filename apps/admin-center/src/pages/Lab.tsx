@@ -2,10 +2,10 @@
 // network would behave. Also the read-only live topology of the real domain.
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Copy, Download, Info, Link2, Play, Plus, Save, Trash2, Upload, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Download, Info, Link2, Play, Plus, Save, Square, Trash2, Upload, XCircle } from "lucide-react";
 import { get, put, saveExport } from "../lib/api";
 import { useQuery } from "../lib/hooks";
-import { NODE_INFO, simulate, starterDesign, uid, type Design, type LabLink, type LabNode, type NodeType, type SimResult } from "../lib/topology";
+import { EXAMPLES, NODE_INFO, simulate, starterDesign, uid, type Design, type LabLink, type LabNode, type NodeType, type SimResult } from "../lib/topology";
 import type { Endpoint, OrgUnit, Overview, Policy } from "../lib/types";
 import { TopologyCanvas } from "../components/TopologyCanvas";
 import { Badge, Button, Card, Explain, Field, Input, PageHeader, Select, Switch, Tabs, cx, useToast } from "../components/ui";
@@ -70,9 +70,14 @@ export default function Lab() {
             {[cur, ...designs.filter((d) => d.id !== cur.id)].map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>
           <Button icon={<Plus className="size-4" />} onClick={() => { const d = { id: uid(), name: "Untitled design", nodes: [], links: [] }; setCur(d); setDesigns([d, ...designs]); setResult(null); setDirty(true); }}>New</Button>
-          <Button icon={<Copy className="size-4" />} onClick={() => { const d = starterDesign(); setCur(d); setDesigns([d, ...designs]); setResult(null); setDirty(true); }}>Example</Button>
+          <Select value="" aria-label="Load a reference design" className="w-52" onChange={(e) => { const ex = EXAMPLES.find((x) => x.key === e.target.value); if (!ex) return; const d = ex.build(); setCur(d); setDesigns([d, ...designs]); setResult(null); setSelected(null); setDirty(true); toast("good", `${ex.label}: ${ex.description}`); }}>
+            <option value="">Load a reference design…</option>
+            {EXAMPLES.map((x) => <option key={x.key} value={x.key} title={x.description}>{x.label}</option>)}
+          </Select>
           <Button icon={<Save className="size-4" />} disabled={!dirty} onClick={save}>Save</Button>
-          <Button variant="primary" icon={<Play className="size-4" />} onClick={run}>Run</Button>
+          {result
+            ? <Button variant="danger" icon={<Square className="size-4" />} onClick={() => setResult(null)}>Stop</Button>
+            : <Button variant="primary" icon={<Play className="size-4" />} onClick={run}>Run</Button>}
         </div>} />
       <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)_320px]">
         <Card padded={false} className="h-[68vh] min-h-[460px] overflow-y-auto">

@@ -14,14 +14,21 @@ use tower::ServiceExt;
 use crate::{crypto::Sealer, db::Db, AppState, ServerInfo};
 
 fn app() -> Router {
-    let state = AppState {
+    app_with(state())
+}
+
+fn state() -> AppState {
+    AppState {
         db: Db::open_in_memory().unwrap(),
         sealer: Sealer::from_key([1u8; 32]),
         info: Arc::new(ServerInfo { version: "test", endpoint_url: "http://test".into(), tls_fingerprint: None, data_dir: "mem".into() }),
         login_failures: Default::default(),
         hub: Default::default(),
         services: Default::default(),
-    };
+    }
+}
+
+fn app_with(state: AppState) -> Router {
     super::router(state).layer(MockConnectInfo(SocketAddr::from(([10, 0, 0, 5], 5555))))
 }
 
@@ -902,4 +909,141 @@ async fn mobile_inventory_and_apple_profiles() {
         let out = c.wait_with_output().unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     }
+}
+
+/// Reads users and groups from a Samba sam.ldb, with each user's NT hash.
+const SAMBA_DUMP: &str = r#"
+import json, sys, base64
+from samba.samdb import SamDB
+from samba.auth import system_session
+from samba.param import LoadParm
+import ldb
+lp = LoadParm(); lp.load(sys.argv[2])
+db = SamDB(url=sys.argv[1], session_info=system_session(), lp=lp)
+def v(e, a):
+    x = e.get(a)
+    if x is None or len(x) == 0: return ""
+    x = x[0]
+    return x.decode() if isinstance(x, bytes) else str(x)
+out = {"users": {}, "groups": {}}
+for e in db.search(db.domain_dn(), scope=ldb.SCOPE_SUBTREE, expression="(objectClass=user)", attrs=["sAMAccountName", "userAccountControl", "info", "unicodePwd", "memberOf"]):
+    pw = e.get("unicodePwd")
+    out["users"][v(e, "sAMAccountName").lower()] = {
+        "disabled": bool(int(v(e, "userAccountControl") or 0) & 2),
+        "info": v(e, "info"),
+        "nt": pw[0].hex() if pw is not None and len(pw) else "",
+    }
+for e in db.search(db.domain_dn(), scope=ldb.SCOPE_SUBTREE, expression="(objectClass=group)", attrs=["sAMAccountName", "member"]):
+    members = []
+    for m in (e.get("member") or []):
+        r = db.search(ldb.Dn(db, m.decode() if isinstance(m, bytes) else str(m)), scope=ldb.SCOPE_BASE, attrs=["sAMAccountName"])
+        members.append(v(r[0], "sAMAccountName").lower())
+    out["groups"][v(e, "sAMAccountName")] = sorted(members)
+print(json.dumps(out))
+"#;
+
+/// User lifecycle against a throwaway Samba domain in a temp folder: no root,
+/// no samba service, no ports. Skipped when Samba's AD packages are missing
+/// (samba-ad-provision and samba-dsdb-modules).
+#[tokio::test]
+async fn samba_dc_sync_user_lifecycle() {
+    if !std::path::Path::new("/usr/share/samba/setup/ad-schema").exists()
+        || !std::process::Command::new("samba-tool").arg("--version").output().map(|o| o.status.success()).unwrap_or(false)
+    {
+        eprintln!("skipping: Samba AD packages aren't installed");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("od-samba-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = std::process::Command::new("samba-tool")
+        .args([
+            "domain",
+            "provision",
+            "--server-role=dc",
+            "--use-rfc2307",
+            "--dns-backend=NONE",
+            "--realm=CORP.CONTOSO.COM",
+            "--domain=CORP",
+        ])
+        .arg("--adminpass=Adm1n-pass-123456")
+        .arg(format!("--targetdir={}", dir.display()))
+        .output()
+        .unwrap();
+    // Without root, provisioning stops at the last step (setting ACLs on
+    // SYSVOL), after the directory database is complete. That's all this
+    // test needs.
+    let err = String::from_utf8_lossy(&out.stderr);
+    let sysvol_only = err.contains("Unable to chown") || err.contains("posix ACLs");
+    if !out.status.success() && !(sysvol_only && dir.join("private/sam.ldb").exists()) {
+        if err.contains("samba-ad-provision") || err.contains("LDB_MODULES_PATH") {
+            eprintln!("skipping: Samba AD packages are incomplete: {}", err.lines().last().unwrap_or(""));
+            return;
+        }
+        panic!("provision failed: {err}");
+    }
+    let sam = dir.join("private/sam.ldb").display().to_string();
+    let conf = dir.join("etc/smb.conf").display().to_string();
+    let dump = || {
+        let o = std::process::Command::new("python3").args(["-c", SAMBA_DUMP, &sam, &conf]).output().unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        serde_json::from_slice::<Value>(&o.stdout).unwrap()
+    };
+    let nt = |pw: &str| hex::encode(crate::netsvc::radius::nt_hash(pw));
+
+    let st = state();
+    let app = app_with(st.clone());
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+
+    // Create a user and a group, then sync.
+    let (_, alice) = call(
+        &app,
+        Method::POST,
+        "/users",
+        auth,
+        Some(json!({"username":"alice","display_name":"Alice Smith","password":"Alice-first-pass-1"})),
+    )
+    .await;
+    let alice_id = alice["id"].as_str().unwrap().to_string();
+    let (_, bob) =
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"bob","display_name":"Bob Jones","password":"Bob-first-pass-12"})))
+            .await;
+    let (_, g) = call(&app, Method::POST, "/groups", auth, Some(json!({"name":"Finance","member_ids":[alice["id"], bob["id"]]}))).await;
+    let gid = g["id"].as_str().unwrap().to_string();
+    let msg = super::samba::sync_with(&st, &sam, Some(&conf)).await;
+    assert!(!msg.contains("error") && !msg.contains("failed"), "{msg}");
+    let d = dump();
+    assert_eq!(d["users"]["alice"]["info"], "OpenDirectory", "{d}");
+    assert_eq!(d["users"]["alice"]["disabled"], false);
+    assert_eq!(d["users"]["alice"]["nt"], nt("Alice-first-pass-1"), "password synced");
+    assert_eq!(d["users"]["bob"]["nt"], nt("Bob-first-pass-12"));
+    assert_eq!(d["groups"]["Finance"], json!(["alice", "bob"]));
+
+    // Change a password.
+    let (s, _) =
+        call(&app, Method::POST, &format!("/users/{alice_id}/password"), auth, Some(json!({"password":"Alice-second-pass-2"}))).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let msg = super::samba::sync_with(&st, &sam, Some(&conf)).await;
+    assert!(msg.contains("1 password(s) synced"), "only the changed password is pushed: {msg}");
+    assert_eq!(dump()["users"]["alice"]["nt"], nt("Alice-second-pass-2"));
+
+    // Group membership: remove bob.
+    call(&app, Method::PUT, &format!("/groups/{gid}/members"), auth, Some(json!({"ids":[alice_id]}))).await;
+    // Disable bob.
+    call(&app, Method::PATCH, &format!("/users/{}", bob["id"].as_str().unwrap()), auth, Some(json!({"enabled": false}))).await;
+    super::samba::sync_with(&st, &sam, Some(&conf)).await;
+    let d = dump();
+    assert_eq!(d["groups"]["Finance"], json!(["alice"]));
+    assert_eq!(d["users"]["bob"]["disabled"], true);
+
+    // Delete alice: disabled in Samba (she stays restorable from the Recycle Bin).
+    let (s, _) = call(&app, Method::DELETE, &format!("/users/{alice_id}"), auth, None).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    super::samba::sync_with(&st, &sam, Some(&conf)).await;
+    let d = dump();
+    assert_eq!(d["users"]["alice"]["disabled"], true, "{d}");
+    // Accounts created in Samba itself are left alone.
+    assert_eq!(d["users"]["administrator"]["disabled"], false);
+    assert_eq!(d["users"]["administrator"]["info"], "");
+    let _ = std::fs::remove_dir_all(dir);
 }

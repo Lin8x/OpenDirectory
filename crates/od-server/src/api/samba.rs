@@ -151,8 +151,12 @@ from samba import dsdb
 import ldb
 
 want = json.load(sys.stdin)
-lp = LoadParm(); lp.load_default()
-db = SamDB(url="/var/lib/samba/private/sam.ldb", session_info=system_session(), lp=lp)
+lp = LoadParm()
+if want.get("smbconf"):
+    lp.load(want["smbconf"])
+else:
+    lp.load_default()
+db = SamDB(url=want["sam"], session_info=system_session(), lp=lp)
 base = db.domain_dn()
 MARK = "OpenDirectory"
 out = {"created": 0, "updated": 0, "passwords": 0, "disabled": 0, "groups": 0, "errors": []}
@@ -223,6 +227,11 @@ pub async fn sync_now(s: &AppState) -> String {
     if !std::path::Path::new(SAM).exists() {
         return "Samba isn't provisioned".into();
     }
+    sync_with(s, SAM, None).await
+}
+
+/// Sync into a given sam.ldb (and smb.conf); tests use a throwaway domain.
+pub(crate) async fn sync_with(s: &AppState, sam: &str, smbconf: Option<&str>) -> String {
     let synced: HashMap<String, i64> =
         s.db.meta_get("samba_pw_versions").ok().flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default();
     let mut versions = HashMap::new();
@@ -252,7 +261,7 @@ pub async fn sync_now(s: &AppState) -> String {
         .filter(|g| g.name != "Domain Users")
         .map(|g| serde_json::json!({ "name": g.name, "description": g.description, "members": g.member_ids.iter().filter_map(|m| map.get(m)).collect::<Vec<_>>() }))
         .collect();
-    let input = serde_json::json!({ "users": want_users, "groups": want_groups }).to_string();
+    let input = serde_json::json!({ "sam": sam, "smbconf": smbconf, "users": want_users, "groups": want_groups }).to_string();
     let msg = match run("python3", &["-c", SYNC_PY], Some(&input), 600).await {
         Ok((true, out)) => {
             let _ = s.db.meta_set("samba_pw_versions", &serde_json::to_string(&versions).unwrap_or_default());
