@@ -47,6 +47,12 @@ pub struct AgentState {
     /// The auto-enrolled machine certificate's expiry.
     #[serde(default)]
     pub cert_not_after: Option<chrono::DateTime<chrono::Utc>>,
+    /// Every Management Server (primary first) for failover.
+    #[serde(default)]
+    pub servers: Vec<ServerTarget>,
+    /// The highest primary epoch seen.
+    #[serde(default)]
+    pub epoch: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -93,6 +99,10 @@ impl AgentState {
     }
 
     pub fn client(&self) -> Result<od_client::Client> {
-        Ok(od_client::Client::new(&self.server)?.with_endpoint(&self.endpoint_id, &self.endpoint_secret))
+        let c = od_client::Client::new(&self.server)?.with_endpoint(&self.endpoint_id, &self.endpoint_secret);
+        if !self.servers.is_empty() {
+            c.set_servers(&self.servers);
+        }
+        Ok(c)
     }
 }

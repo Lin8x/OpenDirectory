@@ -42,6 +42,8 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
         script_runs: Default::default(),
         laps: None,
         cert_not_after: None,
+        servers: Vec::new(),
+        epoch: 0,
     };
     state.save()?;
     Ok(state)
@@ -104,11 +106,34 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
             },
             compliance: all_compliance,
             account_versions: state.accounts.iter().map(|(k, v)| (k.clone(), v.password_version)).collect(),
+            known_epoch: state.epoch,
         };
 
         let wait = match client.post::<CheckinResponse, _>("/agent/checkin", &req).await {
+            Ok(resp) if resp.epoch < state.epoch => {
+                // A server that was primary before a replica was promoted.
+                tracing::warn!("{} is out of date (a replica was promoted); switching servers", client.base_url());
+                client.fail_over();
+                Duration::from_secs(5)
+            }
             Ok(resp) => {
                 backoff = Duration::from_secs(5);
+                // Replica servers: remember every server for failover, the
+                // current primary first.
+                if !resp.servers.is_empty() {
+                    let mut list = resp.servers.clone();
+                    list.sort_by_key(|s| !s.primary);
+                    let targets: Vec<od_client::ServerTarget> =
+                        list.iter().map(|s| od_client::ServerTarget { url: s.url.clone(), fingerprint: s.fingerprint.clone() }).collect();
+                    if targets != state.servers || resp.epoch != state.epoch {
+                        state.servers = targets.clone();
+                        state.epoch = resp.epoch;
+                        client.set_servers(&targets);
+                        if let Err(e) = state.save() {
+                            tracing::error!("saving agent state: {e:#}");
+                        }
+                    }
+                }
                 if send_inventory {
                     last_inventory = Some(Instant::now());
                     force_inventory = false;

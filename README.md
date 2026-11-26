@@ -54,6 +54,10 @@ The Management Server can host the network roles a Windows Server usually provid
 
 It also has a read-only **LDAP/LDAPS server** with an AD-style schema for apps and appliances that bind to LDAP, and endpoints can auto-enroll a **machine certificate** from the CA through a GPO setting.
 
+### Replication and failover
+
+Add **replica servers** for redundancy. On the primary, open **Replication & Failover**, add a replica and copy its join code. On the new server, choose **Join an existing domain as a replica** on the first-run screen. Each replica copies the whole directory every minute and serves agents, Admin Center sign-in, DNS, RADIUS and LDAP all the time. Agents learn every server and fail over automatically. Replicas are read-only; if the primary is lost, **promote** a replica. DHCP, jobs, remote shells and scheduled backups run on the primary only.
+
 ### Domain Controller (experimental)
 
 On a Linux Management Server with Samba installed, **Domain Controller** provisions a Samba Active Directory domain controller and keeps it in sync with OpenDirectory (users, groups and passwords). Windows, macOS and Linux computers can then do a real domain join and sign in with Kerberos; the Script Library has join templates for each. The page shows FSMO roles, sites, replication and trusts. It hasn't been tested on real hardware yet, so try it on a test server first.

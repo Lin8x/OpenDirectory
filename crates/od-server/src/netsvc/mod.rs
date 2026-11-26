@@ -79,6 +79,11 @@ pub fn restart_dhcp(s: &AppState) {
         set(ServiceStatus::default());
         return;
     }
+    // Two servers handing out the same scope would clash, so replicas don't.
+    if s.replication.is_replica() {
+        set(ServiceStatus { running: false, error: "DHCP runs on the primary only; this is a replica server.".into() });
+        return;
+    }
     set(ServiceStatus { running: true, error: String::new() });
     let s2 = s.clone();
     let task = tokio::spawn(async move {

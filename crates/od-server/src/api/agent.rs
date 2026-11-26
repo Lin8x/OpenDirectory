@@ -60,6 +60,8 @@ pub async fn checkin(
     Json(req): Json<CheckinRequest>,
 ) -> ApiResult<Json<CheckinResponse>> {
     s.db.record_checkin(auth.id, &req.agent_version, req.inventory.as_ref(), &req.compliance, &peer.ip().to_string())?;
+    super::replication::note_agent_epoch(&s, req.known_epoch);
+    let replica = s.replication.is_replica();
 
     let ou_parent: HashMap<Uuid, Option<Uuid>> = s.db.list_ous()?.into_iter().map(|o| (o.id, o.parent_id)).collect();
     let eff = effective_settings(&s.db.list_policies()?, auth.ou_id, &ou_parent);
@@ -116,7 +118,9 @@ pub async fn checkin(
         }
     }
 
-    let jobs = s.db.claim_jobs(auth.id)?.into_iter().map(|j| AgentJob { id: j.id, kind: j.kind }).collect();
+    // Jobs and shells only come from the primary, so nothing runs twice.
+    let jobs = if replica { vec![] } else { s.db.claim_jobs(auth.id)?.into_iter().map(|j| AgentJob { id: j.id, kind: j.kind }).collect() };
+    let (servers, epoch) = super::replication::servers_for_agents(&s);
     let mut accounts: Vec<ManagedAccount> = accounts.into_values().collect();
     accounts.sort_by(|a, b| a.username.cmp(&b.username));
     Ok(Json(CheckinResponse {
@@ -127,7 +131,9 @@ pub async fn checkin(
         want_inventory: auth.want_inventory,
         scripts,
         laps_rotate: s.db.get_laps(auth.id)?.map(|l| l.4).unwrap_or(false),
-        shells: s.hub.take_requests(auth.id),
+        shells: if replica { vec![] } else { s.hub.take_requests(auth.id) },
+        servers,
+        epoch,
     }))
 }
 

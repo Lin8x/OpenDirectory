@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "../lib/hooks";
 import {
   Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, Globe, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
-  KeyRound, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound,
-} from "lucide-react";
+  KeyRound, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound, CopyPlus } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
 import type { SearchHit } from "../lib/types";
@@ -38,6 +38,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
     items: [
       { to: "/topology", label: "Topology Map", icon: <Network className="size-4" /> },
       { to: "/audit", label: "Audit Log", icon: <ScrollText className="size-4" /> },
+      { to: "/replication", label: "Replication & Failover", icon: <CopyPlus className="size-4" /> },
     ],
   },
   {
@@ -125,6 +126,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <main className="min-w-0 flex-1 overflow-y-auto">
+        <ReplicaBanner />
         <div className="mx-auto max-w-[1280px] px-8 py-7">{children}</div>
       </main>
       {palette && <CommandPalette onClose={() => setPalette(false)} />}
@@ -152,7 +154,7 @@ const QUICK = [
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Mobile Devices", to: "/mobile" }, { label: "Enrollment", to: "/enroll" },
-  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Domain Controller (Samba AD DC)", to: "/domain-controller" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
+  { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Domain Controller (Samba AD DC)", to: "/domain-controller" }, { label: "Replication & Failover (replica servers)", to: "/replication" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
   { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
 ];
 
@@ -218,4 +220,18 @@ function hitPath(h: SearchHit) {
     case "ou": return `/ous?id=${h.id}`;
     case "policy": return `/gpos/${h.id}`;
   }
+}
+
+/** Tells admins when they're on a read-only replica or a superseded primary. */
+export function ReplicaBanner() {
+  const st = useQuery<{ role: string; primary: { url: string } | null; superseded: boolean }>("/replication", { poll: 60000 });
+  const s = st.data;
+  if (!s || (s.role !== "replica" && !s.superseded)) return null;
+  return (
+    <div className="border-b border-warn/40 bg-warn-soft px-8 py-2 text-sm">
+      {s.superseded
+        ? <>Another server was promoted to primary. Changes made here no longer reach endpoints. <Link className="underline" to="/replication">Fix this</Link></>
+        : <>You're on a read-only replica server. Make changes on the primary{s.primary ? ` (${s.primary.url})` : ""}. <Link className="underline" to="/replication">Replication & Failover</Link></>}
+    </div>
+  );
 }

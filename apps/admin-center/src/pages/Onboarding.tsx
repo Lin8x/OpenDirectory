@@ -4,6 +4,7 @@ import { BaselineStep, ModifiersStep, ReviewStep, useBaselineCatalog, type Basel
 import { ApiError, desktop, isDesktop, post } from "../lib/api";
 import { useSession } from "../lib/session";
 import { setAutostart } from "../lib/autostart";
+import { JoinDialog } from "./Replication";
 import { BrandMark, useBranding } from "../lib/branding";
 import { Button, Callout, Field, Input, Switch, cx } from "../components/ui";
 
@@ -126,6 +127,7 @@ export function SetupWizard() {
   const [launch, setLaunch] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [join, setJoin] = useState(false);
 
   const suggestDomain = (o: string) => {
     const slug = o.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20);
@@ -147,6 +149,7 @@ export function SetupWizard() {
 
   return (
     <Frame wide>
+      <JoinDialog open={join} onClose={() => setJoin(false)} onJoined={() => window.location.reload()} />
       <div className="grid overflow-hidden rounded-2xl border border-line bg-panel shadow-xl md:grid-cols-[230px_1fr]">
         <div className="border-b border-line bg-panel-2 p-6 md:border-b-0 md:border-r">
           <div className="text-xs font-semibold uppercase tracking-wider text-ink-3">Set up your domain</div>
@@ -159,6 +162,7 @@ export function SetupWizard() {
             ))}
           </ol>
           <p className="mt-8 text-xs leading-relaxed text-ink-3">You can change everything here later. Nothing leaves this network.</p>
+          <button onClick={() => setJoin(true)} className="mt-6 text-left text-xs font-medium text-accent hover:underline">Join an existing domain as a replica instead</button>
         </div>
         <div className="p-7">
           {step === 0 && (

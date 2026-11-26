@@ -351,7 +351,7 @@ pub fn spawn_sync(s: AppState) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(300)).await;
-            if std::path::Path::new(SAM).exists() && s.db.meta_get("samba_realm").ok().flatten().is_some() {
+            if !s.replication.is_replica() && std::path::Path::new(SAM).exists() && s.db.meta_get("samba_realm").ok().flatten().is_some() {
                 let _ = sync_now(&s).await;
             }
         }

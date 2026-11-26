@@ -59,6 +59,11 @@
 - Network Lab: reference designs (Homelab, Campus, Enterprise tiered multi-site, High security hardened) and a Stop button.
 - Knowledge Base on the Learn page: a guide per service or concept with a video, Wikipedia and further links, plus a Microsoft / AD counterpart tab.
 
+## Done (v0.9 and v0.10)
+
+- Knowledge Base links open from the desktop app; each topic has The standard, In OpenDirectory and Microsoft / AD views.
+- Replica servers: join codes, a full copy every minute, read-only replicas that serve agents, sign-in, DNS, RADIUS and LDAP, automatic agent failover, and promotion with an epoch so a returning old primary is detected. Single writable primary (no multi-master); up to a minute of changes can be lost if the primary fails; no DHCP failover yet.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 and macOS 14+, and of the Domain Controller role on a clean Ubuntu or Debian server. Ship signed installers.
@@ -67,4 +72,4 @@
 4. **Over-the-air MDM.** Apple MDM (needs an APNs certificate) and Android Enterprise.
 5. **Delegated administration.** Roles narrower than Domain Admin (help desk, read-only), scoped to OUs.
 6. **Agent self-update** from GitHub Releases, staged by OU.
-7. **High availability.** Management Server replication.
+7. **DHCP failover** between primary and replica, and automatic promotion with a witness.

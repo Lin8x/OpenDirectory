@@ -31,6 +31,17 @@ pub struct CheckinRequest {
     /// Password version the agent last applied for each managed account.
     #[serde(default)]
     pub account_versions: std::collections::HashMap<String, i64>,
+    /// The highest primary epoch this agent has seen (see `CheckinResponse::servers`).
+    #[serde(default)]
+    pub known_epoch: u64,
+}
+
+/// A Management Server agents can check in to: the primary or a replica.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ServerEndpoint {
+    pub url: String,
+    pub fingerprint: Option<String>,
+    pub primary: bool,
 }
 
 /// A local sign-in account the agent must keep in sync.
@@ -69,6 +80,13 @@ pub struct CheckinResponse {
     /// Interactive shells an admin opened; the agent connects back for each.
     #[serde(default)]
     pub shells: Vec<ShellRequest>,
+    /// Every server in the domain, primary first, for failover.
+    #[serde(default)]
+    pub servers: Vec<ServerEndpoint>,
+    /// Goes up each time a replica is promoted, so agents can tell the
+    /// current primary from a stale one.
+    #[serde(default)]
+    pub epoch: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

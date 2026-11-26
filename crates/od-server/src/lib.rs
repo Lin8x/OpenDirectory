@@ -39,6 +39,7 @@ pub struct AppState {
     pub hub: Arc<api::shell::Hub>,
     /// DNS and other hosted network services.
     pub services: Arc<netsvc::Services>,
+    pub replication: Arc<api::replication::Runtime>,
 }
 
 /// Facts about this server shown in the Admin Center and enrollment commands.
@@ -124,6 +125,7 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
         login_failures: Default::default(),
         hub: Default::default(),
         services: Default::default(),
+        replication: Arc::new(api::replication::Runtime::load(data_dir)),
     })
 }
 
@@ -134,7 +136,10 @@ fn spawn_housekeeping(state: AppState) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            api::backups::run_due(&s2).await;
+            // Scheduled backups run on the primary only.
+            if !s2.replication.is_replica() {
+                api::backups::run_due(&s2).await;
+            }
         }
     });
     tokio::spawn(async move {
@@ -221,7 +226,9 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     let info = state.info.clone();
     spawn_housekeeping(state.clone());
     api::integrations::spawn_dispatcher(state.clone());
+    api::replication::init(&state);
     netsvc::start_all(&state);
+    api::replication::spawn_sync(state.clone());
     api::samba::spawn_sync(state.clone());
     let mut app = router(state);
     if let Some(dir) = config.web_ui.as_ref().filter(|d| d.join("index.html").exists()) {

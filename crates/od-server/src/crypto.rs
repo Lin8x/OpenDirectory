@@ -61,7 +61,7 @@ pub fn ct_eq(a: &str, b: &str) -> bool {
 /// the server's data directory and never leaves the Management Server.
 #[derive(Clone)]
 pub struct Sealer {
-    cipher: XChaCha20Poly1305,
+    cipher: std::sync::Arc<std::sync::RwLock<XChaCha20Poly1305>>,
 }
 
 impl Sealer {
@@ -78,17 +78,32 @@ impl Sealer {
             write_private(path, &k)?;
             k
         };
-        Ok(Sealer { cipher: XChaCha20Poly1305::new_from_slice(&key).map_err(|e| anyhow!("{e}"))? })
+        Ok(Sealer::wrap(XChaCha20Poly1305::new_from_slice(&key).map_err(|e| anyhow!("{e}"))?))
     }
 
     pub fn from_key(key: [u8; 32]) -> Sealer {
-        Sealer { cipher: XChaCha20Poly1305::new_from_slice(&key).expect("32-byte key") }
+        Sealer::wrap(XChaCha20Poly1305::new_from_slice(&key).expect("32-byte key"))
+    }
+
+    fn wrap(c: XChaCha20Poly1305) -> Sealer {
+        Sealer { cipher: std::sync::Arc::new(std::sync::RwLock::new(c)) }
+    }
+
+    /// Switch to another key (a replica takes its primary's key).
+    pub fn set_key(&self, key: &[u8]) -> Result<()> {
+        let c = XChaCha20Poly1305::new_from_slice(key).map_err(|e| anyhow!("{e}"))?;
+        *self.cipher.write().unwrap_or_else(|e| e.into_inner()) = c;
+        Ok(())
+    }
+
+    fn c(&self) -> std::sync::RwLockReadGuard<'_, XChaCha20Poly1305> {
+        self.cipher.read().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn seal(&self, plaintext: &[u8]) -> Result<Vec<u8>> {
         let mut nonce = [0u8; 24];
         rand::thread_rng().fill_bytes(&mut nonce);
-        let ct = self.cipher.encrypt(XNonce::from_slice(&nonce), plaintext).map_err(|e| anyhow!("seal: {e}"))?;
+        let ct = self.c().encrypt(XNonce::from_slice(&nonce), plaintext).map_err(|e| anyhow!("seal: {e}"))?;
         let mut out = nonce.to_vec();
         out.extend(ct);
         Ok(out)
@@ -99,7 +114,7 @@ impl Sealer {
             return Err(anyhow!("sealed value too short"));
         }
         let (nonce, ct) = sealed.split_at(24);
-        self.cipher.decrypt(XNonce::from_slice(nonce), ct).map_err(|e| anyhow!("open: {e}"))
+        self.c().decrypt(XNonce::from_slice(nonce), ct).map_err(|e| anyhow!("open: {e}"))
     }
 }
 
