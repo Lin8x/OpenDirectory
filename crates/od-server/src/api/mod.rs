@@ -2,6 +2,7 @@
 //! through these routes; nothing is UI-only.
 
 mod agent;
+pub mod agent_updates;
 pub mod backups;
 mod branding;
 mod ca;
@@ -124,6 +125,13 @@ pub fn router(state: AppState) -> Router {
         .route("/replication/join", post(replication::join))
         .route("/replication/sync", post(replication::sync))
         .route("/replication/promote", post(replication::promote))
+        .route("/agent-updates", get(agent_updates::status).put(agent_updates::set_policy))
+        .route("/agent-updates/fetch", post(agent_updates::fetch_all))
+        .route(
+            "/agent-updates/upload/{platform}",
+            post(agent_updates::upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)),
+        )
+        .route("/agent/update/{platform}", get(agent_updates::download))
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))

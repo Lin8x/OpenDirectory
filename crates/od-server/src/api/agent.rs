@@ -154,6 +154,7 @@ pub async fn checkin(
         shells: if replica { vec![] } else { s.hub.take_requests(auth.id) },
         servers,
         epoch,
+        update: super::agent_updates::offer(&s, &req.agent_version, &req.platform, auth.ou_id, &ou_parent),
     }))
 }
 

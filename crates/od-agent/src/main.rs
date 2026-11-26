@@ -13,6 +13,7 @@ mod policy_scripts;
 mod service;
 mod shell;
 mod state;
+mod updater;
 mod util;
 
 use anyhow::Result;

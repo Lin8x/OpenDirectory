@@ -52,6 +52,11 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
 /// Run until `shutdown` flips to true. Returns `true` if a restart was requested.
 pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut state = AgentState::load()?.context("This endpoint isn't enrolled yet. Run `opendirectory-agent enroll` first.")?;
+    // A just-installed update that keeps failing is rolled back here.
+    if crate::updater::on_start() {
+        return Ok(true);
+    }
+    let mut last_update_try: Option<Instant> = None;
     let client = state.client()?;
     tracing::info!("Endpoint Agent {VERSION} reporting to {}", state.server.url);
 
@@ -107,6 +112,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
             compliance: all_compliance,
             account_versions: state.accounts.iter().map(|(k, v)| (k.clone(), v.password_version)).collect(),
             known_epoch: state.epoch,
+            platform: crate::updater::PLATFORM.into(),
         };
 
         let wait = match client.post::<CheckinResponse, _>("/agent/checkin", &req).await {
@@ -118,6 +124,18 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
             }
             Ok(resp) => {
                 backoff = Duration::from_secs(5);
+                crate::updater::confirm();
+                // Agent updates offered by the Management Server.
+                if let Some(u) = &resp.update {
+                    if last_update_try.map(|t| t.elapsed() > Duration::from_secs(1800)).unwrap_or(true) {
+                        last_update_try = Some(Instant::now());
+                        match crate::updater::apply(u, &client).await {
+                            Ok(true) => return Ok(true),
+                            Ok(false) => {}
+                            Err(e) => tracing::warn!("agent update to {} failed: {e:#}", u.version),
+                        }
+                    }
+                }
                 // Replica servers: remember every server for failover, the
                 // current primary first.
                 if !resp.servers.is_empty() {

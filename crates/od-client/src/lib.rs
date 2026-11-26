@@ -260,6 +260,20 @@ impl Client {
         }
     }
 
+    /// Download a file from `/api/v1{path}` from the server in use.
+    pub async fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
+        let (_, conn) = self.active_conn();
+        let mut req = conn.http.get(format!("{}/api/v1{}", conn.base, path)).timeout(Duration::from_secs(600));
+        if let Some(a) = &self.auth {
+            req = req.header("authorization", a);
+        }
+        let resp = req.send().await.map_err(|e| anyhow!(describe_reqwest(&e)))?;
+        if !resp.status().is_success() {
+            bail!("Server returned {}", resp.status());
+        }
+        Ok(resp.bytes().await?.to_vec())
+    }
+
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         Ok(serde_json::from_value(self.request(Method::GET, path, None).await?)?)
     }

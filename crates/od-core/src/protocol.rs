@@ -34,6 +34,18 @@ pub struct CheckinRequest {
     /// The highest primary epoch this agent has seen (see `CheckinResponse::servers`).
     #[serde(default)]
     pub known_epoch: u64,
+    /// Build platform, e.g. "linux-x64", for agent updates.
+    #[serde(default)]
+    pub platform: String,
+}
+
+/// A newer Endpoint Agent the server offers. Download it from
+/// `/agent/update/{platform}` and check the SHA-256 before installing.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentUpdate {
+    pub version: String,
+    pub sha256: String,
+    pub size: u64,
 }
 
 /// A Management Server agents can check in to: the primary or a replica.
@@ -87,6 +99,9 @@ pub struct CheckinResponse {
     /// current primary from a stale one.
     #[serde(default)]
     pub epoch: u64,
+    /// A newer agent to install, when updates are on for this endpoint.
+    #[serde(default)]
+    pub update: Option<AgentUpdate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
