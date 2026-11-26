@@ -11,7 +11,9 @@ if (isDesktop) {
     const a = (e.target as HTMLElement).closest?.("a[href^='http']") as HTMLAnchorElement | null;
     if (!a || a.target !== "_blank") return;
     e.preventDefault();
-    void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(a.href));
+    import("@tauri-apps/plugin-opener")
+      .then((m) => m.openUrl(a.href))
+      .catch((err) => { console.error("Couldn't open link", err); window.open(a.href, "_blank", "noopener"); });
   });
 }
 
