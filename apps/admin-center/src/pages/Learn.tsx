@@ -1,6 +1,9 @@
-import { ArrowRight, Monitor, Server, Terminal } from "lucide-react";
+import { ArrowRight, BookOpen, ExternalLink, Monitor, PlayCircle, Server, Terminal } from "lucide-react";
+import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { GLOSSARY } from "../lib/glossary";
-import { Card, PageHeader } from "../components/ui";
+import { KB, type KbEntry, type KbLink } from "../lib/kb";
+import { Badge, Card, Input, PageHeader, Tabs, cx } from "../components/ui";
 
 const ORDER = ["domain", "management_server", "ou", "user", "group", "domain_admin", "endpoint", "agent", "enrollment", "fingerprint", "gpo", "priority", "rsop", "local_accounts", "compliance", "rmm"];
 
@@ -16,9 +19,20 @@ const AD_MAP: [string, string][] = [
 ];
 
 export default function Learn() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "kb" ? "kb" : "concepts";
   return (
     <>
-      <PageHeader title="Learn" subtitle="How OpenDirectory works and how it maps to the Active Directory tools you may already know." />
+      <PageHeader title="Learn" subtitle="How OpenDirectory works, the networking and identity concepts behind it, and their Active Directory counterparts." />
+      <div className="mb-5"><Tabs value={tab} onChange={(t) => setParams(t === "kb" ? { tab: "kb" } : {})} tabs={[{ id: "concepts", label: "OpenDirectory concepts" }, { id: "kb", label: "Knowledge Base" }]} /></div>
+      {tab === "kb" ? <KnowledgeBase /> : <Concepts />}
+    </>
+  );
+}
+
+function Concepts() {
+  return (
+    <>
       <Card title="How the pieces fit together" className="mb-5">
         <div className="grid items-center gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
           <Piece icon={<Monitor className="size-5" />} title="Admin Center & od CLI" body="Where admins work. This app, or the od command on any OS." />
@@ -54,6 +68,80 @@ function Piece({ icon, title, body }: { icon: React.ReactNode; title: string; bo
       <div className="grid size-9 place-items-center rounded-lg bg-accent-soft text-accent">{icon}</div>
       <div className="mt-2.5 text-sm font-semibold">{title}</div>
       <p className="mt-1 text-xs leading-relaxed text-ink-3">{body}</p>
+    </div>
+  );
+}
+
+function ExtLink({ l }: { l: KbLink }) {
+  return <a href={l.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-accent hover:underline"><ExternalLink className="size-3.5 shrink-0" />{l.label}</a>;
+}
+
+function KnowledgeBase() {
+  const [params, setParams] = useSearchParams();
+  const [q, setQ] = useState("");
+  const list = KB.filter((e) => !q || `${e.title} ${e.summary} ${e.microsoft?.name ?? ""}`.toLowerCase().includes(q.toLowerCase()));
+  const cur = KB.find((e) => e.key === params.get("topic")) ?? list[0] ?? KB[0]!;
+  const cats = [...new Set(KB.map((e) => e.category))];
+  return (
+    <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <Card padded={false} className="self-start">
+        <div className="border-b border-line p-2"><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search topics…" aria-label="Search topics" /></div>
+        <nav className="max-h-[70vh] overflow-y-auto p-1.5">
+          {cats.map((c) => {
+            const items = list.filter((e) => e.category === c);
+            if (!items.length) return null;
+            return (
+              <div key={c} className="mb-1">
+                <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{c}</div>
+                {items.map((e) => (
+                  <button key={e.key} onClick={() => setParams({ tab: "kb", topic: e.key })} className={cx("w-full rounded-md px-2 py-1.5 text-left text-sm", e.key === cur.key ? "bg-accent-soft font-medium text-accent" : "hover:bg-panel-2")}>{e.title}</button>
+                ))}
+              </div>
+            );
+          })}
+        </nav>
+      </Card>
+      <Topic key={cur.key} e={cur} />
+    </div>
+  );
+}
+
+function Topic({ e }: { e: KbEntry }) {
+  const [view, setView] = useState<"guide" | "microsoft">("guide");
+  return (
+    <div className="min-w-0 space-y-5">
+      <Card>
+        <div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-semibold">{e.title}</h2><Badge>{e.category}</Badge></div>
+        <p className="mt-1 text-sm text-ink-2">{e.summary}</p>
+        <div className="mt-4"><Tabs value={view} onChange={setView} tabs={[{ id: "guide", label: "Guide" }, ...(e.microsoft ? [{ id: "microsoft" as const, label: `Microsoft: ${e.microsoft.name}` }] : [])]} /></div>
+        {view === "microsoft" && e.microsoft ? (
+          <div className="mt-4 space-y-3">
+            {e.microsoft.text.map((t) => <p key={t} className="text-sm leading-relaxed text-ink-2">{t}</p>)}
+            <div className="space-y-1.5 pt-1">{e.microsoft.links.map((l) => <ExtLink key={l.url} l={l} />)}</div>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {e.guide.map((t) => <p key={t} className="text-sm leading-relaxed text-ink-2">{t}</p>)}
+            <div className="rounded-lg border border-line bg-panel-2 p-3 text-sm">
+              <div className="flex items-center gap-1.5 font-medium"><BookOpen className="size-4 text-accent" />In OpenDirectory</div>
+              <p className="mt-1 text-ink-2">{e.inOpenDirectory.text} {e.inOpenDirectory.to && <Link to={e.inOpenDirectory.to} className="text-accent hover:underline">Open it</Link>}</p>
+            </div>
+          </div>
+        )}
+      </Card>
+      <Card title="Learn more">
+        <div className="grid gap-4 md:grid-cols-2">
+          <a href={e.video.url} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-lg border border-line p-3 hover:bg-panel-2">
+            <PlayCircle className="mt-0.5 size-6 shrink-0 text-bad" />
+            <span><span className="block text-sm font-medium">{e.video.title}</span><span className="text-xs text-ink-3">YouTube · {e.video.channel}</span></span>
+          </a>
+          <a href={e.wikipedia} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-lg border border-line p-3 hover:bg-panel-2">
+            <span className="grid size-6 shrink-0 place-items-center rounded font-serif text-base font-bold">W</span>
+            <span><span className="block text-sm font-medium">{decodeURIComponent(e.wikipedia.split("/wiki/")[1]!).replace(/_/g, " ")}</span><span className="text-xs text-ink-3">Wikipedia</span></span>
+          </a>
+        </div>
+        {e.links.length > 0 && <div className="mt-4 space-y-1.5">{e.links.map((l) => <ExtLink key={l.url} l={l} />)}</div>}
+      </Card>
     </div>
   );
 }

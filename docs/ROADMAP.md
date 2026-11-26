@@ -53,6 +53,12 @@
 - Machine certificate auto-enrollment GPO setting. Windows gets the key and certificate as files; importing into the Windows certificate store is still to do.
 - DFS: guidance only (use Windows DFS or Samba). Print: deployment scripts only, no print server.
 
+## Done (v0.8)
+
+- Domain Controller role tested against a real Samba AD database (user create, password sync, group membership, disable and delete), run automatically when Samba's AD packages are installed.
+- Network Lab: reference designs (Homelab, Campus, Enterprise tiered multi-site, High security hardened) and a Stop button.
+- Knowledge Base on the Learn page: a guide per service or concept with a video, Wikipedia and further links, plus a Microsoft / AD counterpart tab.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 and macOS 14+, and of the Domain Controller role on a clean Ubuntu or Debian server. Ship signed installers.
