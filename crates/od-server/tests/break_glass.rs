@@ -31,7 +31,8 @@ async fn break_glass_reset_signs_in_and_is_audited() {
     let _: Value = old_session.get("/auth/me").await.unwrap();
 
     // Unknown accounts and the wrong data directory are refused.
-    let opts = |user: &str, pw: &str| ResetOptions { username: user.into(), password: NewPassword::Given(pw.into()), enable: false };
+    let opts =
+        |user: &str, pw: &str| ResetOptions { username: user.into(), password: NewPassword::Given(pw.into()), enable: false, via: None };
     assert!(reset_password(&dir, &opts("nobody", "new-password-12")).is_err());
     assert!(reset_password(&dir.join("missing"), &opts("admin1", "new-password-12")).is_err());
     // Password policy still applies.

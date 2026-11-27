@@ -43,11 +43,15 @@ pub struct ResetOptions {
     pub password: NewPassword,
     /// Also re-enable the account if it was disabled.
     pub enable: bool,
+    /// What started the reset, for the audit log (e.g. the Admin Center's
+    /// "Forgot password?"). `None` means the command line.
+    pub via: Option<String>,
 }
 
 /// The local OS account running the command, as written to the audit log.
 fn operator() -> String {
     let user = std::env::var("SUDO_USER")
+        .or_else(|_| pkexec_user().ok_or(std::env::VarError::NotPresent))
         .or_else(|_| std::env::var("USER"))
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unknown".into());
@@ -57,6 +61,41 @@ fn operator() -> String {
     } else {
         format!("local:{user}@{host}")
     }
+}
+
+/// True when this process runs as root, or elevated as Administrator on
+/// Windows. Used by callers that must not accept "owns the data directory".
+pub fn is_elevated() -> bool {
+    #[cfg(unix)]
+    {
+        // SAFETY: geteuid has no preconditions and can't fail.
+        unsafe { libc::geteuid() == 0 }
+    }
+    #[cfg(windows)]
+    {
+        // SAFETY: IsUserAnAdmin takes no arguments.
+        unsafe { windows_sys::Win32::UI::Shell::IsUserAnAdmin() != 0 }
+    }
+}
+
+/// The Domain Admins' logon and display names, for an account picker.
+pub fn admin_accounts(data_dir: &Path) -> Result<Vec<(String, String, bool)>> {
+    let db_path = data_dir.join("directory.db");
+    if !db_path.exists() {
+        bail!("No directory found in {}", data_dir.display());
+    }
+    let db = Db::open(&db_path)?;
+    Ok(db.list_users()?.into_iter().filter(|u| u.role == Role::Admin).map(|u| (u.username, u.display_name, u.enabled)).collect())
+}
+
+/// The desktop user who ran `pkexec`, looked up from `PKEXEC_UID`.
+fn pkexec_user() -> Option<String> {
+    let uid = std::env::var("PKEXEC_UID").ok()?;
+    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    passwd.lines().find_map(|l| {
+        let f: Vec<&str> = l.split(':').collect();
+        (f.len() > 2 && f[2] == uid).then(|| f[0].to_string())
+    })
 }
 
 /// Refuse unless this process has local administrator rights over `data_dir`.
@@ -198,7 +237,10 @@ pub fn reset_password(data_dir: &Path, opts: &ResetOptions) -> Result<()> {
     db.delete_user_sessions(user.id)?;
 
     let actor = operator();
-    let mut details = "Break-glass reset on the Management Server console; existing sessions signed out".to_string();
+    let mut details = match &opts.via {
+        Some(via) => format!("Break-glass reset from {via} after OS administrator approval; existing sessions signed out"),
+        None => "Break-glass reset on the Management Server console; existing sessions signed out".to_string(),
+    };
     if re_enabled {
         details.push_str("; account re-enabled");
     }

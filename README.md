@@ -88,7 +88,9 @@ One `.odbackup` file holds the whole configuration (directory database, master k
 
 The Admin Center always asks Domain Admins to sign in, because it can run scripts, open remote shells and change Group Policy on every enrolled endpoint. The first Domain Admin is the account you create in the setup wizard; there is no default or generated password.
 
-If every Domain Admin is locked out, recover from the console of the Management Server host. These commands read the directory on disk, need root (Administrator on Windows) or the account that owns the data directory, have no network API, and write a `user.password_reset.break_glass` entry to the audit log:
+If every Domain Admin is locked out and the directory is hosted in the Admin Center on this computer, click **Forgot password?** on the sign-in screen. Your operating system asks for an administrator password in its own prompt (polkit on Linux, UAC on Windows, the macOS authorization dialog), so OpenDirectory never sees it. Then you pick the Domain Admin and set a new password.
+
+On a standalone Management Server, recover from the console of the server host. These commands read the directory on disk, need root (Administrator on Windows) or the account that owns the data directory, have no network API, and write a `user.password_reset.break_glass` entry to the audit log:
 
 ```bash
 sudo opendirectory-server admin list

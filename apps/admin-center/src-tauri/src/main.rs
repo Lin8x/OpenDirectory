@@ -7,6 +7,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod recovery;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -155,6 +157,31 @@ async fn disconnect(app: State<'_, Arc<App>>) -> Result<ConnectionState, String>
 struct RawResponse {
     status: u16,
     body: Value,
+}
+
+/// The data directory of the server hosted in this app, if that's the mode.
+async fn local_data_dir(app: &App) -> Result<PathBuf, String> {
+    let inner = app.inner.lock().await;
+    match (&inner.state.mode, &inner.server) {
+        (Some(m), Some(_)) if m == "local" => Ok(app.data_dir.clone()),
+        _ => Err("Forgot password only works when the directory is hosted on this computer. Ask another Domain Admin to reset it, or run `sudo opendirectory-server admin reset-password <user>` on the server.".into()),
+    }
+}
+
+/// Domain Admins in the directory hosted on this computer, for "Forgot password?".
+#[tauri::command]
+async fn recovery_accounts(app: State<'_, Arc<App>>) -> Result<Vec<recovery::Account>, String> {
+    recovery::accounts(&local_data_dir(&app).await?)
+}
+
+/// Break-glass reset after the operating system's administrator prompt.
+#[tauri::command]
+async fn recovery_reset(app: State<'_, Arc<App>>, username: String, password: String) -> Result<(), String> {
+    let data_dir = local_data_dir(&app).await?;
+    let work_dir = data_dir.parent().map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    tauri::async_runtime::spawn_blocking(move || recovery::reset(&work_dir, &data_dir, &username, &password))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Saves an export (e.g. the audit log as CSV) to the user's Downloads folder
@@ -365,6 +392,7 @@ fn show_main(app: &AppHandle) {
 }
 
 fn main() {
+    recovery::run_helper_if_requested();
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,tower_http=warn".into()))
         .init();
@@ -444,7 +472,9 @@ fn main() {
             api_request,
             save_export,
             shell_connect,
-            shell_send
+            shell_send,
+            recovery_accounts,
+            recovery_reset
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenDirectory Admin Center");

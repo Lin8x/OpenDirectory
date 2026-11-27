@@ -134,7 +134,10 @@ fn main() -> anyhow::Result<()> {
             } else {
                 NewPassword::Prompt
             };
-            od_server::recovery::reset_password(&args.data_dir, &ResetOptions { username: user.clone(), password, enable: *enable })
+            od_server::recovery::reset_password(
+                &args.data_dir,
+                &ResetOptions { username: user.clone(), password, enable: *enable, via: None },
+            )
         }
         Cmd::WindowsService => {
             #[cfg(windows)]

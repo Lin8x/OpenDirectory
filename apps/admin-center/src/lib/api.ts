@@ -76,6 +76,10 @@ export const desktop = {
   hostLocally: (listenPort: number) => invoke<ConnectionState>("host_locally", { listenPort }),
   connectRemote: (url: string, fingerprint: string) => invoke<ConnectionState>("connect_remote", { url, fingerprint }),
   disconnect: () => invoke<ConnectionState>("disconnect"),
+  /** Domain Admins of the directory hosted on this computer ("Forgot password?"). */
+  recoveryAccounts: () => invoke<{ username: string; display_name: string; enabled: boolean }[]>("recovery_accounts"),
+  /** Break-glass reset; the OS shows its own administrator prompt first. */
+  recoveryReset: (username: string, password: string) => invoke<void>("recovery_reset", { username, password }),
 };
 
 /** Saves binary data given as base64 (e.g. a backup file). Same locations as saveExport. */
