@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Monitor, Plus, Search, Trash2, UserMinus, UsersRound } from "lucide-react";
+import { Monitor, Plus, Trash2, UserMinus, UsersRound } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, patch, post, put } from "../lib/api";
 import type { Endpoint, Group, OrgUnit, User } from "../lib/types";
 import { Avatar, Badge, OsIcon, Select, Button, Card, Confirm, Dialog, Drawer, EmptyState, ErrorNote, Explain, Field, Input, Loading, PageHeader, Row, Table, Td, Textarea, useToast } from "../components/ui";
-import { OuSelect, ouPath } from "./Users";
+import { OuSelect, ouFilter, ouPath } from "./Users";
+import { ListToolbar, NoMatches, useListView } from "../components/DataView";
 
 const BUILTIN = ["Domain Admins", "Domain Users"];
 
@@ -15,9 +16,28 @@ export default function Groups() {
   const users = useQuery<User[]>("/users");
   const ous = useQuery<OrgUnit[]>("/ous");
   const [params, setParams] = useSearchParams();
-  const [q, setQ] = useState("");
   const [creating, setCreating] = useState(params.get("new") === "1");
-  const list = useMemo(() => (groups.data ?? []).filter((g) => !q || g.name.toLowerCase().includes(q.toLowerCase()) || g.description.toLowerCase().includes(q.toLowerCase())), [groups.data, q]);
+  const ouList = ous.data ?? [];
+  const view = useListView(groups.data, {
+    id: "groups",
+    search: (g) => [g.name, g.description],
+    filters: [
+      { kind: "enum", key: "type", label: "Type", get: (g) => (BUILTIN.includes(g.name) ? "builtin" : "custom"), options: [{ value: "builtin", label: "Built-in" }, { value: "custom", label: "Custom" }] },
+      { kind: "enum", key: "members", label: "Members", get: (g) => [g.member_ids.length ? "users" : "nousers", g.endpoint_ids.length ? "computers" : "nocomputers"],
+        options: [{ value: "users", label: "Has users" }, { value: "nousers", label: "No users" }, { value: "computers", label: "Has computers" }, { value: "nocomputers", label: "No computers" }] },
+      ouFilter(ouList, (g: Group) => g.ou_id),
+      { kind: "date", key: "created", label: "Created", get: (g) => g.created_at },
+    ],
+    sorts: {
+      name: { label: "Name", get: (g) => g.name },
+      description: { label: "Description", get: (g) => g.description },
+      members: { label: "Members", get: (g) => g.member_ids.length, type: "number" },
+      computers: { label: "Computers", get: (g) => g.endpoint_ids.length, type: "number" },
+      ou: { label: "OU", get: (g) => (g.ou_id ? ouPath(ouList, g.ou_id) : null) },
+    },
+    defaultSort: { key: "name", dir: "asc" },
+  });
+  const list = view.rows;
   const selected = groups.data?.find((g) => g.id === params.get("id"));
 
   return (
@@ -25,12 +45,10 @@ export default function Groups() {
       <PageHeader title="Security Groups" guide="02-directory#security-groups-teams-you-can-point-at" term="group" subtitle="Named sets of users. Target groups in Group Policy to decide who can sign in to which endpoints, and who is a local admin."
         actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New group</Button>} />
       <Card padded={false}>
-        <div className="flex items-center gap-2 border-b border-line p-3">
-          <div className="relative w-72"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" /><Input className="pl-8" placeholder="Search groups" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        </div>
+        <ListToolbar view={view} placeholder="Search groups" noun={["group", "groups"]} />
         {groups.loading && !groups.data ? <Loading /> : groups.error ? <div className="p-4"><ErrorNote message={groups.error} onRetry={groups.reload} /></div> : (
-          <Table head={["Name", "Description", "Members", "Computers", "OU"]}
-            empty={list.length === 0 && <EmptyState icon={<UsersRound className="size-5" />} title="No groups" body="Create a group such as Laptop Users or Finance." action={<Button variant="primary" onClick={() => setCreating(true)}>New group</Button>} />}>
+          <Table view={view} head={[{ label: "Name", sort: "name" }, { label: "Description", sort: "description" }, { label: "Members", sort: "members" }, { label: "Computers", sort: "computers" }, { label: "OU", sort: "ou" }]}
+            empty={list.length === 0 && (view.total > 0 ? <NoMatches view={view} /> : <EmptyState icon={<UsersRound className="size-5" />} title="No groups" body="Create a group such as Laptop Users or Finance." action={<Button variant="primary" onClick={() => setCreating(true)}>New group</Button>} />)}>
             {list.map((g) => (
               <Row key={g.id} onClick={() => setParams({ id: g.id })} selected={g.id === selected?.id}>
                 <Td><div className="flex items-center gap-2.5"><span className="grid size-8 place-items-center rounded-lg bg-accent-soft text-accent"><UsersRound className="size-4" /></span><span className="font-medium">{g.name}</span>{BUILTIN.includes(g.name) && <Badge>Built-in</Badge>}</div></Td>

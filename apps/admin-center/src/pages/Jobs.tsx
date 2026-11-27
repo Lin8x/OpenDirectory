@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight, Terminal, X } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { post } from "../lib/api";
-import type { Endpoint, Job } from "../lib/types";
-import { ago, dateTime } from "../lib/format";
+import type { Endpoint, Job, OsFamily } from "../lib/types";
+import { ago, dateTime, osLabel } from "../lib/format";
+import { ListToolbar, NoMatches, useListView } from "../components/DataView";
 import { Badge, Button, Card, CopyButton, EmptyState, Explain, Loading, OsIcon, PageHeader, Select, useToast } from "../components/ui";
 
 const tone = { queued: "neutral", running: "accent", succeeded: "good", failed: "bad", cancelled: "neutral" } as const;
@@ -48,11 +49,57 @@ export function JobRow({ job, endpoint, onChanged, defaultOpen = false }: { job:
   );
 }
 
+const STATUS_LABEL: Record<Job["status"], string> = { queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed", cancelled: "Cancelled" };
+const KIND_LABEL: Record<Job["kind"]["type"], string> = {
+  script: "Script", scan_updates: "Update scan", install_updates: "Update install", refresh_inventory: "Inventory refresh", restart_agent: "Agent restart", notify_user: "User notification",
+};
+
+/** Filterable, sortable list of script and job runs. Shared by Remote Scripts and the Script Library. */
+export function JobList({ path, id, empty }: { path: string; id: string; empty: ReactNode }) {
+  const jobs = useQuery<Job[]>(path, { poll: 4000 });
+  const eps = useQuery<Endpoint[]>("/endpoints");
+  const byId = new Map((eps.data ?? []).map((e) => [e.id, e]));
+  const host = (j: Job) => byId.get(j.endpoint_id)?.hostname ?? null;
+  const view = useListView(jobs.data, {
+    id,
+    search: (j) => [jobTitle(j), host(j), j.created_by, j.kind.type === "script" ? j.kind.script : null, j.output.slice(0, 4000)],
+    filters: [
+      { kind: "enum", key: "status", label: "Status", get: (j) => j.status, options: (Object.keys(STATUS_LABEL) as Job["status"][]).map((k) => ({ value: k, label: STATUS_LABEL[k] })) },
+      { kind: "enum", key: "kind", label: "Type", get: (j) => j.kind.type, format: (k) => KIND_LABEL[k as Job["kind"]["type"]] ?? k },
+      { kind: "enum", key: "endpoint", label: "Endpoint", get: (j) => host(j) },
+      { kind: "enum", key: "os", label: "OS", get: (j) => byId.get(j.endpoint_id)?.os ?? null, format: (o) => osLabel[o as OsFamily] ?? o },
+      { kind: "enum", key: "by", label: "Run by", get: (j) => j.created_by },
+      { kind: "date", key: "queued", label: "Queued", get: (j) => j.created_at },
+    ],
+    sorts: {
+      queued: { label: "Queued", get: (j) => j.created_at, type: "date" },
+      finished: { label: "Finished", get: (j) => j.finished_at, type: "date" },
+      endpoint: { label: "Endpoint", get: host },
+      status: { label: "Status", get: (j) => STATUS_LABEL[j.status] },
+      by: { label: "Run by", get: (j) => j.created_by },
+    },
+    defaultSort: { key: "queued", dir: "desc" },
+  });
+  if (jobs.loading && !jobs.data) return <Card><Loading /></Card>;
+  if ((jobs.data ?? []).length === 0) return <Card>{empty}</Card>;
+  return (
+    <Card padded={false}>
+      <ListToolbar view={view} placeholder="Search script, output, endpoint or user" sortPicker noun={["run", "runs"]} />
+      {view.rows.length === 0 ? <NoMatches view={view} /> : (
+        <ul className="divide-y divide-line">
+          {view.rows.map((j) => {
+            const e = byId.get(j.endpoint_id);
+            return <div key={j.id} className="flex">{e && <span className="grid w-10 place-items-center pl-3"><OsIcon os={e.os} /></span>}<div className="flex-1"><JobRow job={j} endpoint={e} onChanged={jobs.reload} /></div></div>;
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export default function Jobs() {
-  const jobs = useQuery<Job[]>("/jobs?limit=200", { poll: 4000 });
   const eps = useQuery<Endpoint[]>("/endpoints");
   const [target, setTarget] = useState("");
-  const byId = new Map((eps.data ?? []).map((e) => [e.id, e]));
   return (
     <>
       <PageHeader title="Remote Scripts" subtitle="Run PowerShell, bash, zsh or cmd on any endpoint and see the output here. Every run is recorded in the audit log." term="rmm"
@@ -63,18 +110,7 @@ export default function Jobs() {
           </Select>
           <Link to={target ? `/endpoints/${target}` : "#"}><Button variant="primary" disabled={!target} icon={<Terminal className="size-4" />}>New script</Button></Link>
         </div>} />
-      <Card padded={false}>
-        {jobs.loading && !jobs.data ? <Loading /> : (jobs.data ?? []).length === 0 ? (
-          <EmptyState icon={<Terminal className="size-5" />} title="No scripts yet" body="Open an endpoint and use the Remote scripts tab, or pick one above." />
-        ) : (
-          <ul className="divide-y divide-line">
-            {jobs.data!.map((j) => {
-              const e = byId.get(j.endpoint_id);
-              return <div key={j.id} className="flex">{e && <span className="grid w-10 place-items-center pl-3"><OsIcon os={e.os} /></span>}<div className="flex-1"><JobRow job={j} endpoint={e} onChanged={jobs.reload} /></div></div>;
-            })}
-          </ul>
-        )}
-      </Card>
+      <JobList path="/jobs?limit=200" id="jobs" empty={<EmptyState icon={<Terminal className="size-5" />} title="No scripts yet" body="Open an endpoint and use the Remote scripts tab, or pick one above." />} />
       <div className="mt-5"><Explain>Scripts run with full system rights (SYSTEM on Windows, root on macOS and Linux) and time out after 30 minutes. Output is capped at 1 MB.</Explain></div>
     </>
   );

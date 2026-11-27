@@ -1,13 +1,14 @@
 // Script Library: your saved scripts, built-in templates and run history.
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { BookCopy, FileCode2, History, Plus, Search, Terminal } from "lucide-react";
+import { BookCopy, FileCode2, History, Plus, Terminal } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { post } from "../lib/api";
-import type { Endpoint, Job, Script, ScriptTemplate } from "../lib/types";
-import { ago } from "../lib/format";
-import { Badge, Button, Card, EmptyState, Explain, Input, Loading, OsIcon, PageHeader, Tabs, useToast } from "../components/ui";
-import { JobRow } from "./Jobs";
+import type { OsFamily, Script, ScriptTemplate } from "../lib/types";
+import { ago, osLabel } from "../lib/format";
+import { Badge, Button, Card, EmptyState, Explain, Loading, OsIcon, PageHeader, Tabs, useToast } from "../components/ui";
+import { JobList } from "./Jobs";
+import { ListToolbar, NoMatches, useListView } from "../components/DataView";
 
 type Tab = "library" | "templates" | "history";
 
@@ -37,8 +38,24 @@ export default function Scripts() {
 
 function Library({ onTemplates }: { onTemplates: () => void }) {
   const scripts = useQuery<Script[]>("/scripts");
-  const [q, setQ] = useState("");
-  const list = useMemo(() => (scripts.data ?? []).filter((s) => !q || `${s.name} ${s.description} ${s.category}`.toLowerCase().includes(q.toLowerCase())), [scripts.data, q]);
+  const view = useListView(scripts.data, {
+    id: "scripts",
+    search: (s) => [s.name, s.description, s.category, s.shell, s.created_by],
+    filters: [
+      { kind: "enum", key: "category", label: "Category", get: (s) => s.category },
+      { kind: "enum", key: "shell", label: "Shell", get: (s) => s.shell },
+      { kind: "enum", key: "os", label: "OS", get: (s) => (s.os.length ? s.os : ["windows", "macos", "linux"]), format: (o) => osLabel[o as OsFamily] ?? o },
+      { kind: "date", key: "updated", label: "Updated", get: (s) => s.updated_at },
+    ],
+    sorts: {
+      name: { label: "Name", get: (s) => s.name },
+      category: { label: "Category", get: (s) => s.category },
+      updated: { label: "Updated", get: (s) => s.updated_at, type: "date" },
+      created: { label: "Created", get: (s) => s.created_at, type: "date" },
+    },
+    defaultSort: { key: "name", dir: "asc" },
+  });
+  const list = view.rows;
   if (scripts.loading && !scripts.data) return <Loading />;
   if ((scripts.data ?? []).length === 0) {
     return <Card><EmptyState icon={<BookCopy className="size-5" />} title="Your library is empty" body="Start from one of the built-in templates, or write your own."
@@ -46,7 +63,8 @@ function Library({ onTemplates }: { onTemplates: () => void }) {
   }
   return (
     <Card padded={false}>
-      <div className="border-b border-line p-3"><div className="relative w-72"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" /><Input className="pl-8" placeholder="Search scripts" value={q} onChange={(e) => setQ(e.target.value)} /></div></div>
+      <ListToolbar view={view} placeholder="Search scripts" sortPicker noun={["script", "scripts"]} />
+      {list.length === 0 && <NoMatches view={view} />}
       <ul className="divide-y divide-line">
         {list.map((s) => (
           <li key={s.id}>
@@ -70,9 +88,19 @@ function Templates() {
   const nav = useNavigate();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const [os, setOs] = useState<string>("");
+  const view = useListView(tpls.data, {
+    id: "script-templates",
+    search: (t) => [t.name, t.description, t.category, t.shell],
+    filters: [
+      { kind: "enum", key: "os", label: "OS", get: (t) => t.os, format: (o) => osLabel[o as OsFamily] ?? o },
+      { kind: "enum", key: "category", label: "Category", get: (t) => t.category },
+      { kind: "enum", key: "shell", label: "Shell", get: (t) => t.shell },
+    ],
+    sorts: { name: { label: "Name", get: (t) => t.name } },
+    defaultSort: { key: "name", dir: "asc" },
+  });
   if (!tpls.data) return <Loading />;
-  const shown = tpls.data.filter((t) => !os || t.os.includes(os as never));
+  const shown = view.rows;
   const cats = [...new Set(shown.map((t) => t.category))].sort();
   const use = async (t: ScriptTemplate) => {
     setBusy(t.key);
@@ -81,11 +109,8 @@ function Templates() {
   };
   return (
     <div className="space-y-5">
-      <div className="flex gap-1.5">
-        {[["", "All"], ["windows", "Windows"], ["macos", "macOS"], ["linux", "Linux"]].map(([v, l]) => (
-          <button key={v} onClick={() => setOs(v!)} className={`rounded-full px-3 py-1 text-xs ${os === v ? "bg-accent text-accent-ink" : "bg-panel-2 text-ink-2 hover:text-ink"}`}>{l}</button>
-        ))}
-      </div>
+      <Card padded={false}><ListToolbar view={view} placeholder="Search templates" sortPicker noun={["template", "templates"]} className="border-b-0" /></Card>
+      {shown.length === 0 && <Card padded={false}><NoMatches view={view} /></Card>}
       {cats.map((c) => (
         <div key={c}>
           <h3 className="mb-2 text-sm font-semibold text-ink-2">{c}</h3>
@@ -108,19 +133,6 @@ function Templates() {
 }
 
 export function RunHistory({ path = "/jobs?limit=200" }: { path?: string }) {
-  const jobs = useQuery<Job[]>(path, { poll: 4000 });
-  const eps = useQuery<Endpoint[]>("/endpoints");
-  const byId = new Map((eps.data ?? []).map((e) => [e.id, e]));
-  if (jobs.loading && !jobs.data) return <Loading />;
-  if ((jobs.data ?? []).length === 0) return <Card><EmptyState icon={<History className="size-5" />} title="No runs yet" body="Runs from the library, from GPO scripts and from an endpoint's Remote scripts tab appear here." /></Card>;
-  return (
-    <Card padded={false}>
-      <ul className="divide-y divide-line">
-        {jobs.data!.map((j) => {
-          const e = byId.get(j.endpoint_id);
-          return <div key={j.id} className="flex">{e && <span className="grid w-10 place-items-center pl-3"><OsIcon os={e.os} /></span>}<div className="flex-1"><JobRow job={j} endpoint={e} onChanged={jobs.reload} /></div></div>;
-        })}
-      </ul>
-    </Card>
-  );
+  return <JobList path={path} id={path === "/jobs?limit=200" ? "run-history" : "script-runs"}
+    empty={<EmptyState icon={<History className="size-5" />} title="No runs yet" body="Runs from the library, from GPO scripts and from an endpoint's Remote scripts tab appear here." />} />;
 }

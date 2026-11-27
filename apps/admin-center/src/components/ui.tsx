@@ -8,6 +8,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { GLOSSARY } from "../lib/glossary";
 import { guidePath, shortTitle } from "../lib/guide";
 import { useLearnMode } from "../lib/session";
+import { isHeadCell, SortHeader, type HeadCell, type SortDir } from "./DataView";
 
 export function cx(...c: (string | false | null | undefined)[]) { return c.filter(Boolean).join(" "); }
 
@@ -326,13 +327,28 @@ export function Avatar({ name, className }: { name: string; className?: string }
   return <span className={cx("grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-white", className)} style={{ background: `hsl(${hue} 55% 52%)` }}>{letters}</span>;
 }
 
-/** Simple sortable/filterable table shell. */
-export function Table({ head, children, empty }: { head: ReactNode[]; children: ReactNode; empty?: ReactNode }) {
+/**
+ * Table shell. Head cells can be plain labels or `{ label, sort }`; pass the
+ * list's `view` from useListView and those headers become click-to-sort.
+ */
+export function Table({ head, children, empty, view }: {
+  head: (ReactNode | HeadCell)[]; children: ReactNode; empty?: ReactNode;
+  view?: { sort: { key: string; dir: SortDir } | null; toggleSort: (k: string) => void };
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead><tr className="border-b border-line text-left text-xs font-medium uppercase tracking-wide text-ink-3">
-          {head.map((h, i) => <th key={i} className="px-4 py-2.5 font-medium">{h}</th>)}
+          {head.map((h, i) => {
+            if (!isHeadCell(h)) return <th key={i} className="px-4 py-2.5 font-medium">{h}</th>;
+            const active = !!view && !!h.sort && view.sort?.key === h.sort;
+            return (
+              <th key={i} className={cx("px-4 py-2.5 font-medium whitespace-nowrap", h.className)}
+                aria-sort={active ? (view!.sort!.dir === "asc" ? "ascending" : "descending") : undefined}>
+                {view && h.sort ? <SortHeader label={h.label} active={active} dir={view.sort?.dir} onClick={() => view.toggleSort(h.sort!)} /> : h.label}
+              </th>
+            );
+          })}
         </tr></thead>
         <tbody className="divide-y divide-line">{children}</tbody>
       </table>

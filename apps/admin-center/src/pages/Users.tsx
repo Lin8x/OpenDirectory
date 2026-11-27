@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { KeyRound, Lock, Plus, Search, Trash2, Unlock, UserPlus, Users as UsersIcon } from "lucide-react";
+import { KeyRound, Lock, Plus, Trash2, Unlock, UserPlus, Users as UsersIcon } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, patch, post, put } from "../lib/api";
 import type { Group, OrgUnit, User } from "../lib/types";
@@ -9,6 +9,7 @@ import { useSession } from "../lib/session";
 import {
   Avatar, Badge, Button, Card, Confirm, Dialog, Drawer, EmptyState, ErrorNote, Explain, Field, Input, Loading, PageHeader, Row, Select, Switch, Table, Tabs, Td, useToast, CopyButton,
 } from "../components/ui";
+import { ListToolbar, NoMatches, useListView, type FilterDef } from "../components/DataView";
 
 export function ouPath(ous: OrgUnit[], id: string | null): string {
   if (!id) return "—";
@@ -17,6 +18,11 @@ export function ouPath(ous: OrgUnit[], id: string | null): string {
   let guard = 0;
   while (cur && guard++ < 32) { parts.unshift(cur.name); cur = ous.find((o) => o.id === cur!.parent_id); }
   return parts.join(" / ") || "—";
+}
+
+/** OU filter for useListView: every OU path, plus objects at the domain root. */
+export function ouFilter<T>(ous: OrgUnit[], get: (r: T) => string | null): FilterDef<T> {
+  return { kind: "enum", key: "ou", label: "OU", get: (r) => get(r) ?? "__root", format: (id) => (id === "__root" ? "No OU (domain root)" : ouPath(ous, id)) };
 }
 
 export function OuSelect({ ous, value, onChange, none = "No OU (domain root)" }: { ous: OrgUnit[]; value: string | null; onChange: (v: string | null) => void; none?: string }) {
@@ -34,17 +40,31 @@ export default function Users() {
   const groups = useQuery<Group[]>("/groups");
   const ous = useQuery<OrgUnit[]>("/ous");
   const [params, setParams] = useSearchParams();
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "enabled" | "disabled" | "admins">("all");
   const [creating, setCreating] = useState(params.get("new") === "1");
   const selectedId = params.get("id");
-
-  const list = useMemo(() => {
-    const n = q.trim().toLowerCase();
-    return (users.data ?? []).filter((u) =>
-      (!n || [u.username, u.display_name, u.email, u.department, u.title].some((x) => x.toLowerCase().includes(n))) &&
-      (filter === "all" || (filter === "enabled" && u.enabled) || (filter === "disabled" && !u.enabled) || (filter === "admins" && u.role === "admin")));
-  }, [users.data, q, filter]);
+  const ouList = ous.data ?? [];
+  const view = useListView(users.data, {
+    id: "users",
+    search: (u) => [u.username, u.display_name, u.email, u.department, u.title],
+    filters: [
+      { kind: "enum", key: "status", label: "Status", get: (u) => (u.enabled ? "enabled" : "disabled"), options: [{ value: "enabled", label: "Enabled" }, { value: "disabled", label: "Disabled" }] },
+      { kind: "enum", key: "role", label: "Role", get: (u) => (u.role === "admin" ? "admin" : "user"), options: [{ value: "admin", label: "Domain Admin" }, { value: "user", label: "Standard user" }] },
+      { kind: "enum", key: "password", label: "Password", get: (u) => (u.password_set_at ? "set" : "none"), options: [{ value: "set", label: "Password set" }, { value: "none", label: "No password" }] },
+      { kind: "enum", key: "department", label: "Department", get: (u) => u.department || null },
+      ouFilter(ouList, (u: User) => u.ou_id),
+      { kind: "date", key: "login", label: "Last sign-in", get: (u) => u.last_login_at },
+    ],
+    sorts: {
+      name: { label: "Name", get: (u) => u.display_name },
+      username: { label: "Username", get: (u) => u.username },
+      department: { label: "Department", get: (u) => u.department },
+      ou: { label: "OU", get: (u) => (u.ou_id ? ouPath(ouList, u.ou_id) : null) },
+      status: { label: "Status", get: (u) => (u.enabled ? 0 : 2) + (u.role === "admin" ? 0 : 1), type: "number" },
+      login: { label: "Last sign-in", get: (u) => u.last_login_at, type: "date" },
+    },
+    defaultSort: { key: "name", dir: "asc" },
+  });
+  const list = view.rows;
 
   const selected = users.data?.find((u) => u.id === selectedId) ?? null;
   const close = () => setParams({});
@@ -55,21 +75,10 @@ export default function Users() {
         subtitle="People who can sign in to your managed endpoints. Domain Admins can also sign in to this Admin Center."
         actions={<Button variant="primary" icon={<UserPlus className="size-4" />} onClick={() => setCreating(true)}>New user</Button>} />
       <Card padded={false}>
-        <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
-          <div className="relative w-72">
-            <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" />
-            <Input className="pl-8" placeholder="Search name, username, email, department" value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <div className="flex gap-1">
-            {(["all", "enabled", "disabled", "admins"] as const).map((f) => (
-              <Button key={f} size="sm" variant={filter === f ? "primary" : "ghost"} onClick={() => setFilter(f)}>{f === "admins" ? "Domain Admins" : f[0]!.toUpperCase() + f.slice(1)}</Button>
-            ))}
-          </div>
-          <span className="ml-auto text-xs text-ink-3">{list.length} of {users.data?.length ?? 0}</span>
-        </div>
+        <ListToolbar view={view} placeholder="Search name, username, email, department" noun={["user", "users"]} />
         {users.loading && !users.data ? <Loading /> : users.error ? <div className="p-4"><ErrorNote message={users.error} onRetry={users.reload} /></div> : (
-          <Table head={["Name", "Username", "Department", "OU", "Status", "Last sign-in"]}
-            empty={list.length === 0 && <EmptyState icon={<UsersIcon className="size-5" />} title={q ? "No matching users" : "No users yet"} body="Create accounts for the people in your organization." action={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New user</Button>} />}>
+          <Table view={view} head={[{ label: "Name", sort: "name" }, { label: "Username", sort: "username" }, { label: "Department", sort: "department" }, { label: "OU", sort: "ou" }, { label: "Status", sort: "status" }, { label: "Last sign-in", sort: "login" }]}
+            empty={list.length === 0 && (view.total > 0 ? <NoMatches view={view} /> : <EmptyState icon={<UsersIcon className="size-5" />} title="No users yet" body="Create accounts for the people in your organization." action={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New user</Button>} />)}>
             {list.map((u) => (
               <Row key={u.id} onClick={() => setParams({ id: u.id })} selected={u.id === selectedId}>
                 <Td><div className="flex items-center gap-2.5"><Avatar name={u.display_name} /><div><div className="font-medium">{u.display_name}</div><div className="text-xs text-ink-3">{u.email || u.title}</div></div></div></Td>

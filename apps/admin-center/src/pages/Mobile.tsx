@@ -1,12 +1,13 @@
 // Mobile Devices: inventory of phones and tablets, and Apple configuration
 // profiles that install without an MDM server.
-import { useMemo, useState } from "react";
-import { FileCog, Plus, Search, Smartphone, Trash2, Upload } from "lucide-react";
+import { useState } from "react";
+import { FileCog, Plus, Smartphone, Trash2, Upload } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, post, put, saveExport } from "../lib/api";
 import { ago } from "../lib/format";
 import type { User } from "../lib/types";
-import { Badge, Button, Callout, Card, Dialog, EmptyState, Explain, Field, Input, Loading, PageHeader, Select, Switch, Textarea, useToast } from "../components/ui";
+import { Badge, Button, Callout, Card, Dialog, EmptyState, Explain, Field, Input, Loading, PageHeader, Row, Select, Switch, Table, Td, Textarea, useToast } from "../components/ui";
+import { ipKey, ListToolbar, NoMatches, useListView } from "../components/DataView";
 
 interface Device {
   id?: string; name: string; platform: "ios" | "ipados" | "android" | "other"; model: string; serial: string; imei: string; phone_number: string;
@@ -18,34 +19,53 @@ const PLATFORM = { ios: "iPhone (iOS)", ipados: "iPad (iPadOS)", android: "Andro
 export default function Mobile() {
   const list = useQuery<Device[]>("/mobile-devices");
   const users = useQuery<User[]>("/users");
-  const [q, setQ] = useState("");
   const [edit, setEdit] = useState<Device | null>(null);
   const [importing, setImporting] = useState(false);
   const [profile, setProfile] = useState(false);
-  const shown = useMemo(() => (list.data ?? []).filter((d) => !q || `${d.name} ${d.serial} ${d.imei} ${d.phone_number} ${d.ip} ${d.model}`.toLowerCase().includes(q.toLowerCase())), [list.data, q]);
   const owner = (id: string | null) => users.data?.find((u) => u.id === id)?.display_name ?? "—";
+  const STATUS = { active: "Active", lost: "Lost", retired: "Retired" } as const;
+  const view = useListView(list.data, {
+    id: "mobile",
+    search: (d) => [d.name, d.serial, d.imei, d.phone_number, d.ip, d.mac, d.model, d.os_version, owner(d.owner_user_id), d.notes],
+    filters: [
+      { kind: "enum", key: "platform", label: "Platform", get: (d) => d.platform, options: (Object.keys(PLATFORM) as Device["platform"][]).map((k) => ({ value: k, label: PLATFORM[k] })) },
+      { kind: "enum", key: "status", label: "Status", get: (d) => d.status, options: (Object.keys(STATUS) as Device["status"][]).map((k) => ({ value: k, label: STATUS[k] })) },
+      { kind: "enum", key: "ownership", label: "Ownership", get: (d) => d.ownership, options: [{ value: "corporate", label: "Company-owned" }, { value: "byod", label: "Personal (BYOD)" }] },
+      { kind: "enum", key: "owner", label: "Owner", get: (d) => (d.owner_user_id ? owner(d.owner_user_id) : "Nobody") },
+      { kind: "date", key: "updated", label: "Updated", get: (d) => d.updated_at },
+    ],
+    sorts: {
+      name: { label: "Device", get: (d) => d.name },
+      owner: { label: "Owner", get: (d) => (d.owner_user_id ? owner(d.owner_user_id) : null) },
+      serial: { label: "Serial / IMEI", get: (d) => d.serial || d.imei },
+      number: { label: "Number", get: (d) => d.phone_number },
+      ip: { label: "IP", get: (d) => ipKey(d.ip) },
+      status: { label: "Status", get: (d) => STATUS[d.status] },
+      updated: { label: "Updated", get: (d) => d.updated_at, type: "date" },
+    },
+    defaultSort: { key: "name", dir: "asc" },
+  });
+  const shown = view.rows;
   return (
     <>
       <PageHeader title="Mobile Devices" term="mdm" subtitle="Track phones and tablets by serial number, IMEI, owner and IP, and build Apple configuration profiles for passcodes, Wi-Fi, certificates and restrictions."
         actions={<div className="flex gap-2"><Button icon={<FileCog className="size-4" />} onClick={() => setProfile(true)}>Apple profile…</Button><Button icon={<Upload className="size-4" />} onClick={() => setImporting(true)}>Import CSV</Button><Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEdit({ ...EMPTY })}>Add device</Button></div>} />
       <Card padded={false}>
-        <div className="border-b border-line p-3"><div className="relative w-72"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" /><Input className="pl-8" placeholder="Search name, serial, IMEI, number or IP" value={q} onChange={(e) => setQ(e.target.value)} /></div></div>
-        {list.loading && !list.data ? <Loading /> : shown.length === 0 ? <EmptyState icon={<Smartphone className="size-5" />} title="No mobile devices yet" body="Add phones and tablets one by one or import a CSV from your carrier or asset list." /> : (
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-line text-left text-xs text-ink-3">{["Device", "Owner", "Serial / IMEI", "Number", "IP", "Status"].map((h) => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr></thead>
-            <tbody>
-              {shown.map((d) => (
-                <tr key={d.id} className="cursor-pointer border-b border-line last:border-0 hover:bg-panel-2" onClick={() => setEdit(d)}>
-                  <td className="px-4 py-2"><div className="font-medium">{d.name}</div><div className="text-xs text-ink-3">{PLATFORM[d.platform]}{d.model ? ` · ${d.model}` : ""}{d.os_version ? ` · ${d.os_version}` : ""}</div></td>
-                  <td className="px-4 py-2">{owner(d.owner_user_id)}<div className="text-xs text-ink-3">{d.ownership === "byod" ? "Personal (BYOD)" : "Company-owned"}</div></td>
-                  <td className="px-4 py-2 font-mono text-xs">{d.serial || "—"}<div className="text-ink-3">{d.imei || ""}</div></td>
-                  <td className="px-4 py-2">{d.phone_number || "—"}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{d.ip || "—"}</td>
-                  <td className="px-4 py-2">{d.status === "lost" ? <Badge tone="bad">Lost</Badge> : d.status === "retired" ? <Badge>Retired</Badge> : <Badge tone="good">Active</Badge>}<div className="text-xs text-ink-3">{d.updated_at ? ago(d.updated_at) : ""}</div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {(list.data ?? []).length > 0 && <ListToolbar view={view} placeholder="Search name, serial, IMEI, number, IP or owner" noun={["device", "devices"]} />}
+        {list.loading && !list.data ? <Loading /> : view.total === 0 ? <EmptyState icon={<Smartphone className="size-5" />} title="No mobile devices yet" body="Add phones and tablets one by one or import a CSV from your carrier or asset list." /> : (
+          <Table view={view} head={[{ label: "Device", sort: "name" }, { label: "Owner", sort: "owner" }, { label: "Serial / IMEI", sort: "serial" }, { label: "Number", sort: "number" }, { label: "IP", sort: "ip" }, { label: "Status", sort: "status" }]}
+            empty={shown.length === 0 && <NoMatches view={view} />}>
+            {shown.map((d) => (
+              <Row key={d.id} onClick={() => setEdit(d)}>
+                <Td><div className="font-medium">{d.name}</div><div className="text-xs text-ink-3">{PLATFORM[d.platform]}{d.model ? ` · ${d.model}` : ""}{d.os_version ? ` · ${d.os_version}` : ""}</div></Td>
+                <Td>{owner(d.owner_user_id)}<div className="text-xs text-ink-3">{d.ownership === "byod" ? "Personal (BYOD)" : "Company-owned"}</div></Td>
+                <Td className="font-mono text-xs">{d.serial || "—"}<div className="text-ink-3">{d.imei || ""}</div></Td>
+                <Td>{d.phone_number || "—"}</Td>
+                <Td className="font-mono text-xs">{d.ip || "—"}</Td>
+                <Td>{d.status === "lost" ? <Badge tone="bad">Lost</Badge> : d.status === "retired" ? <Badge>Retired</Badge> : <Badge tone="good">Active</Badge>}<div className="text-xs text-ink-3">{d.updated_at ? ago(d.updated_at) : ""}</div></Td>
+              </Row>
+            ))}
+          </Table>
         )}
       </Card>
       <div className="mt-5"><Explain>Full mobile device management (remote lock and wipe, app installs, automatic enrollment) needs an Apple Push certificate from Apple Business Manager and Android Enterprise registration with Google; that's planned. Configuration profiles work today: install them by opening the file on the device.</Explain></div>

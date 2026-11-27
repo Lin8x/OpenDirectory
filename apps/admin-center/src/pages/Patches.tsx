@@ -1,14 +1,16 @@
 // Patch Management: pending OS updates on every endpoint, with scan and
 // install actions for endpoints, groups or OUs.
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight, Download, RefreshCw, RotateCw, ShieldAlert } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { post } from "../lib/api";
-import { ago } from "../lib/format";
-import type { Endpoint, Group, OrgUnit, RunTargets } from "../lib/types";
+import { ago, osLabel } from "../lib/format";
+import type { Endpoint, Group, OrgUnit, OsFamily, RunTargets } from "../lib/types";
 import { Badge, Button, Card, Dialog, EmptyState, Explain, Loading, OsIcon, PageHeader, Switch, useToast } from "../components/ui";
 import { NO_TARGETS, TargetPicker } from "../components/TargetPicker";
+import { ListToolbar, NoMatches, useListView } from "../components/DataView";
+import { ouFilter } from "./Users";
 
 export default function Patches() {
   const eps = useQuery<Endpoint[]>("/endpoints", { poll: 20000 });
@@ -16,8 +18,37 @@ export default function Patches() {
   const ous = useQuery<OrgUnit[]>("/ous");
   const [open, setOpen] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"scan" | "install" | null>(null);
-  const list = useMemo(() => [...(eps.data ?? [])].sort((a, b) => (b.inventory.patches?.pending.length ?? -1) - (a.inventory.patches?.pending.length ?? -1)), [eps.data]);
-  const scanned = list.filter((e) => e.inventory.patches?.scanned_at && !e.inventory.patches.error);
+  const all = eps.data ?? [];
+  const pendingOf = (e: Endpoint) => (e.inventory.patches && !e.inventory.patches.error ? e.inventory.patches.pending.length : null);
+  const securityOf = (e: Endpoint) => (e.inventory.patches && !e.inventory.patches.error ? e.inventory.patches.pending.filter((p) => p.security).length : null);
+  const view = useListView(eps.data, {
+    id: "patches",
+    search: (e) => [e.hostname, ...(e.inventory.patches?.pending ?? []).flatMap((p) => [p.title, p.id])],
+    filters: [
+      { kind: "enum", key: "state", label: "Update status", get: (e) => {
+        const r = e.inventory.patches;
+        if (!r) return "unscanned";
+        if (r.error) return "error";
+        return [r.pending.length ? "pending" : "current", ...(r.pending.some((p) => p.security) ? ["security"] : []), ...(r.reboot_required ? ["reboot"] : [])];
+      }, options: [
+        { value: "current", label: "Up to date" }, { value: "pending", label: "Updates pending" }, { value: "security", label: "Security updates pending" },
+        { value: "reboot", label: "Restart needed" }, { value: "error", label: "Scan failed" }, { value: "unscanned", label: "Not scanned" },
+      ] },
+      { kind: "enum", key: "os", label: "OS", get: (e) => e.os, format: (o) => osLabel[o as OsFamily] ?? o },
+      { kind: "enum", key: "source", label: "Source", get: (e) => e.inventory.patches?.source || null },
+      ouFilter(ous.data ?? [], (e: Endpoint) => e.ou_id),
+      { kind: "date", key: "scanned", label: "Last scan", get: (e) => e.inventory.patches?.scanned_at },
+    ],
+    sorts: {
+      pending: { label: "Pending updates", get: pendingOf, type: "number" },
+      security: { label: "Security updates", get: securityOf, type: "number" },
+      hostname: { label: "Endpoint", get: (e) => e.hostname },
+      scanned: { label: "Last scan", get: (e) => e.inventory.patches?.scanned_at, type: "date" },
+    },
+    defaultSort: { key: "pending", dir: "desc" },
+  });
+  const list = view.rows;
+  const scanned = all.filter((e) => e.inventory.patches?.scanned_at && !e.inventory.patches.error);
   const pending = scanned.reduce((a, e) => a + e.inventory.patches!.pending.length, 0);
   const security = scanned.reduce((a, e) => a + e.inventory.patches!.pending.filter((p) => p.security).length, 0);
   const reboot = scanned.filter((e) => e.inventory.patches!.reboot_required).length;
@@ -27,13 +58,14 @@ export default function Patches() {
       <PageHeader title="Patch Management" guide="09-everyday-tasks#install-operating-system-updates" term="patching" subtitle="Pending OS updates on every endpoint from Windows Update, apt, dnf and softwareupdate. Scans run every 6 hours."
         actions={<div className="flex gap-2"><Button icon={<RefreshCw className="size-4" />} onClick={() => setDialog("scan")}>Scan now…</Button><Button variant="primary" icon={<Download className="size-4" />} onClick={() => setDialog("install")}>Install updates…</Button></div>} />
       <div className="mb-5 grid gap-3 sm:grid-cols-4">
-        <Tile label="Up to date" value={`${upToDate} / ${list.length}`} />
+        <Tile label="Up to date" value={`${upToDate} / ${all.length}`} />
         <Tile label="Pending updates" value={pending} />
         <Tile label="Security updates" value={security} tone={security ? "bad" : undefined} />
         <Tile label="Need a restart" value={reboot} tone={reboot ? "warn" : undefined} />
       </div>
       <Card padded={false}>
-        {eps.loading && !eps.data ? <Loading /> : list.length === 0 ? <EmptyState icon={<ShieldAlert className="size-5" />} title="No endpoints yet" body="Enroll endpoints to see their pending updates here." /> : (
+        {all.length > 0 && <ListToolbar view={view} placeholder="Search endpoint or update (KB, package)" sortPicker noun={["endpoint", "endpoints"]} />}
+        {eps.loading && !eps.data ? <Loading /> : all.length === 0 ? <EmptyState icon={<ShieldAlert className="size-5" />} title="No endpoints yet" body="Enroll endpoints to see their pending updates here." /> : list.length === 0 ? <NoMatches view={view} /> : (
           <ul className="divide-y divide-line">
             {list.map((e) => {
               const r = e.inventory.patches;

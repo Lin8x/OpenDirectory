@@ -6,6 +6,7 @@ import { AlertTriangle, BookUser, CheckCircle2, FileKey2, Globe, Network, Plus, 
 import { useQuery } from "../lib/hooks";
 import { apiBase, post, put } from "../lib/api";
 import { dateTime } from "../lib/format";
+import { ipKey, ListToolbar, NoMatches, useListView } from "../components/DataView";
 import { Badge, Button, Callout, Card, CopyButton, Dialog, Explain, Field, Input, Loading, PageHeader, Select, Switch, Tabs, Textarea, useToast } from "../components/ui";
 
 const KEEP = "••••••••";
@@ -96,6 +97,30 @@ function Dns() {
 interface Scope { name: string; network: string; range_start: string; range_end: string; gateway: string; dns: string[]; domain: string; lease_hours: number; reservations: { mac: string; ip: string; name: string }[] }
 interface DhcpView { config: { enabled: boolean; listen: string; server_ip: string; scopes: Scope[] }; status: Status; leases: { mac: string; ip: string; hostname: string; expires: string; scope: string }[]; suggested_server_ip: string }
 
+function LeaseList({ leases }: { leases: DhcpView["leases"] }) {
+  const view = useListView(leases, {
+    id: "dhcp-leases",
+    search: (l) => [l.ip, l.mac, l.hostname, l.scope],
+    filters: [{ kind: "enum", key: "scope", label: "Scope", get: (l) => l.scope || null }],
+    sorts: {
+      ip: { label: "IP address", get: (l) => ipKey(l.ip) },
+      hostname: { label: "Hostname", get: (l) => l.hostname || l.mac },
+      expires: { label: "Expires", get: (l) => l.expires, type: "date" },
+    },
+    defaultSort: { key: "ip", dir: "asc" },
+  });
+  if (!leases.length) return <p className="text-xs text-ink-3">No leases yet.</p>;
+  return (
+    <div>
+      <ListToolbar view={view} compact searchWidth="w-full" placeholder="IP, MAC or hostname" sortPicker noun={["lease", "leases"]} />
+      <div className="max-h-56 overflow-y-auto text-xs">
+        {view.rows.length === 0 && <NoMatches view={view} />}
+        {view.rows.map((l) => <div key={l.mac} className="flex justify-between gap-2 border-b border-line py-1"><span className="font-mono">{l.ip}</span><span className="truncate">{l.hostname || l.mac}</span><span className="text-ink-3 whitespace-nowrap">until {dateTime(l.expires)}</span></div>)}
+      </div>
+    </div>
+  );
+}
+
 function Dhcp() {
   const toast = useToast();
   const v = useQuery<DhcpView>("/dhcp", { poll: 15000 });
@@ -147,7 +172,7 @@ function Dhcp() {
             <Field label="Listen on"><Input value={cfg.listen} onChange={(e) => setCfg({ ...cfg, listen: e.target.value })} /></Field>
             <Button variant="primary" onClick={async () => { try { const st = await put<Status>("/dhcp", cfg); toast(st.error ? "bad" : "good", st.error || "DHCP settings saved"); void v.reload(); } catch (e) { toast("bad", (e as Error).message); } }}>Save and apply</Button>
             <h4 className="pt-2 text-sm font-semibold">Leases ({v.data.leases.length})</h4>
-            <div className="max-h-56 overflow-y-auto text-xs">{v.data.leases.map((l) => <div key={l.mac} className="flex justify-between border-b border-line py-1"><span className="font-mono">{l.ip}</span><span>{l.hostname || l.mac}</span><span className="text-ink-3">until {dateTime(l.expires)}</span></div>)}</div>
+            <LeaseList leases={v.data.leases} />
           </div>
         </Card>
       </div>
@@ -158,6 +183,41 @@ function Dhcp() {
 // ------------------------------------------------------------------ CA
 interface Issued { id: string; serial: string; common_name: string; sans: string[]; kind: string; not_after: string; issued_at: string; issued_by: string; revoked_at: string | null }
 interface CaView { initialized: boolean; common_name: string | null; not_after: string | null; root_pem: string | null; issued: Issued[] }
+
+function IssuedList({ issued, onChanged }: { issued: Issued[]; onChanged: () => void }) {
+  const toast = useToast();
+  const state = (c: Issued) => (c.revoked_at ? "revoked" : new Date(c.not_after).getTime() < Date.now() ? "expired" : new Date(c.not_after).getTime() - Date.now() < 30 * 86_400_000 ? "expiring" : "valid");
+  const view = useListView(issued, {
+    id: "ca-issued",
+    search: (c) => [c.common_name, c.serial, c.kind, c.issued_by, ...c.sans],
+    filters: [
+      { kind: "enum", key: "state", label: "Status", get: state, options: [{ value: "valid", label: "Valid" }, { value: "expiring", label: "Expires within 30 days" }, { value: "expired", label: "Expired" }, { value: "revoked", label: "Revoked" }] },
+      { kind: "enum", key: "kind", label: "Template", get: (c) => c.kind },
+      { kind: "date", key: "issued", label: "Issued", get: (c) => c.issued_at },
+    ],
+    sorts: {
+      cn: { label: "Common name", get: (c) => c.common_name },
+      expires: { label: "Expires", get: (c) => c.not_after, type: "date" },
+      issued: { label: "Issued", get: (c) => c.issued_at, type: "date" },
+    },
+    defaultSort: { key: "issued", dir: "desc" },
+  });
+  return (
+    <>
+      <ListToolbar view={view} placeholder="Common name, SAN or serial" sortPicker noun={["certificate", "certificates"]} />
+      {view.rows.length === 0 && <NoMatches view={view} />}
+      <ul className="divide-y divide-line">
+        {view.rows.map((c) => (
+          <li key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="font-medium">{c.common_name}</span><Badge className="py-0">{c.kind}</Badge>{c.revoked_at ? <Badge tone="bad" className="py-0">Revoked</Badge> : state(c) === "expired" ? <Badge tone="warn" className="py-0">Expired</Badge> : null}</div>
+              <div className="truncate text-xs text-ink-3">serial {c.serial.slice(0, 16)}… · expires {dateTime(c.not_after)}</div></div>
+            {!c.revoked_at && <Button size="sm" variant="ghost" onClick={async () => { await post(`/ca/certificates/${c.id}/revoke`); toast("good", "Revoked; the CRL updates right away"); onChanged(); }}>Revoke</Button>}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
 
 function Ca() {
   const toast = useToast();
@@ -174,17 +234,7 @@ function Ca() {
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card title="Issued certificates" padded={false} actions={<Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setIssue(true)}>Issue certificate</Button>}>
-        {v.data.issued.length === 0 ? <p className="p-4 text-sm text-ink-3">None yet.</p> : (
-          <ul className="divide-y divide-line">
-            {v.data.issued.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="font-medium">{c.common_name}</span><Badge className="py-0">{c.kind}</Badge>{c.revoked_at && <Badge tone="bad" className="py-0">Revoked</Badge>}</div>
-                  <div className="truncate text-xs text-ink-3">serial {c.serial.slice(0, 16)}… · expires {dateTime(c.not_after)}</div></div>
-                {!c.revoked_at && <Button size="sm" variant="ghost" onClick={async () => { await post(`/ca/certificates/${c.id}/revoke`); toast("good", "Revoked; the CRL updates right away"); void v.reload(); }}>Revoke</Button>}
-              </li>
-            ))}
-          </ul>
-        )}
+        {v.data.issued.length === 0 ? <p className="p-4 text-sm text-ink-3">None yet.</p> : <IssuedList issued={v.data.issued} onChanged={v.reload} />}
       </Card>
       <Card title={v.data.common_name ?? "Root CA"} subtitle={`Valid until ${dateTime(v.data.not_after)}`}>
         <div className="space-y-3 text-sm">

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  ChevronDown, ChevronRight, DatabaseBackup, FileText, Folder, FolderOpen, Globe, KeyRound, LayoutGrid, Monitor, Plug, RefreshCw,
+  ChevronDown, ChevronRight, ChevronUp, DatabaseBackup, FileText, Folder, FolderOpen, Globe, KeyRound, LayoutGrid, Monitor, Plug, RefreshCw,
   ScrollText, Settings, ShieldCheck, Terminal, User as UserIcon, UserX, UsersRound,
 } from "lucide-react";
 import { useQuery } from "../lib/hooks";
@@ -37,6 +37,7 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
   const [sel, setSel] = useState<Node>({ kind: "domain" });
   const [open, setOpen] = useState<Set<string>>(new Set([key({ kind: "root" }), key({ kind: "aduc" }), key({ kind: "domain" }), key({ kind: "gpmc" }), key({ kind: "gpmc-domain" })]));
   const [picked, setPicked] = useState<string | null>(null);
+  const [sortCol, setSortCol] = useState<{ key: "name" | "typeLabel" | "description"; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
   const [menu, setMenu] = useState<{ x: number; y: number; item: Item | null } | null>(null);
   const [dialog, setDialog] = useState<null | { kind: "user-props"; user: User } | { kind: "group-props"; group: Group } | { kind: "new-user" | "new-group" | "new-ou" } | { kind: "reset"; user: User } | { kind: "delete"; item: Item }>(null);
   const [menubar, setMenubar] = useState<string | null>(null);
@@ -70,6 +71,12 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
       default: return [];
     }
   }, [sel, ous.data, users.data, groups.data, eps.data, gpos.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Like MMC: GPO links, then containers (OUs), stay above leaf objects, and the chosen column sorts within each.
+  const sortedItems = useMemo(() => {
+    const rank = (it: Item) => (it.type === "link" ? 0 : it.type === "ou" ? 1 : 2);
+    const sign = sortCol.dir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => rank(a) - rank(b) || sign * (a[sortCol.key] ?? "").localeCompare(b[sortCol.key] ?? "", undefined, { numeric: true, sensitivity: "base" }));
+  }, [items, sortCol]);
 
   const activate = (it: Item) => {
     if (it.type === "ou") {
@@ -204,10 +211,19 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
           ) : (
             <table className="w-full border-collapse" onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, item: null }); }}>
               <thead className="sticky top-0 bg-white dark:bg-[#252526]">
-                <tr className="text-left">{["Name", "Type", "Description"].map((h) => <th key={h} className="border-b border-r border-[#e5e5e5] px-2 py-1 font-normal text-[#4d4d4d] dark:border-white/10 dark:text-[#bbb]">{h}</th>)}</tr>
+                <tr className="text-left">{(["name", "typeLabel", "description"] as const).map((k) => (
+                  <th key={k} aria-sort={sortCol.key === k ? (sortCol.dir === "asc" ? "ascending" : "descending") : undefined}
+                    className="border-b border-r border-[#e5e5e5] p-0 font-normal text-[#4d4d4d] dark:border-white/10 dark:text-[#bbb]">
+                    <button type="button" onClick={() => setSortCol((c) => ({ key: k, dir: c.key === k && c.dir === "asc" ? "desc" : "asc" }))}
+                      className="flex w-full items-center justify-between gap-2 px-2 py-1 text-left hover:bg-[#e5f3ff] dark:hover:bg-white/5">
+                      {{ name: "Name", typeLabel: "Type", description: "Description" }[k]}
+                      {sortCol.key === k && (sortCol.dir === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />)}
+                    </button>
+                  </th>
+                ))}</tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {sortedItems.map((it) => (
                   <tr key={`${it.type}-${it.id}`} className={cx("cursor-default", picked === it.id ? "bg-[#cce8ff] dark:bg-[#264f78]" : "hover:bg-[#e5f3ff] dark:hover:bg-white/5", it.disabled && "text-ink-3")}
                     onClick={(e) => { e.stopPropagation(); setPicked(it.id); setMenu(null); }} onDoubleClick={() => activate(it)}
                     onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setPicked(it.id); setMenu({ x: e.clientX, y: e.clientY, item: it }); }}>

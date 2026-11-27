@@ -1,15 +1,14 @@
-import { useMemo, useRef, useState } from "react";
-import { Download, Search, ScrollText } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Download, ScrollText } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { saveExport } from "../lib/api";
 import type { AuditEntry } from "../lib/types";
 import { dateTime } from "../lib/format";
-import { Badge, Button, Card, EmptyState, ErrorNote, Input, Loading, PageHeader, Row, Table, Td, useToast } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorNote, Loading, PageHeader, Row, Table, Td, useToast } from "../components/ui";
 import { describe } from "./Overview";
+import { ListToolbar, NoMatches, useListView } from "../components/DataView";
 
-type Category = "all" | "changes" | "signins" | "failed" | "endpoints";
-const CATEGORIES: { id: Category; label: string; match: (a: AuditEntry) => boolean }[] = [
-  { id: "all", label: "All", match: () => true },
+const CATEGORIES: { id: string; label: string; match: (a: AuditEntry) => boolean }[] = [
   { id: "changes", label: "Directory changes", match: (a) => !a.action.startsWith("auth.") && !a.action.startsWith("endpoint.") && !a.action.startsWith("job.") },
   { id: "endpoints", label: "Endpoints & scripts", match: (a) => a.action.startsWith("endpoint.") || a.action.startsWith("job.") },
   { id: "signins", label: "Sign-ins", match: (a) => a.action === "auth.login" },
@@ -20,13 +19,36 @@ const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` 
 
 export default function Audit() {
   const toast = useToast();
-  const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
-  const [cat, setCat] = useState<Category>("all");
   const timer = useRef<number | undefined>(undefined);
+  // Search runs on the server too, so it reaches entries past the newest 1000.
   const log = useQuery<AuditEntry[]>(`/audit?limit=1000${debounced ? `&q=${encodeURIComponent(debounced)}` : ""}`, { poll: 15000 });
-  const rows = useMemo(() => (log.data ?? []).filter(CATEGORIES.find((c) => c.id === cat)!.match), [log.data, cat]);
   const failedCount = useMemo(() => (log.data ?? []).filter((a) => a.action === "auth.failed").length, [log.data]);
+  const view = useListView(log.data, {
+    id: "audit",
+    search: (a) => [a.actor, a.action, describe(a.action), a.target, a.details],
+    filters: [
+      { kind: "enum", key: "category", label: "Category", get: (a) => CATEGORIES.filter((c) => c.match(a)).map((c) => c.id),
+        options: CATEGORIES.map((c) => ({ value: c.id, label: c.id === "failed" && failedCount ? <span className="flex items-center gap-1.5">{c.label}<Badge tone="bad" className="py-0">{failedCount}</Badge></span> : c.label })) },
+      { kind: "enum", key: "actor", label: "Who", get: (a) => a.actor },
+      { kind: "enum", key: "action", label: "Action", get: (a) => a.action, format: describe },
+      { kind: "date", key: "at", label: "When", get: (a) => a.at },
+    ],
+    sorts: {
+      at: { label: "When", get: (a) => a.at, type: "date" },
+      actor: { label: "Who", get: (a) => a.actor },
+      action: { label: "Action", get: (a) => describe(a.action) },
+      target: { label: "Object", get: (a) => a.target },
+    },
+    defaultSort: { key: "at", dir: "desc" },
+  });
+  useEffect(() => {
+    window.clearTimeout(timer.current);
+    const v = view.q.trim();
+    timer.current = window.setTimeout(() => setDebounced(v), 250);
+    return () => window.clearTimeout(timer.current);
+  }, [view.q]);
+  const rows = view.rows;
 
   const exportCsv = async () => {
     const lines = [["Time (UTC)", "Who", "Action", "Object", "Details"].join(",")];
@@ -47,24 +69,10 @@ export default function Audit() {
         actions={<Button icon={<Download className="size-4" />} onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>}
       />
       <Card padded={false}>
-        <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
-          <div className="relative w-72"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" />
-            <Input className="pl-8" placeholder="Filter by user, action or object" value={q} onChange={(e) => {
-              setQ(e.target.value);
-              window.clearTimeout(timer.current);
-              const v = e.target.value;
-              timer.current = window.setTimeout(() => setDebounced(v), 250);
-            }} />
-          </div>
-          {CATEGORIES.map((c) => (
-            <Button key={c.id} size="sm" variant={cat === c.id ? "primary" : "ghost"} onClick={() => setCat(c.id)}>
-              {c.label}{c.id === "failed" && failedCount > 0 && <span className={`ml-1 rounded-full px-1.5 text-[11px] ${cat === c.id ? "bg-white/25" : "bg-bad-soft text-bad"}`}>{failedCount}</span>}
-            </Button>
-          ))}
-          <span className="ml-auto text-xs text-ink-3">{rows.length} {rows.length === 1 ? "entry" : "entries"}</span>
-        </div>
+        <ListToolbar view={view} placeholder="Filter by user, action or object" noun={["entry", "entries"]} />
         {log.loading && !log.data ? <Loading /> : log.error ? <div className="p-4"><ErrorNote message={log.error} onRetry={log.reload} /></div> : (
-          <Table head={["When", "Who", "Action", "Object", "Details"]} empty={rows.length === 0 && <EmptyState icon={<ScrollText className="size-5" />} title="No entries" body="Nothing matches this filter." />}>
+          <Table view={view} head={[{ label: "When", sort: "at" }, { label: "Who", sort: "actor" }, { label: "Action", sort: "action" }, { label: "Object", sort: "target" }, "Details"]}
+            empty={rows.length === 0 && (view.activeCount ? <NoMatches view={view} /> : <EmptyState icon={<ScrollText className="size-5" />} title="No entries" body="Nothing has been recorded yet." />)}>
             {rows.map((a) => (
               <Row key={a.id}>
                 <Td className="whitespace-nowrap text-ink-3">{dateTime(a.at)}</Td>
