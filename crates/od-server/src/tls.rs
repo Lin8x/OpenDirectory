@@ -36,7 +36,7 @@ pub async fn load_or_create(dir: &Path, host: &str) -> Result<(RustlsConfig, Str
     Ok((cfg, fp))
 }
 
-fn hostname_guess() -> String {
+pub(crate) fn hostname_guess() -> String {
     std::env::var("HOSTNAME")
         .or_else(|_| std::env::var("COMPUTERNAME"))
         .ok()

@@ -84,6 +84,29 @@ A [`docker-compose.yml`](docker-compose.yml) is included and works as a Portaine
 
 One `.odbackup` file holds the whole configuration (directory database, master key, TLS certificate), encrypted with a passphrase (Argon2id + XChaCha20-Poly1305). Backup plans run on a schedule (hourly, daily or weekly) with retention (keep the newest N, delete after N days) to a local folder or mounted SMB/NFS share, SFTP (host key pinned), FTPS/FTP, WebDAV, S3-compatible storage (AWS, R2, B2, Wasabi, MinIO), any HTTPS endpoint on any port, Google Drive, OneDrive or Dropbox. Destination credentials are stored encrypted and never shown again. Restores are verified first and applied at the next server start, keeping the old data in a `pre-restore` folder.
 
+### Sign-in and break-glass recovery
+
+The Admin Center always asks Domain Admins to sign in, because it can run scripts, open remote shells and change Group Policy on every enrolled endpoint. The first Domain Admin is the account you create in the setup wizard; there is no default or generated password.
+
+If every Domain Admin is locked out and the directory is hosted in the Admin Center on this computer, click **Forgot password?** on the sign-in screen. Your operating system asks for an administrator password in its own prompt (polkit on Linux, UAC on Windows, the macOS authorization dialog), so OpenDirectory never sees it. Then you pick the Domain Admin and set a new password.
+
+On a standalone Management Server, recover from the console of the server host. These commands read the directory on disk, need root (Administrator on Windows) or the account that owns the data directory, have no network API, and write a `user.password_reset.break_glass` entry to the audit log:
+
+```bash
+sudo opendirectory-server admin list
+sudo opendirectory-server admin reset-password <user>             # prompts for the new password
+sudo opendirectory-server admin reset-password <user> --generate  # prints a random temporary password
+```
+
+The reset follows the password policy, signs out the account's existing sessions and, with `--enable`, re-enables a disabled account. The default data directory is `/var/lib/opendirectory` (`C:\ProgramData\OpenDirectory\server` on Windows). For the Admin Center's built-in server, pass `--data-dir ~/.local/share/dev.opendirectory.admincenter/server` (`%APPDATA%\dev.opendirectory.admincenter\server` on Windows, `~/Library/Application Support/dev.opendirectory.admincenter/server` on macOS).
+
+### Reset settings and factory reset
+
+**Settings → Reset** has two options. Both ask for your password again and for the domain name typed out, and both are written to the audit log first.
+
+- **Reset settings to defaults** restores server settings (Default Domain Password Policy, branding, retention, naming convention, agent update rollout, DNS/DHCP/RADIUS/LDAP settings, backup plans, integrations) and, optionally, the Admin Center's own preferences. Users, groups, OUs, computers, GPOs, scripts and certificates are kept.
+- **Factory reset** erases the whole data directory (directory, GPOs, enrolled endpoints, keys, certificates and the audit log) and opens the setup wizard. It offers a backup first. In the Admin Center hosting the directory, your operating system asks for an administrator password before anything is erased. A standalone server is reset on its host: stop the service, then run `sudo opendirectory-server factory-reset`. The new directory's first audit log entry records the reset.
+
 ### Script Library and GPO scripts
 
 Save scripts with parameters (passed as `OD_PARAM_<NAME>` environment variables, never pasted into the script), start from 20 built-in templates for Windows, macOS and Linux, and run them against any mix of endpoints, security groups (computer members) and OUs. Attach a script to a GPO to run it **at startup, at sign-in, on a schedule or once**; it inherits through OU links like GPO Scripts in AD. From the CLI: `od script list`, `od script run "Disk usage report" --ou Servers -p PATH=/var`.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, put } from "../lib/api";
+import { post, put, saveBinary, setToken } from "../lib/api";
 import { useQuery } from "../lib/hooks";
 import type { OrgUnit } from "../lib/types";
 import { useBranding, type Branding } from "../lib/branding";
@@ -9,7 +9,7 @@ import { friendlyUpdateError, useUpdates } from "../lib/updates";
 import { ago } from "../lib/format";
 import { desktop, isDesktop } from "../lib/api";
 import { useLearnMode, useSession } from "../lib/session";
-import { Badge, Button, Card, CodeBlock, Explain, Field, Input, PageHeader, Select, Switch, useToast } from "../components/ui";
+import { Badge, Button, Callout, Card, CodeBlock, Dialog, Explain, Field, Input, PageHeader, Select, Switch, useToast } from "../components/ui";
 
 export default function Settings() {
   const { me, connection, setConnection } = useSession();
@@ -57,6 +57,7 @@ export default function Settings() {
         <AgentUpdatesCard />
         <StartupCard hosting={connection?.mode === "local"} />
       </div>
+      <div className="mt-5"><ResetCard hosting={isDesktop && connection?.mode === "local"} /></div>
     </>
   );
 }
@@ -157,6 +158,129 @@ function UpdatesCard() {
         <p className="text-xs text-ink-3">Updates come from signed OpenDirectory releases on GitHub. The signature is verified before anything is installed.</p>
       </div>
     </Card>
+  );
+}
+
+/** Admin Center preferences kept in this browser/app (not the session). */
+function clearLocalPreferences() {
+  for (const k of Object.keys(localStorage)) if (k.startsWith("od.") && k !== "od.session") localStorage.removeItem(k);
+}
+
+/** Password again plus the domain typed out, shared by both resets. */
+function ConfirmFields({ domain, pw, setPw, typed, setTyped }: { domain: string; pw: string; setPw: (v: string) => void; typed: string; setTyped: (v: string) => void }) {
+  return (
+    <>
+      <Field label="Your password" hint="Confirms it's you."><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" /></Field>
+      <Field label={`Type ${domain} to confirm`}><Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={domain} autoComplete="off" /></Field>
+    </>
+  );
+}
+
+function ResetCard({ hosting }: { hosting: boolean }) {
+  const [open, setOpen] = useState<"settings" | "factory" | null>(null);
+  return (
+    <Card title="Reset" subtitle="Start over without reinstalling">
+      <div className="space-y-4 text-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div><b>Reset settings to defaults</b><p className="text-ink-3">Restores server settings and this app's preferences. Users, groups, OUs, computers, GPOs, scripts and certificates are kept.</p></div>
+          <Button onClick={() => setOpen("settings")}>Reset settings…</Button>
+        </div>
+        <div className="flex items-start justify-between gap-4 border-t border-line pt-4">
+          <div><b>Factory reset</b><p className="text-ink-3">Erases everything: the directory, GPOs, enrolled endpoints, keys, certificates and the audit log, then opens the setup wizard.</p></div>
+          <Button variant="danger" onClick={() => setOpen("factory")}>Factory reset…</Button>
+        </div>
+      </div>
+      {open === "settings" && <ResetSettingsDialog onClose={() => setOpen(null)} />}
+      {open === "factory" && <FactoryResetDialog hosting={hosting} onClose={() => setOpen(null)} />}
+    </Card>
+  );
+}
+
+function ResetSettingsDialog({ onClose }: { onClose: () => void }) {
+  const toast = useToast();
+  const { data } = useQuery<{ domain: string; reset: string[] }>("/maintenance/reset-settings");
+  const [prefs, setPrefs] = useState(true);
+  const [pw, setPw] = useState("");
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const domain = data?.domain ?? "";
+  return (
+    <Dialog open onClose={onClose} title="Reset settings to defaults"
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="danger" loading={busy} disabled={!pw || typed.trim().toLowerCase() !== domain} onClick={async () => {
+        setBusy(true); setErr(null);
+        try {
+          await post("/maintenance/reset-settings", { password: pw, confirm: typed });
+          if (prefs) { clearLocalPreferences(); window.location.reload(); return; }
+          toast("good", "Settings were reset to their defaults."); onClose();
+        } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+      }}>Reset settings</Button></>}>
+      <p className="text-sm">These go back to their defaults. The directory itself is kept.</p>
+      <ul className="list-disc pl-5 text-sm text-ink-2">{data?.reset.map((r) => <li key={r}>{r}</li>)}</ul>
+      <Callout tone="warn">Backup plans and integrations are deleted, including their saved credentials. Network services (DNS, DHCP, RADIUS, LDAP) turn off.</Callout>
+      <Switch checked={prefs} onChange={setPrefs} label="Also reset this Admin Center's preferences (theme, layout, Learn mode)" />
+      <ConfirmFields domain={domain} pw={pw} setPw={setPw} typed={typed} setTyped={setTyped} />
+      {err && <Callout tone="warn">{err}</Callout>}
+    </Dialog>
+  );
+}
+
+function FactoryResetDialog({ hosting, onClose }: { hosting: boolean; onClose: () => void }) {
+  const { me } = useSession();
+  const domain = me?.domain ?? "";
+  const [step, setStep] = useState<"backup" | "confirm">("backup");
+  const [pass, setPass] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [pw, setPw] = useState("");
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!hosting) {
+    return (
+      <Dialog open onClose={onClose} title="Factory reset" footer={<Button onClick={onClose}>Close</Button>}>
+        <p className="text-sm">A factory reset erases the server's data, so it can only be done on the Management Server host itself, not over the network. Stop the server, then run this as root (Administrator on Windows):</p>
+        <CodeBlock label="On the server host" code={"sudo systemctl stop opendirectory-server\nsudo opendirectory-server factory-reset\nsudo systemctl start opendirectory-server"} />
+        <p className="text-sm text-ink-3">Make a backup first on the Backup &amp; Restore page if you might need anything.</p>
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog open onClose={onClose} title="Factory reset"
+      footer={step === "backup" ? (
+        <><Button onClick={onClose}>Cancel</Button><Button onClick={() => setStep("confirm")}>{saved ? "Next" : "Skip backup"}</Button></>
+      ) : (
+        <><Button onClick={() => setStep("backup")}>Back</Button><Button variant="danger" loading={busy} disabled={!pw || typed.trim().toLowerCase() !== domain} onClick={async () => {
+          setBusy(true); setErr(null);
+          try {
+            const t = await post<{ ticket: string }>("/maintenance/factory-reset", { password: pw, confirm: typed });
+            await desktop.factoryReset(t.ticket);
+            setToken(null); clearLocalPreferences(); window.location.reload();
+          } catch (e) { setErr(e instanceof Error ? e.message : String(e)); setBusy(false); }
+        }}>Erase everything</Button></>
+      )}>
+      {step === "backup" ? (
+        <>
+          <p className="text-sm"><b>Step 1 of 2: back up first.</b> A backup is the only way to get this directory back after the reset.</p>
+          <Field label="Backup passphrase" hint="Encrypts the backup file. Leave empty for an unencrypted backup."><Input type="password" value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="new-password" /></Field>
+          <Button loading={busy} onClick={async () => {
+            setBusy(true); setErr(null);
+            try {
+              const r = await post<{ file_name: string; data: string }>("/backups/download", { passphrase: pass || null });
+              setSaved((await saveBinary(r.file_name, r.data)) ?? r.file_name);
+            } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+          }}>Download backup</Button>
+          {saved && <Callout tone="good">Saved to {saved}</Callout>}
+          {err && <Callout tone="warn">{err}</Callout>}
+        </>
+      ) : (
+        <>
+          <p className="text-sm"><b>Step 2 of 2.</b> This erases {domain}: users, groups, OUs, GPOs, enrolled endpoints, scripts, keys, certificates and the audit log. Enrolled endpoints stop being managed. Afterwards the setup wizard opens.</p>
+          <ConfirmFields domain={domain} pw={pw} setPw={setPw} typed={typed} setTyped={setTyped} />
+          <Callout>Your computer will then ask for its administrator password in its own window. OpenDirectory never sees that password.</Callout>
+          {err && <Callout tone="warn">{err}</Callout>}
+        </>
+      )}
+    </Dialog>
   );
 }
 

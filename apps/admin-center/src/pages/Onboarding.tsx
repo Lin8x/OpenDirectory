@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Building2, Check, KeyRound, Laptop, ListChecks, Network, Server, ShieldCheck, SlidersHorizontal, WifiOff } from "lucide-react";
 import { BaselineStep, ModifiersStep, ReviewStep, useBaselineCatalog, type BaselineId, type Modifiers } from "../components/Baselines";
 import { ApiError, desktop, isDesktop, post } from "../lib/api";
@@ -6,7 +6,7 @@ import { useSession } from "../lib/session";
 import { setAutostart } from "../lib/autostart";
 import { JoinDialog } from "./Replication";
 import { BrandMark, useBranding } from "../lib/branding";
-import { Button, Callout, Field, Input, Switch, cx } from "../components/ui";
+import { Button, Callout, Field, Input, Select, Switch, cx } from "../components/ui";
 
 function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
@@ -238,6 +238,7 @@ export function LoginPage() {
   const { signIn, setup, connection, setConnection } = useSession();
   const { brand } = useBranding();
   const [changing, setChanging] = useState(false);
+  const [forgot, setForgot] = useState(false);
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [busy, setBusy] = useState(false);
@@ -266,10 +267,63 @@ export function LoginPage() {
           {isDesktop && <button type="button" className="text-accent hover:underline" onClick={async () => setConnection(await desktop.disconnect())}>Change server</button>}
         </div>
         <p className="mt-3 text-center text-xs"><button type="button" className="text-accent hover:underline" onClick={() => setChanging(true)}>Change password or use a reset code</button></p>
+        {isDesktop && connection?.mode === "local" && <p className="mt-1 text-center text-xs"><button type="button" className="text-accent hover:underline" onClick={() => setForgot(true)}>Forgot password?</button></p>}
         {brand.support_contact && <p className="mt-1 text-center text-xs text-ink-3">Need help? Contact {brand.support_contact}</p>}
       </form>
       {changing && <ChangePassword initialUser={u} onClose={() => setChanging(false)} />}
+      {forgot && <ForgotPassword onClose={() => setForgot(false)} onDone={(user) => { setForgot(false); setU(user); setP(""); setErr(null); }} />}
     </Frame>
+  );
+}
+
+/** Break-glass recovery for a directory hosted on this computer: the OS asks
+ *  for an administrator password (the app never sees it), then a Domain
+ *  Admin's password is reset and the reset is written to the audit log. */
+function ForgotPassword({ onClose, onDone }: { onClose: () => void; onDone: (user: string) => void }) {
+  const [accounts, setAccounts] = useState<{ username: string; display_name: string; enabled: boolean }[] | null>(null);
+  const [user, setUser] = useState("");
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    desktop.recoveryAccounts().then((a) => { setAccounts(a); setUser(a[0]?.username ?? ""); }).catch((e) => setErr(String(e)));
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" onClick={onClose}>
+      <form className="w-full max-w-sm space-y-3 rounded-2xl border border-line bg-panel p-6 shadow-xl" onClick={(e) => e.stopPropagation()} onSubmit={async (e) => {
+        e.preventDefault(); setBusy(true); setErr(null);
+        try { await desktop.recoveryReset(user, pw); setDone(true); } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+      }}>
+        <h2 className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck className="size-5 text-accent" />Reset a Domain Admin password</h2>
+        {done ? (
+          <>
+            <Callout tone="good">The password for {user} was reset and the reset was recorded in the audit log. Sign in with the new password.</Callout>
+            <div className="flex justify-end pt-1"><Button type="button" variant="primary" onClick={() => onDone(user)}>Back to sign in</Button></div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-ink-2">The directory is hosted on this computer, so an administrator of this computer can reset it. Your computer will ask for its administrator password in its own window; OpenDirectory never sees that password.</p>
+            {accounts && accounts.length === 0 && <Callout tone="warn">This directory has no Domain Admins.</Callout>}
+            {accounts && accounts.length > 0 && (
+              <Field label="Account">
+                <Select value={user} onChange={(e) => setUser(e.target.value)}>
+                  {accounts.map((a) => <option key={a.username} value={a.username}>{a.username} ({a.display_name}){a.enabled ? "" : ", disabled"}</option>)}
+                </Select>
+              </Field>
+            )}
+            <Field label="New password"><Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" /></Field>
+            <Field label="Confirm new password" hint={pw2 && pw !== pw2 ? "Passwords don't match" : undefined}><Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" /></Field>
+            {err && <Callout tone="warn">{err}</Callout>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" onClick={onClose}>Cancel</Button>
+              <Button type="submit" variant="primary" loading={busy} disabled={!user || !pw || pw !== pw2}>Reset password</Button>
+            </div>
+          </>
+        )}
+      </form>
+    </div>
   );
 }
 
