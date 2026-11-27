@@ -9,6 +9,7 @@ mod ca;
 pub mod directory;
 mod downloads;
 mod endpoints;
+mod enroll_files;
 mod helpdesk;
 pub mod integrations;
 mod lab;
@@ -80,6 +81,7 @@ pub fn router(state: AppState) -> Router {
         .route("/jobs/{id}/cancel", post(endpoints::cancel_job))
         .route("/enrollment-tokens", get(endpoints::list_tokens).post(endpoints::create_token))
         .route("/enrollment-tokens/{token}", delete(endpoints::delete_token))
+        .route("/enrollment-tokens/{token}/file", post(enroll_files::create))
         .route("/policies", get(policies::list).post(policies::create))
         .route("/policies/catalog", get(policies::catalog))
         .route("/policies/{id}", get(policies::get).put(policies::update).delete(policies::remove))

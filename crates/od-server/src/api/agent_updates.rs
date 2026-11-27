@@ -55,7 +55,7 @@ fn cache_dir(s: &AppState) -> PathBuf {
 }
 
 /// The cached build for a platform: (path, sha256, size).
-fn cached(s: &AppState, platform: &str) -> Option<(PathBuf, String, u64)> {
+pub(crate) fn cached(s: &AppState, platform: &str) -> Option<(PathBuf, String, u64)> {
     let p = cache_dir(s).join(asset(platform));
     let sha = std::fs::read_to_string(p.with_extension("sha256")).ok()?;
     let size = std::fs::metadata(&p).ok()?.len();

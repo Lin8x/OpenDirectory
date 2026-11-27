@@ -1242,3 +1242,54 @@ async fn enrollment_downloads_the_agent_from_this_server() {
     assert_eq!(toks[0]["uses"], 0);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn enrollment_files_carry_the_server_token_and_agent() {
+    let dir = std::env::temp_dir().join(format!("od-enroll-files-{}", uuid::Uuid::new_v4()));
+    let mut st = state();
+    st.info =
+        Arc::new(ServerInfo { data_dir: dir.to_string_lossy().into(), tls_fingerprint: Some("sha256:abc".into()), ..(*st.info).clone() });
+    let app = app_with(st);
+    let bearer = setup(&app).await;
+    let auth = Some(bearer.as_str());
+    let build: Vec<u8> = (0..150 * 1024).map(|i| (i % 7) as u8).collect();
+    for p in ["linux-x64", "windows-x64"] {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/v1/agent-updates/upload/{p}"))
+            .header("authorization", bearer.as_str())
+            .body(Body::from(build.clone()))
+            .unwrap();
+        assert_eq!(app.clone().oneshot(req).await.unwrap().status(), StatusCode::CREATED);
+    }
+    let (_, t) = call(&app, Method::POST, "/enrollment-tokens", auth, Some(json!({"description":"Front desk"}))).await;
+    let code = t["token"].as_str().unwrap();
+    let path = format!("/enrollment-tokens/{code}/file");
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+
+    let (st, r) = call(&app, Method::POST, &path, auth, Some(json!({"platform": "linux"}))).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    assert_eq!(r["file_name"], "opendirectory-enroll-front-desk-linux.sh");
+    let sh = String::from_utf8(b64.decode(r["data"].as_str().unwrap()).unwrap()).unwrap();
+    assert!(sh.contains("--server 'http://test' --token '") && sh.contains(code) && sh.contains("--fingerprint 'sha256:abc'"));
+    let payload: String = sh.split("__OD_PAYLOAD_x64__\n").nth(1).unwrap().split("__OD_PAYLOAD_END__").next().unwrap().lines().collect();
+    assert_eq!(b64.decode(payload).unwrap(), build);
+
+    let (st, r) = call(&app, Method::POST, &path, auth, Some(json!({"platform": "windows"}))).await;
+    assert_eq!(st, StatusCode::OK, "{r}");
+    let zip = b64.decode(r["data"].as_str().unwrap()).unwrap();
+    assert_eq!(&zip[..4], b"PK\x03\x04");
+    assert!(zip.windows(b"Install OpenDirectory Agent.cmd".len()).any(|w| w == b"Install OpenDirectory Agent.cmd"));
+
+    let (st, r) = call(&app, Method::POST, &path, auth, Some(json!({"platform": "conf"}))).await;
+    assert_eq!(st, StatusCode::OK);
+    let conf = String::from_utf8(b64.decode(r["data"].as_str().unwrap()).unwrap()).unwrap();
+    assert!(conf.contains("SERVER=http://test\n") && conf.contains(&format!("TOKEN={code}\n")) && conf.contains("FINGERPRINT=sha256:abc"));
+
+    let (st, _) = call(&app, Method::POST, "/enrollment-tokens/NOPE-NOPE/file", auth, Some(json!({"platform":"linux"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let (st, _) = call(&app, Method::POST, &format!("/enrollment-tokens/{code}/file"), None, Some(json!({"platform":"linux"}))).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    let _ = std::fs::remove_dir_all(dir);
+}

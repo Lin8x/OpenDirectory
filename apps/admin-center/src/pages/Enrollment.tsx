@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, Download, FileDown, Loader2, PauseCircle, PlayCircle, RefreshCw } from "lucide-react";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "../lib/hooks";
-import { del, post } from "../lib/api";
+import { del, post, saveBinary } from "../lib/api";
 import { useSession } from "../lib/session";
 import type { Endpoint, EnrollmentToken, OrgUnit } from "../lib/types";
 import { ago, dateTime } from "../lib/format";
@@ -29,8 +29,11 @@ export default function Enrollment() {
   const agents = useQuery<AgentBuilds>("/agent-updates");
   const [preparing, setPreparing] = useState(false);
   // Watch for computers that enroll while this page is open.
-  const [openedAt] = useState(() => Date.now());
-  const endpoints = useQuery<Endpoint[]>("/endpoints", { poll: 4000 });
+  const [openedAt, setOpenedAt] = useState(() => Date.now());
+  const [waiting, setWaiting] = useState(true);
+  const endpoints = useQuery<Endpoint[]>("/endpoints", { poll: waiting ? 4000 : undefined });
+  const [making, setMaking] = useState<string | null>(null);
+  const [made, setMade] = useState<{ file: string; where: string | null; instructions: string } | null>(null);
   const fresh = (endpoints.data ?? []).filter((e) => new Date(e.enrolled_at).getTime() >= openedAt - 5000);
   const toast = useToast();
 
@@ -87,6 +90,17 @@ export default function Enrollment() {
       ].join("\n"),
     };
   }, [tok, url, fpArg, fp, source, agents.data]);
+
+  const makeFile = async (platform: "windows" | "macos" | "linux" | "conf") => {
+    if (!tok) return;
+    setMaking(platform); setMade(null);
+    try {
+      const res = await post<{ file_name: string; data: string; instructions: string }>(`/enrollment-tokens/${tok.token}/file`, { platform, server: url });
+      const where = await saveBinary(res.file_name, res.data);
+      setMade({ file: res.file_name, where, instructions: res.instructions });
+      if (!waiting) { setOpenedAt(Date.now()); setWaiting(true); }
+    } catch (e) { toast("bad", (e as Error).message); } finally { setMaking(null); }
+  };
 
   return (
     <>
@@ -149,11 +163,33 @@ export default function Enrollment() {
               {os === "linux" && <p>Installs a systemd service <code className="font-mono text-xs">opendirectory-agent.service</code>, enabled at boot with automatic restart.</p>}
             </div>
           </Card>
-          <Card title="3. Confirm it checked in">
-            {fresh.length === 0 ? (
+          <Card title="Or hand out an enrollment file" actions={<FileDown className="size-4 text-ink-3" />}>
+            <p className="mb-3 text-sm text-ink-2">No command needed: this Management Server builds a ready-to-run installer with its address, the token above and its fingerprint built in. Copy it to the computer by USB, file share or email.</p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["windows", "windows", "Windows (.zip)"],
+                ["macos", "macos", "macOS (.command)"],
+                ["linux", "linux", "Linux (.sh)"],
+              ] as const).map(([platform, icon, label]) => (
+                <Button key={platform} size="sm" loading={making === platform} disabled={!tok || !!making} icon={<OsIcon os={icon} className="size-3.5" />} onClick={() => makeFile(platform)}>{label}</Button>
+              ))}
+              <Button size="sm" variant="ghost" loading={making === "conf"} disabled={!tok || !!making} icon={<Download className="size-3.5" />} onClick={() => makeFile("conf")}>enroll.conf for fleet packages</Button>
+            </div>
+            {made && <div className="mt-3"><Callout tone="good" title={made.where ? `Saved ${made.file} to ${made.where}` : `Downloaded ${made.file}`}>{made.instructions}</Callout></div>}
+            {!tok && <p className="mt-2 text-xs text-ink-3">Create a token first.</p>}
+          </Card>
+          <Card title="3. Confirm it checked in" actions={waiting
+            ? <Button size="sm" variant="ghost" icon={<PauseCircle className="size-3.5" />} onClick={() => setWaiting(false)}>Stop waiting</Button>
+            : <Button size="sm" variant="ghost" icon={<PlayCircle className="size-3.5" />} onClick={() => { setOpenedAt(Date.now()); setWaiting(true); }}>Wait again</Button>}>
+            {!waiting && fresh.length === 0 ? (
+              <div className="space-y-2 text-sm text-ink-2">
+                <p>Stopped waiting. Computers can still enroll with this token; they'll appear under <Link to="/endpoints" className="text-accent hover:underline">Endpoints</Link>.</p>
+                {tok && <p>To stop new enrollments with it, <button className="text-bad hover:underline" onClick={async () => { await del(`/enrollment-tokens/${tok.token}`); toast("good", "Token revoked"); void tokens.reload(); }}>revoke the token "{tok.description || tok.token}"</button>.</p>}
+              </div>
+            ) : fresh.length === 0 ? (
               <div className="flex items-center gap-3 text-sm text-ink-2">
                 <Loader2 className="size-4 animate-spin text-accent" />
-                Waiting for a computer to enroll. It shows up here within seconds of running the command.
+                Waiting for a computer to enroll. It shows up here within seconds of running the command or file.
               </div>
             ) : (
               <ul className="space-y-2">
