@@ -1,10 +1,91 @@
+<div align="center">
+
+<img src="apps/admin-center/public/logo.svg" width="96" height="96" alt="OpenDirectory logo">
+
 # OpenDirectory
 
-OpenDirectory is a cross-platform directory and endpoint management suite. It gives you the parts of Windows Server + Active Directory that matter day to day — users, security groups, organizational units, Group Policy, remote scripts and device inventory — but it manages **Windows (including Home and unactivated editions), macOS and Linux** from one place.
+**Directory services, Group Policy and endpoint management for Windows, macOS, Linux and Android.**<br>
+The parts of Windows Server and Active Directory you use every day, in one app that runs anywhere.
 
-It ships as a native desktop app (the **Admin Center**) that works fully offline, a command-line tool (`od`), a **Management Server** you can run inside the Admin Center or on a dedicated machine, and an **Endpoint Agent** that runs as a background service on every managed computer.
+[![Latest release](https://img.shields.io/github/v/release/Lin8x/OpenDirectory?style=flat-square&label=release&color=3a63f3)](https://github.com/Lin8x/OpenDirectory/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Lin8x/OpenDirectory/total?style=flat-square&color=2ea44f)](https://github.com/Lin8x/OpenDirectory/releases) ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-555?style=flat-square) ![Built with Rust and Tauri](https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri-dea584?style=flat-square)
 
-> Status: early but working. Linux has been verified end to end. Windows builds and cross-compiles; macOS is built in CI. Both still need real-hardware testing. See [docs/ROADMAP.md](docs/ROADMAP.md).
+[**Download**](#download) · [Features](#features) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Docs](docs/GUIDE.md) · [Roadmap](docs/ROADMAP.md)
+
+<br>
+
+<img src="docs/screenshots/overview.png" alt="The Admin Center overview: users, security groups, endpoints, compliance and recent activity" width="900">
+
+</div>
+
+<br>
+
+OpenDirectory manages users, security groups, organizational units, Group Policy, scripts, patches and device inventory for a whole fleet from one console. It works on the editions Active Directory can't reach, including **Windows Home** and unactivated Windows, and on **macOS, Linux and Android** too. Run the directory inside the desktop app for a small office or homelab, or on a dedicated Management Server, in Docker, or with replicas for failover.
+
+> **Status:** early but working. Linux is verified end to end. Windows and macOS build in CI on every change and still need more real-hardware testing. See the [roadmap](docs/ROADMAP.md).
+
+## Highlights
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Directory
+Users, security groups and OUs with AD-style naming, fine-grained password policies (PSOs), self-service password change, LAPS and a 180-day Recycle Bin.
+
+</td>
+<td width="50%" valign="top">
+
+### Group Policy for every OS
+One GPO applies through each platform's native mechanism (`net accounts`, `pwpolicy`, PAM, systemd and more), with OU links, priority, platform filters and RSoP.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Endpoint management
+Live inventory and compliance, a Script Library with 20 templates, patch management, remote shell, RDP/VNC/SSH tunnels and a help desk chat. No inbound ports needed.
+
+</td>
+<td valign="top">
+
+### Network services
+Optional DNS, DHCP, an internal certificate authority with auto-enrollment, RADIUS, a read-only LDAP/LDAPS server and an experimental Samba AD domain controller.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Built for operations
+Security baselines on day one, encrypted scheduled backups to 10+ destinations, replica servers with failover, agents that update themselves in rollout rings, and a full audit log.
+
+</td>
+<td valign="top">
+
+### Approachable
+Learn mode explains every term next to its Active Directory equivalent, a Network Lab simulates designs before you build them, and a Classic layout feels like ADUC and GPMC.
+
+</td>
+</tr>
+</table>
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/endpoints.png" alt="Endpoints list with OS, serial number, IP address, OU, compliance and status"><br><sub><b>Endpoints.</b> Every managed computer with its live status and compliance.</sub></td>
+<td width="50%"><img src="docs/screenshots/endpoint-detail.png" alt="Endpoint detail with hardware, security, LAPS, signed-in users and network"><br><sub><b>Endpoint detail.</b> Hardware, security, LAPS, remote shell and help desk.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/gpo-editor.png" alt="GPO editor showing how each setting is enforced on Windows, macOS and Linux"><br><sub><b>Group Policy.</b> Each setting shows how it's enforced on every OS.</sub></td>
+<td><img src="docs/screenshots/enrollment.png" alt="Enrollment page with a one-line install command that downloads the agent from the Management Server"><br><sub><b>Enrollment.</b> One command downloads the agent from your server and enrolls.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/topology.png" alt="Live topology map of the Management Server, subnets and endpoints"><br><sub><b>Topology Map.</b> A live view of servers, subnets and endpoints.</sub></td>
+<td><img src="docs/screenshots/lab.png" alt="Network Lab designer with firewall, router, VLANs, servers and endpoints"><br><sub><b>Network Lab.</b> Design a network and simulate it before you build it.</sub></td>
+</tr>
+</table>
 
 ## Download
 
@@ -107,32 +188,18 @@ You don't download the Endpoint Agent by hand: **Admin Center > Enrollment** sho
 
 The **Management Server** and the **od CLI** are in the Admin Center already. For a dedicated server, use the [Docker image](docs/DOCKER.md), the `opendirectory-server` and `opendirectory-cli` Linux packages, or the raw binaries (`opendirectory-server-*`, `od-*`) on the [Releases page](https://github.com/Lin8x/OpenDirectory/releases/latest). Store submission and packaging details are in [packaging/README.md](packaging/README.md).
 
-## Components
-
-| Component | Binary | What it is |
-| --- | --- | --- |
-| Admin Center | `opendirectory-admin-center` | Native desktop app (Tauri). Hosts the Management Server in-process, or connects to a remote one. Tray icon keeps it running. |
-| Management Server | `opendirectory-server` | Directory database (SQLite), Group Policy engine, REST API over TLS. Same code as the embedded server. |
-| Endpoint Agent | `opendirectory-agent` | Headless background service at low priority: Windows Service, launchd daemon, or systemd unit. Checks in every 15 seconds, over the LAN or the Internet Gateway. |
-| Android agent | `apps/android-agent` | 48 KB Android app. Checks in about every 15 minutes through the system job scheduler; reports inventory and security status, shows the managed-device notice, and has help desk chat. |
-| CLI | `od` | Everything the Admin Center does, scriptable, with `od explain <term>` for newcomers. |
-
 ## Quick start
 
-```bash
-./scripts/setup.sh        # first time only (Windows: .\scripts\setup.ps1)
-./scripts/build.sh        # server, agent and CLI
-./scripts/build.sh --app  # also the Admin Center installer (needs Node 20+ and, on Linux, webkit2gtk 4.1)
-```
+**1. Install the Admin Center** from [Download](#download) and open it.
 
-1. Open the Admin Center and pick **Host the directory on this computer**. The setup wizard creates your domain and the first Domain Admin, then asks you to pick a **security baseline** (Custom, Minimal, Home/Homelab, Small Business, Enterprise, Education or High Security) and layer modifiers on top: security level, patch rings, device ownership, admin model, USB policy, remote access, compliance packs (HIPAA, PCI DSS, SOC 2, CMMC, GDPR, FERPA, CIPA) and rollout (everyone, a Pilot OU first, or review first). A review screen shows every OU, group and GPO before anything is created. Turn on **Launch at startup** so the directory comes back after a reboot.
-2. Go to **Enrollment**, create a token, and run the command it shows on each computer (as Administrator / root):
-   ```bash
-   opendirectory-agent enroll --server https://<host>:8443 --token XXXX-XXXX-XXXX-XXXX --fingerprint <sha256> --install
-   ```
-3. Create users and add them to a group, then add a **Sign-in accounts** setting to a GPO. The agent creates matching local accounts on each endpoint, so those people can log in.
+**2. Create your domain.** Choose **Host the directory on this computer**. The setup wizard creates the domain and the first Domain Admin, then applies a **security baseline**: Custom, Minimal, Home/Homelab, Small Business, Enterprise, Education or High Security. You can layer modifiers on top: security level, patch rings, device ownership, admin model, USB policy, remote access, compliance packs (HIPAA, PCI DSS, SOC 2, CMMC, GDPR, FERPA, CIPA) and rollout. A review screen shows every OU, group and GPO before anything is created. Turn on **Launch at startup** so the directory comes back after a reboot.
 
-Or run a headless server with no GUI at all:
+**3. Enroll computers.** Open **Enrollment**, create a token, and run the command it shows on each computer as Administrator or root. The command downloads the Endpoint Agent from your Management Server, checks its SHA-256 and installs the background service. Use the [fleet packages](#endpoint-agent-management-server-and-cli) to roll it out through Group Policy, Intune or an MDM.
+
+**4. Let people sign in.** Create users, add them to a security group, then add a **Sign-in accounts** setting to a GPO. The agent creates matching local accounts on each endpoint.
+
+<details>
+<summary><b>Headless server (no GUI)</b></summary>
 
 ```bash
 sudo opendirectory-server install-service     # systemd, launchd or a Windows Service; starts at boot
@@ -140,53 +207,43 @@ od init --server https://<host>:8443 --fingerprint <sha256>   # interactive wiza
 od status
 ```
 
-`od init --help` lists every flag, so setup can be fully scripted (`OD_PASSWORD` supplies the password). `od init --dry-run` prints the plan without creating anything.
+`od init --help` lists every flag, so setup can be fully scripted (`OD_PASSWORD` supplies the password). `od init --dry-run` prints the plan without creating anything. For Docker, see [Docker and web mode](#docker-and-web-mode).
 
-### Identity and remote support
+</details>
 
-- **Password policies:** a Default Domain Password Policy plus fine-grained policies (PSOs) for groups, with history, expiry and lockout. Users change their own password, or redeem a one-time code from the help desk, with "Change password" on any sign-in screen.
-- **LAPS:** each endpoint keeps a local admin account with its own rotating password, stored encrypted on the server; viewing it is audited.
+## Features
+
+### Identity and access
+
+- **Password policies:** a Default Domain Password Policy plus fine-grained policies (PSOs) for groups, with history, expiry and lockout. Users change their own password, or redeem a one-time code from the help desk, with **Change password** on any sign-in screen.
+- **LAPS:** each endpoint keeps a local administrator account with its own rotating password, stored encrypted on the server. Viewing it is audited.
 - **Recycle Bin:** deleted users, groups, OUs, GPOs and scripts come back with their memberships and passwords for 180 days.
+- **Domain Controller (experimental):** on a Linux Management Server with Samba installed, OpenDirectory provisions a Samba AD domain controller and keeps it in sync (users, groups and passwords). Windows, macOS and Linux computers can then do a real domain join with Kerberos. It hasn't been tested on real hardware yet, so try it on a test server first.
+
+### Group Policy and scripts
+
+- **GPOs** describe intents such as "lock the screen after 10 minutes", and the Endpoint Agent applies each one with the native mechanism on Windows, macOS, Linux and Android. Link GPOs to the domain or OUs, set priority, filter by platform, and see the resultant set of policy (RSoP) for any endpoint.
+- **Script Library:** save scripts with parameters (passed as `OD_PARAM_<NAME>` environment variables, never pasted into the script), start from 20 built-in templates, and run them against any mix of endpoints, security groups and OUs. Attach a script to a GPO to run it **at startup, at sign-in, on a schedule or once**, inherited through OU links like GPO scripts in AD. From the CLI: `od script run "Disk usage report" --ou Servers -p PATH=/var`.
+
+### Endpoints
+
+- **Endpoint Agent:** a headless, low-priority background service (Windows Service, launchd daemon or systemd unit) that checks in every 15 seconds over the LAN or the **Internet Gateway**, which uses device certificates. The **Android agent** checks in about every 15 minutes through the system job scheduler.
 - **Patch Management:** pending OS updates on every endpoint, with scan and install for endpoints, groups or OUs.
-- **Remote shell and desktop:** an interactive terminal on any endpoint, and RDP, VNC or SSH through an encrypted tunnel (desktop app). Endpoints never need inbound ports.
+- **Remote support:** an interactive terminal on any endpoint, RDP, VNC or SSH through an encrypted tunnel, user notifications and a help desk chat. Endpoints never need inbound ports.
+- **Agent updates:** agents older than the server download the matching build from the Management Server, check its SHA-256, swap it in and roll back on their own if the new version can't check in. Choose the rollout ring in **Settings > Endpoint Agent updates**: all endpoints, pilot OUs only, or off. Older agents keep working with a newer server.
+- **Mobile devices:** track phones and tablets and download Apple configuration profiles for Wi-Fi, passcode rules and your root CA. Over-the-air MDM enrollment isn't supported yet.
 
-### Network Services
+### Network services
 
-The Management Server can host the network roles a Windows Server usually provides: a **DNS server** for the domain (with records for every endpoint), a **DHCP server**, an internal **certificate authority** (with a GPO setting that makes endpoints trust it) and a **RADIUS server** for VPNs and network devices (PAP and MS-CHAPv2). Each is off until you turn it on in **Network Services**.
+The Management Server can host the roles a Windows Server usually provides, each off until you turn it on in **Network Services**: a **DNS server** for the domain with records for every endpoint, a **DHCP server**, an internal **certificate authority** (with GPO settings to trust it and auto-enroll machine certificates), a **RADIUS server** for VPNs and network devices (PAP and MS-CHAPv2), and a read-only **LDAP/LDAPS server** with an AD-style schema.
 
-It also has a read-only **LDAP/LDAPS server** with an AD-style schema for apps and appliances that bind to LDAP, and endpoints can auto-enroll a **machine certificate** from the CA through a GPO setting.
+### Availability and recovery
 
-### Replication and failover
+- **Replication and failover:** add read-only **replica servers** under **Replication & Failover**. Each copies the whole directory every minute and serves agents, sign-in, DNS, RADIUS and LDAP. Agents learn every server and fail over automatically. If the primary is lost, **promote** a replica.
+- **Backup & Restore:** one `.odbackup` file holds the whole configuration, encrypted with a passphrase (Argon2id + XChaCha20-Poly1305). Plans run hourly, daily or weekly with retention, to a local folder or SMB/NFS share, SFTP, FTPS/FTP, WebDAV, S3-compatible storage, any HTTPS endpoint, Google Drive, OneDrive or Dropbox. Restores are verified first and keep the old data in a `pre-restore` folder.
 
-Add **replica servers** for redundancy. On the primary, open **Replication & Failover**, add a replica and copy its join code. On the new server, choose **Join an existing domain as a replica** on the first-run screen. Each replica copies the whole directory every minute and serves agents, Admin Center sign-in, DNS, RADIUS and LDAP all the time. Agents learn every server and fail over automatically. Replicas are read-only; if the primary is lost, **promote** a replica. DHCP, jobs, remote shells and scheduled backups run on the primary only.
-
-### Agent updates
-
-Endpoint Agents update themselves from the Management Server: agents older than the server download the matching build over their pinned connection, check its SHA-256, swap it in and restart, and roll back on their own if the new version can't check in. Choose the rollout ring in **Settings > Endpoint Agent updates**: all endpoints, pilot OUs only, or off. The server fetches builds from this version's GitHub release, or you upload them for networks without internet access. Agents from 0.11 and earlier need one manual update first. Older agents keep working with a newer server: they're sent only the settings and jobs they understand.
-
-### Domain Controller (experimental)
-
-On a Linux Management Server with Samba installed, **Domain Controller** provisions a Samba Active Directory domain controller and keeps it in sync with OpenDirectory (users, groups and passwords). Windows, macOS and Linux computers can then do a real domain join and sign in with Kerberos; the Script Library has join templates for each. The page shows FSMO roles, sites, replication and trusts. It hasn't been tested on real hardware yet, so try it on a test server first.
-
-### Mobile devices
-
-Track phones and tablets (serial, IMEI, owner, OS) and download Apple configuration profiles for Wi-Fi, passcode rules and your root CA. Over-the-air MDM enrollment isn't supported yet.
-
-### Docker and web mode
-
-The Management Server can serve the Admin Center to any browser (`--web-ui <folder>`, or a `web` folder next to the binary). The official image does this out of the box:
-
-```bash
-docker compose up -d     # builds the image from this repository and starts it on port 8443
-```
-
-A [`docker-compose.yml`](docker-compose.yml) is included and works as a Portainer stack. See [docs/DOCKER.md](docs/DOCKER.md).
-
-### Backup & Restore
-
-One `.odbackup` file holds the whole configuration (directory database, master key, TLS certificate), encrypted with a passphrase (Argon2id + XChaCha20-Poly1305). Backup plans run on a schedule (hourly, daily or weekly) with retention (keep the newest N, delete after N days) to a local folder or mounted SMB/NFS share, SFTP (host key pinned), FTPS/FTP, WebDAV, S3-compatible storage (AWS, R2, B2, Wasabi, MinIO), any HTTPS endpoint on any port, Google Drive, OneDrive or Dropbox. Destination credentials are stored encrypted and never shown again. Restores are verified first and applied at the next server start, keeping the old data in a `pre-restore` folder.
-
-### Sign-in and break-glass recovery
+<details>
+<summary><b>Sign-in and break-glass recovery</b></summary>
 
 The Admin Center always asks Domain Admins to sign in, because it can run scripts, open remote shells and change Group Policy on every enrolled endpoint. The first Domain Admin is the account you create in the setup wizard; there is no default or generated password.
 
@@ -202,18 +259,51 @@ sudo opendirectory-server admin reset-password <user> --generate  # prints a ran
 
 The reset follows the password policy, signs out the account's existing sessions and, with `--enable`, re-enables a disabled account. The default data directory is `/var/lib/opendirectory` (`C:\ProgramData\OpenDirectory\server` on Windows). For the Admin Center's built-in server, pass `--data-dir ~/.local/share/dev.opendirectory.admincenter/server` (`%APPDATA%\dev.opendirectory.admincenter\server` on Windows, `~/Library/Application Support/dev.opendirectory.admincenter/server` on macOS).
 
-### Reset settings and factory reset
+</details>
+
+<details>
+<summary><b>Reset settings and factory reset</b></summary>
 
 **Settings → Reset** has two options. Both ask for your password again and for the domain name typed out, and both are written to the audit log first.
 
 - **Reset settings to defaults** restores server settings (Default Domain Password Policy, branding, retention, naming convention, agent update rollout, DNS/DHCP/RADIUS/LDAP settings, backup plans, integrations) and, optionally, the Admin Center's own preferences. Users, groups, OUs, computers, GPOs, scripts and certificates are kept.
 - **Factory reset** erases the whole data directory (directory, GPOs, enrolled endpoints, keys, certificates and the audit log) and opens the setup wizard. It offers a backup first. In the Admin Center hosting the directory, your operating system asks for an administrator password before anything is erased. A standalone server is reset on its host: stop the service, then run `sudo opendirectory-server factory-reset`. The new directory's first audit log entry records the reset.
 
-### Script Library and GPO scripts
+</details>
 
-Save scripts with parameters (passed as `OD_PARAM_<NAME>` environment variables, never pasted into the script), start from 20 built-in templates for Windows, macOS and Linux, and run them against any mix of endpoints, security groups (computer members) and OUs. Attach a script to a GPO to run it **at startup, at sign-in, on a schedule or once**; it inherits through OU links like GPO Scripts in AD. From the CLI: `od script list`, `od script run "Disk usage report" --ou Servers -p PATH=/var`.
+### Docker and web mode
 
-## Repository layout
+The Management Server can serve the Admin Center to any browser (`--web-ui <folder>`, or a `web` folder next to the binary). The Docker image does this out of the box:
+
+```bash
+docker compose up -d     # builds the image from this repository and starts it on port 8443
+```
+
+The included [`docker-compose.yml`](docker-compose.yml) also works as a Portainer stack. See [docs/DOCKER.md](docs/DOCKER.md).
+
+## How it works
+
+```mermaid
+flowchart LR
+    AC["Admin Center<br/>(desktop or browser)"] -- HTTPS --> MS
+    CLI["od CLI"] -- HTTPS --> MS
+    MS["Management Server<br/>directory · GPO engine · API"]
+    MS -- "replicates" --> R["Replica servers"]
+    EA["Endpoint Agents<br/>Windows · macOS · Linux"] -- "check in over pinned TLS<br/>(LAN or Internet Gateway)" --> MS
+    AA["Android agent"] -- "check in" --> MS
+```
+
+| Component | Binary | What it is |
+| --- | --- | --- |
+| Admin Center | `opendirectory-admin-center` | Native desktop app (Tauri). Hosts the Management Server in-process, or connects to a remote one. A tray icon keeps it running. |
+| Management Server | `opendirectory-server` | Directory database (SQLite), Group Policy engine and REST API over TLS. Same code as the embedded server. |
+| Endpoint Agent | `opendirectory-agent` | Low-priority background service that applies GPOs, runs jobs and reports inventory and compliance. |
+| Android agent | `apps/android-agent` | 48 KB Android app with inventory, security status, the managed-device notice and help desk chat. |
+| CLI | `od` | Everything the Admin Center does, scriptable, with `od explain <term>` for newcomers. |
+
+Agents always connect out to the Management Server and pin its certificate fingerprint, so endpoints never need inbound ports. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the details.
+
+### Repository layout
 
 ```
 crates/od-core     shared model, Group Policy engine (RSoP), agent protocol
@@ -223,7 +313,8 @@ crates/od-agent    Endpoint Agent
 crates/od-cli      `od`
 apps/admin-center  Admin Center (React + Tauri)
 apps/android-agent Android Endpoint Agent (Kotlin, no AndroidX)
-docs/              architecture and roadmap
+packaging/         installers, store manifests and install scripts
+docs/              guide, architecture, roadmap and screenshots
 ```
 
 ## Development
