@@ -12,6 +12,7 @@ use uuid::Uuid;
 use super::required;
 use crate::auth::Admin;
 use crate::crypto::{hash_password, random_token, sha256_hex, verify_password};
+use crate::db::Db;
 use crate::error::{ApiError, ApiResult};
 use crate::AppState;
 
@@ -57,11 +58,19 @@ pub struct Pso {
 }
 
 pub fn domain_rules(s: &AppState) -> Rules {
-    s.db.meta_get("password_policy").ok().flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default()
+    domain_rules_db(&s.db)
+}
+
+fn domain_rules_db(db: &Db) -> Rules {
+    db.meta_get("password_policy").ok().flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default()
 }
 
 fn psos(s: &AppState) -> Vec<Pso> {
-    let mut v: Vec<Pso> = s.db.meta_get("password_psos").ok().flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default();
+    psos_db(&s.db)
+}
+
+fn psos_db(db: &Db) -> Vec<Pso> {
+    let mut v: Vec<Pso> = db.meta_get("password_psos").ok().flatten().and_then(|j| serde_json::from_str(&j).ok()).unwrap_or_default();
     v.sort_by_key(|p| (p.precedence, p.name.to_lowercase()));
     v
 }
@@ -80,14 +89,18 @@ pub struct Resultant {
 
 /// The rules that apply to a user (Resultant PSO).
 pub fn resultant(s: &AppState, user_id: Option<Uuid>) -> Resultant {
+    resultant_db(&s.db, user_id)
+}
+
+fn resultant_db(db: &Db, user_id: Option<Uuid>) -> Resultant {
     if let Some(uid) = user_id {
-        if let Ok(Some(u)) = s.db.get_user(uid) {
-            if let Some(p) = psos(s).into_iter().find(|p| p.group_ids.iter().any(|g| u.group_ids.contains(g))) {
+        if let Ok(Some(u)) = db.get_user(uid) {
+            if let Some(p) = psos_db(db).into_iter().find(|p| p.group_ids.iter().any(|g| u.group_ids.contains(g))) {
                 return Resultant { rules: p.rules, source: p.name, pso_id: Some(p.id) };
             }
         }
     }
-    Resultant { rules: domain_rules(s), source: "Default Domain Password Policy".into(), pso_id: None }
+    Resultant { rules: domain_rules_db(db), source: "Default Domain Password Policy".into(), pso_id: None }
 }
 
 fn validate_rules(r: &Rules) -> ApiResult<()> {
@@ -102,8 +115,14 @@ fn validate_rules(r: &Rules) -> ApiResult<()> {
 
 /// Check a new password against the user's rules and history.
 pub fn check(s: &AppState, user_id: Option<Uuid>, pw: &str) -> ApiResult<()> {
+    check_db(&s.db, user_id, pw)
+}
+
+/// [`check`] against a database opened outside a running server (the local
+/// recovery commands).
+pub fn check_db(db: &Db, user_id: Option<Uuid>, pw: &str) -> ApiResult<()> {
     super::validate_password(pw)?;
-    let r = resultant(s, user_id);
+    let r = resultant_db(db, user_id);
     let rules = &r.rules;
     if (pw.chars().count() as u32) < rules.min_length {
         return Err(ApiError::bad_request(format!("Passwords must be at least {} characters ({})", rules.min_length, r.source)));
@@ -124,8 +143,8 @@ pub fn check(s: &AppState, user_id: Option<Uuid>, pw: &str) -> ApiResult<()> {
     }
     if rules.history > 0 {
         if let Some(uid) = user_id {
-            let mut hashes = s.db.password_history(uid, rules.history)?;
-            if let Some(cur) = s.db.user_secrets(uid)?.password_hash {
+            let mut hashes = db.password_history(uid, rules.history)?;
+            if let Some(cur) = db.user_secrets(uid)?.password_hash {
                 hashes.insert(0, cur);
             }
             if hashes.iter().take(rules.history as usize).any(|h| verify_password(pw, h)) {
@@ -138,10 +157,15 @@ pub fn check(s: &AppState, user_id: Option<Uuid>, pw: &str) -> ApiResult<()> {
 
 /// Store a new password (already checked), keeping the old hash in history.
 pub fn set(s: &AppState, user_id: Uuid, pw: &str) -> ApiResult<()> {
-    if let Some(old) = s.db.user_secrets(user_id)?.password_hash {
-        s.db.push_password_history(user_id, &old)?;
+    set_db(&s.db, &s.sealer, user_id, pw)
+}
+
+/// [`set`] against a database opened outside a running server.
+pub fn set_db(db: &Db, sealer: &crate::crypto::Sealer, user_id: Uuid, pw: &str) -> ApiResult<()> {
+    if let Some(old) = db.user_secrets(user_id)?.password_hash {
+        db.push_password_history(user_id, &old)?;
     }
-    s.db.set_user_password(user_id, &hash_password(pw)?, &s.sealer.seal(pw.as_bytes())?)?;
+    db.set_user_password(user_id, &hash_password(pw)?, &sealer.seal(pw.as_bytes())?)?;
     Ok(())
 }
 

@@ -53,9 +53,14 @@ od-client.workspace = true
 russh = { version = "0.65", default-features = false, features = ["ring", "rsa"] }
 russh-sftp = "4"
 suppaftp = { version = "13", default-features = false, features = ["tokio", "tokio-rustls-ring"] }
+rpassword = "7"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7"
+windows-sys = { version = "0.52", features = ["Win32_UI_Shell"] }
 
 [dev-dependencies]
 md-5 = "0.10"

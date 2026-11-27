@@ -45,9 +45,34 @@ enum Cmd {
     UninstallService,
     /// Show whether the system service is running.
     ServiceStatus,
+    /// Break-glass recovery for Domain Admins, run on the Management Server
+    /// host itself (needs root or Administrator; not available over the network).
+    #[command(subcommand)]
+    Admin(AdminCmd),
     /// Started by the Windows Service Control Manager.
     #[command(hide = true)]
     WindowsService,
+}
+
+#[derive(Subcommand)]
+enum AdminCmd {
+    /// List the Domain Admins in this directory.
+    List,
+    /// Reset a Domain Admin's password when nobody can sign in to the Admin
+    /// Center. Signs out the account's sessions and writes an audit log entry.
+    ResetPassword {
+        /// Logon name, e.g. `admin`, `CORP\admin` or `admin@corp.example.com`.
+        user: String,
+        /// Generate a random temporary password and print it once.
+        #[arg(long, conflicts_with = "password_stdin")]
+        generate: bool,
+        /// Read the new password from standard input instead of prompting.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Also re-enable the account if it's disabled.
+        #[arg(long)]
+        enable: bool,
+    },
 }
 
 fn default_data_dir() -> &'static str {
@@ -98,6 +123,18 @@ fn main() -> anyhow::Result<()> {
         Cmd::ServiceStatus => {
             println!("{}", od_server::service::status());
             Ok(())
+        }
+        Cmd::Admin(AdminCmd::List) => od_server::recovery::list_admins(&args.data_dir),
+        Cmd::Admin(AdminCmd::ResetPassword { user, generate, password_stdin, enable }) => {
+            use od_server::recovery::{NewPassword, ResetOptions};
+            let password = if *generate {
+                NewPassword::Generate
+            } else if *password_stdin {
+                NewPassword::Stdin
+            } else {
+                NewPassword::Prompt
+            };
+            od_server::recovery::reset_password(&args.data_dir, &ResetOptions { username: user.clone(), password, enable: *enable })
         }
         Cmd::WindowsService => {
             #[cfg(windows)]
