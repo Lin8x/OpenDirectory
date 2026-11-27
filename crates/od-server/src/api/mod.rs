@@ -137,6 +137,7 @@ pub fn router(state: AppState) -> Router {
             post(agent_updates::upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)),
         )
         .route("/agent/update/{platform}", get(agent_updates::download))
+        .route("/agent/downloads/{platform}", get(agent_updates::enroll_download))
         .route("/agent/enroll", post(agent::enroll))
         .route("/agent/checkin", post(agent::checkin))
         .route("/agent/jobs/{id}/result", post(agent::job_result))
