@@ -310,12 +310,12 @@ pub async fn agent_enroll(
     Json(req): Json<od_core::protocol::CertEnrollRequest>,
 ) -> ApiResult<Json<od_core::protocol::CertEnrollResponse>> {
     let ou_parent: std::collections::HashMap<Uuid, Option<Uuid>> = s.db.list_ous()?.into_iter().map(|o| (o.id, o.parent_id)).collect();
-    let eff = od_core::policy::effective_settings(&s.db.list_policies()?, auth.ou_id, &ou_parent);
+    let ep = s.db.get_endpoint(auth.id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    let eff = od_core::policy::effective_settings(&s.db.list_policies()?, od_core::policy::PolicyScope::endpoint(&ep), &ou_parent);
     if !eff.iter().any(|e| matches!(e.setting, od_core::policy::Setting::CertificateAutoEnrollment { .. })) {
         return Err(ApiError::forbidden("Certificate auto-enrollment isn't enabled for this endpoint"));
     }
     let (ca, ca_key, m) = signer(&s)?;
-    let ep = s.db.get_endpoint(auth.id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
     let host: String =
         ep.hostname.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '.').collect::<String>().to_lowercase();
     let host = if host.is_empty() { format!("endpoint-{}", &auth.id.to_string()[..8]) } else { host };

@@ -11,7 +11,7 @@ export type NodeType =
 
 export interface LabNode {
   id: string; type: NodeType; name: string; x: number; y: number;
-  ip?: string; cidr?: string; site?: string; os?: "windows" | "macos" | "linux"; ou?: string; vlan?: number;
+  ip?: string; cidr?: string; site?: string; os?: "windows" | "macos" | "linux" | "android"; ou?: string; vlan?: number;
   /** Firewall: allowed inbound TCP/UDP ports (e.g. "8443/tcp"). Empty means allow all. */
   allow?: string[];
   /** Endpoint gets its address from DHCP. Router relays DHCP (ip helper). */

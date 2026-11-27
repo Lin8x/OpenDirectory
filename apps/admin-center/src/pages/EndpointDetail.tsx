@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Cpu, HardDrive, MemoryStick, Network, Play, RefreshCw, RotateCw, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { ArrowLeft, Cpu, HardDrive, MemoryStick, MessageSquare, Network, Play, RefreshCw, RotateCw, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, get, patch, post } from "../lib/api";
 import type { Endpoint, Job, OrgUnit, RsopEntry, Shell } from "../lib/types";
@@ -12,6 +12,8 @@ import { OuSelect } from "./Users";
 import { JobRow } from "./Jobs";
 import { RemoteShell } from "../components/RemoteShell";
 import { RemoteDesktop } from "../components/RemoteDesktop";
+import { HelpDeskChat } from "../components/HelpDeskChat";
+import { Dialog, Input } from "../components/ui";
 
 export default function EndpointDetail() {
   const { id } = useParams();
@@ -19,8 +21,9 @@ export default function EndpointDetail() {
   const toast = useToast();
   const ep = useQuery<Endpoint>(`/endpoints/${id}`, { poll: 8000 });
   const ous = useQuery<OrgUnit[]>("/ous");
-  const [tab, setTab] = useState<"overview" | "policy" | "scripts" | "shell">("overview");
+  const [tab, setTab] = useState<"overview" | "policy" | "scripts" | "shell" | "helpdesk">("overview");
   const [confirm, setConfirm] = useState(false);
+  const [notify, setNotify] = useState<{ title: string; message: string } | null>(null);
 
   if (ep.loading && !ep.data) return <Loading />;
   if (ep.error && !ep.data) return <ErrorNote message={ep.error} onRetry={ep.reload} />;
@@ -43,12 +46,27 @@ export default function EndpointDetail() {
         </div>
         <div className="flex gap-2">
           <Button icon={<RefreshCw className="size-4" />} onClick={() => action("refresh_inventory", "Inventory refresh requested")}>Refresh inventory</Button>
-          <Button icon={<RotateCw className="size-4" />} onClick={() => action("restart_agent", "Agent restart requested")}>Restart agent</Button>
+          <Button icon={<MessageSquare className="size-4" />} onClick={() => setNotify({ title: "Message from IT", message: "" })}>Message user</Button>
+          {e.os !== "android" && <Button icon={<RotateCw className="size-4" />} onClick={() => action("restart_agent", "Agent restart requested")}>Restart agent</Button>}
           <Button variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => setConfirm(true)}>Retire</Button>
         </div>
       </div>
 
-      <Tabs value={tab} onChange={setTab} tabs={[{ id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" }, { id: "scripts", label: "Remote scripts" }, { id: "shell", label: "Remote shell & desktop" }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[
+        { id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" },
+        ...(e.os === "android" ? [] : [{ id: "scripts" as const, label: "Remote scripts" }, { id: "shell" as const, label: "Remote shell & desktop" }]),
+        { id: "helpdesk", label: "Help desk" },
+      ]} />
+      {tab === "helpdesk" && <div className="rounded-xl border border-line bg-panel"><HelpDeskChat endpointId={e.id} hostname={e.hostname} /></div>}
+      <Dialog open={!!notify} onClose={() => setNotify(null)} title={`Message the user at ${e.hostname}`}
+        footer={<><Button onClick={() => setNotify(null)}>Cancel</Button><Button variant="primary" disabled={!notify?.title.trim() || !notify?.message.trim()}
+          onClick={async () => { try { await post(`/endpoints/${e.id}/jobs`, { type: "notify_user", ...notify }); toast("good", "Message sent. The job result shows whether someone saw it."); setNotify(null); } catch (err) { toast("bad", (err as Error).message); } }}>Send</Button></>}>
+        {notify && <div className="space-y-3">
+          <Field label="Title"><Input value={notify.title} maxLength={120} onChange={(ev) => setNotify({ ...notify, title: ev.target.value })} /></Field>
+          <Field label="Message"><Textarea rows={4} value={notify.message} maxLength={2000} onChange={(ev) => setNotify({ ...notify, message: ev.target.value })} placeholder="We'll restart this computer at 6 PM for updates." /></Field>
+          <p className="text-xs text-ink-3">Pops up on the screen of whoever is signed in. For a conversation, use the Help desk tab.</p>
+        </div>}
+      </Dialog>
 
       {tab === "overview" && <LapsCard id={e.id} />}
       {tab === "overview" && (
@@ -215,7 +233,7 @@ function ScriptsTab({ e }: { e: Endpoint }) {
       <Card title="Run a script" subtitle={`Runs as ${e.os === "windows" ? "SYSTEM" : "root"} on ${e.hostname}`}>
         <div className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
-            {SNIPPETS[e.os]!.map((s) => <button key={s.label} onClick={() => { setShell(s.shell); setScript(s.script); }} className="rounded-full border border-line px-2.5 py-1 text-xs text-ink-2 hover:border-accent hover:text-accent">{s.label}</button>)}
+            {(SNIPPETS[e.os] ?? []).map((s) => <button key={s.label} onClick={() => { setShell(s.shell); setScript(s.script); }} className="rounded-full border border-line px-2.5 py-1 text-xs text-ink-2 hover:border-accent hover:text-accent">{s.label}</button>)}
           </div>
           <Field label="Shell">
             <Select value={shell} onChange={(ev) => setShell(ev.target.value as Shell)}>

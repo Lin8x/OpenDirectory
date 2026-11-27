@@ -37,6 +37,29 @@ pub struct CheckinRequest {
     /// Build platform, e.g. "linux-x64", for agent updates.
     #[serde(default)]
     pub platform: String,
+    /// The newest help desk message id this agent already has.
+    #[serde(default)]
+    pub chat_since: i64,
+}
+
+/// One help desk message between the person at a device and IT.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChatMessage {
+    pub id: i64,
+    /// Sent by IT (an admin) rather than the device's user.
+    pub from_it: bool,
+    pub author: String,
+    pub text: String,
+    pub at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A message the device's user sends to IT.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatPost {
+    pub text: String,
+    /// Who typed it, e.g. the signed-in account name.
+    #[serde(default)]
+    pub author: String,
 }
 
 /// A newer Endpoint Agent the server offers. Download it from
@@ -102,6 +125,9 @@ pub struct CheckinResponse {
     /// A newer agent to install, when updates are on for this endpoint.
     #[serde(default)]
     pub update: Option<AgentUpdate>,
+    /// Help desk messages newer than `CheckinRequest::chat_since`.
+    #[serde(default)]
+    pub chat: Vec<ChatMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +138,9 @@ pub struct ShellRequest {
     /// Connect this local TCP port instead of starting a shell.
     #[serde(default)]
     pub tunnel_port: Option<u16>,
+    /// The admin who opened it, shown in consent prompts.
+    #[serde(default)]
+    pub requested_by: String,
 }
 
 /// Certificate auto-enrollment: the agent sends a CSR for its own key.

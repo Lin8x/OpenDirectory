@@ -27,8 +27,21 @@ fn shell_command() -> CommandBuilder {
     }
 }
 
-pub fn spawn(req: ShellRequest, client: od_client::Client) {
+pub fn spawn(req: ShellRequest, client: od_client::Client, rules: crate::enduser::SessionRules) {
     tokio::spawn(async move {
+        let who = if req.requested_by.is_empty() { "An administrator".to_string() } else { req.requested_by.clone() };
+        if let Err(why) = rules.check(req.tunnel_port.is_some(), &who).await {
+            tracing::warn!("remote session from {who} refused: {why}");
+            // Tell the admin's terminal why, then hang up.
+            if let Ok(ws) = client.websocket(&format!("/agent/shell/{}", req.session_id)).await {
+                let (mut sink, _) = ws.split();
+                if req.tunnel_port.is_none() {
+                    let _ = sink.send(WsMessage::Binary(format!("\r\n[{why}]\r\n").into_bytes().into())).await;
+                }
+                let _ = sink.send(WsMessage::Close(None)).await;
+            }
+            return;
+        }
         let res = match req.tunnel_port {
             Some(port) => tunnel(req.session_id, port, client).await,
             None => run(req, client).await,

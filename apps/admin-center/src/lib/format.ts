@@ -20,7 +20,7 @@ export function uptime(s: number): string {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 }
-export const osLabel: Record<OsFamily, string> = { windows: "Windows", macos: "macOS", linux: "Linux" };
+export const osLabel: Record<OsFamily, string> = { windows: "Windows", macos: "macOS", linux: "Linux", android: "Android" };
 export function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("") || "?";
 }

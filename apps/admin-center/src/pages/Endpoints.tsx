@@ -19,7 +19,7 @@ export default function Endpoints() {
   const nav = useNavigate();
   const [params] = useSearchParams();
   const [q, setQ] = useState("");
-  const [os, setOs] = useState<"all" | "windows" | "macos" | "linux">("all");
+  const [os, setOs] = useState<"all" | "windows" | "macos" | "linux" | "android">("all");
   const [onlyIssues, setOnlyIssues] = useState(params.get("filter") === "noncompliant");
 
   const list = useMemo(() => {
@@ -39,7 +39,7 @@ export default function Endpoints() {
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
           <div className="relative w-80"><Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" /><Input className="pl-8" placeholder="Hostname, serial number, IP, MAC or user" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <div className="flex gap-1">
-            {(["all", "windows", "macos", "linux"] as const).map((o) => (
+            {(["all", "windows", "macos", "linux", "android"] as const).map((o) => (
               <Button key={o} size="sm" variant={os === o ? "primary" : "ghost"} onClick={() => setOs(o)} icon={o !== "all" ? <OsIcon os={o} className="size-3.5" /> : undefined}>
                 {o === "all" ? "All" : o === "macos" ? "macOS" : o[0]!.toUpperCase() + o.slice(1)}
               </Button>

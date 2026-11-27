@@ -145,6 +145,28 @@ $users = @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | ForEach
     }
 }
 
+/// Who is signed in, without collecting the rest of the inventory.
+pub async fn logged_in_users() -> Vec<String> {
+    #[cfg(unix)]
+    {
+        who().await
+    }
+    #[cfg(windows)]
+    {
+        let script = r#"@(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | ForEach-Object { (Invoke-CimMethod -InputObject $_ -MethodName GetOwner).User } | Sort-Object -Unique) | ConvertTo-Json -Compress"#;
+        let out = util::powershell(script, None).await.map(|o| o.stdout).unwrap_or_default();
+        match serde_json::from_str::<serde_json::Value>(out.trim()) {
+            Ok(serde_json::Value::Array(a)) => a.iter().filter_map(|u| u.as_str().map(str::to_string)).collect(),
+            Ok(serde_json::Value::String(u)) => vec![u],
+            _ => vec![],
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        vec![]
+    }
+}
+
 #[cfg(unix)]
 async fn who() -> Vec<String> {
     let mut users: Vec<String> = util::run("who", &[])

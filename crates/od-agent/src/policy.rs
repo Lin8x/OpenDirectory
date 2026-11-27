@@ -21,7 +21,13 @@ pub async fn apply_all(settings: &[Setting]) -> Vec<ComplianceItem> {
             Setting::LocalAccounts { .. }
             | Setting::RunScript { .. }
             | Setting::LocalAdminPassword { .. }
-            | Setting::CertificateAutoEnrollment { .. } => {}
+            | Setting::CertificateAutoEnrollment { .. }
+            | Setting::ConsentNotice { .. }
+            | Setting::HelpDesk { .. } => {}
+            // Enforced by the agent itself when a session is requested.
+            Setting::RemoteSessionConsent { .. } | Setting::RemoteTools { .. } => {
+                out.push(item(s, ComplianceState::Compliant, "Enforced by the Endpoint Agent"))
+            }
             other => {
                 let r = apply(other).await;
                 out.push(match r {

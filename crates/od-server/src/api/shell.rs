@@ -65,7 +65,13 @@ impl Hub {
             .filter(|(_, s)| s.endpoint == endpoint && !s.delivered)
             .map(|(id, s)| {
                 s.delivered = true;
-                od_core::protocol::ShellRequest { session_id: *id, cols: s.cols, rows: s.rows, tunnel_port: s.tunnel_port }
+                od_core::protocol::ShellRequest {
+                    session_id: *id,
+                    cols: s.cols,
+                    rows: s.rows,
+                    tunnel_port: s.tunnel_port,
+                    requested_by: s.admin.clone(),
+                }
             })
             .collect()
     }
@@ -97,6 +103,17 @@ pub struct Opened {
 
 pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<OpenInput>) -> ApiResult<Json<Opened>> {
     let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    // Remote tools can be turned off per endpoint or platform by GPO.
+    for st in super::policies::endpoint_settings(&s, &e)? {
+        if let od_core::policy::Setting::RemoteTools { remote_shell, remote_desktop } = st {
+            if inp.tunnel_port.is_some() && !remote_desktop {
+                return Err(ApiError::forbidden("Remote desktop is turned off for this endpoint by the Remote tools GPO setting"));
+            }
+            if inp.tunnel_port.is_none() && !remote_shell {
+                return Err(ApiError::forbidden("Remote shell is turned off for this endpoint by the Remote tools GPO setting"));
+            }
+        }
+    }
     let ticket = random_token(24);
     let session_id = Uuid::new_v4();
     s.hub.sessions.lock().unwrap_or_else(|e| e.into_inner()).insert(

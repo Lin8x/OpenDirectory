@@ -1084,3 +1084,104 @@ async fn older_agents_only_get_settings_and_jobs_they_understand() {
     let (st, _) = call(&app, Method::POST, &format!("/endpoints/{eid}/jobs"), auth, Some(json!({"type":"nonsense"}))).await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn end_user_settings_targeting_and_help_desk() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (lin, lin_auth) = enroll(&app, auth, "linux", "desk-01", None).await;
+    let (phone, phone_auth) = enroll(&app, auth, "android", "pixel-01", None).await;
+    let (_, other_auth) = enroll(&app, auth, "linux", "desk-02", None).await;
+    // Help desk for Android only; remote shell off for one endpoint only.
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/policies",
+        auth,
+        Some(json!({"name":"Phones","targets":{"all_endpoints":true,"os_families":["android"]},"settings":[
+            {"kind":"help_desk","enabled":true,"contact":"x100"},
+            {"kind":"consent_notice","title":"Managed","text":"IT manages this phone.","require_acknowledgement":true}
+        ]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/policies",
+        auth,
+        Some(json!({"name":"No shell","targets":{"all_endpoints":false,"ou_ids":[],"endpoint_ids":[lin]},"settings":[
+            {"kind":"remote_tools","remote_shell":false,"remote_desktop":true},
+            {"kind":"remote_session_consent","mode":"ask","unattended_access":false}
+        ]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let ci = |v: &str, since: i64| json!({"agent_version": v, "inventory": null, "compliance": [], "chat_since": since});
+    // Only the new settings (setup also adds a baseline GPO for everyone).
+    let kinds = |r: &Value| -> Vec<String> {
+        let new = ["help_desk", "consent_notice", "remote_tools", "remote_session_consent"];
+        r["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["kind"].as_str().unwrap().to_string())
+            .filter(|k| new.contains(&k.as_str()))
+            .collect()
+    };
+
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&phone_auth), Some(ci("0.13.0", 0))).await;
+    assert_eq!(kinds(&r), vec!["help_desk", "consent_notice"], "{r}");
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&lin_auth), Some(ci("0.13.0", 0))).await;
+    assert_eq!(kinds(&r), vec!["remote_tools", "remote_session_consent"], "{r}");
+    // A 0.12 agent doesn't get the new settings.
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&lin_auth), Some(ci("0.12.0", 0))).await;
+    assert!(kinds(&r).is_empty(), "{r}");
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&other_auth), Some(ci("0.13.0", 0))).await;
+    assert!(kinds(&r).is_empty(), "{r}");
+
+    // Remote shell is refused for the endpoint where it's off; desktop isn't.
+    let (st, v) = call(&app, Method::POST, &format!("/endpoints/{lin}/shell"), auth, Some(json!({"cols":80,"rows":24}))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "{v}");
+    let (st, _) =
+        call(&app, Method::POST, &format!("/endpoints/{lin}/shell"), auth, Some(json!({"cols":80,"rows":24,"tunnel_port":3389}))).await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Help desk: only where it's on.
+    let (st, _) = call(&app, Method::POST, "/agent/chat", Some(&lin_auth), Some(json!({"text":"help"}))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, m) =
+        call(&app, Method::POST, "/agent/chat", Some(&phone_auth), Some(json!({"text":"My email is broken","author":"sam"}))).await;
+    assert_eq!(st, StatusCode::OK, "{m}");
+    let (_, threads) = call(&app, Method::GET, "/helpdesk", auth, None).await;
+    assert_eq!(threads[0]["unread"], 1);
+    assert_eq!(threads[0]["hostname"], "pixel-01");
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{phone}/chat"), auth, Some(json!({"text":"Restart Outlook"}))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, msgs) = call(&app, Method::GET, &format!("/endpoints/{phone}/chat"), auth, None).await;
+    assert_eq!(msgs.as_array().unwrap().len(), 2);
+    let (_, threads) = call(&app, Method::GET, "/helpdesk", auth, None).await;
+    assert_eq!(threads[0]["unread"], 0);
+    let first = m["id"].as_i64().unwrap();
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&phone_auth), Some(ci("0.13.0", first))).await;
+    assert_eq!(r["chat"].as_array().unwrap().len(), 1, "{r}");
+    assert_eq!(r["chat"][0]["from_it"], true);
+
+    // Message-the-user jobs need a 0.13 agent and are validated.
+    let (st, _) =
+        call(&app, Method::POST, &format!("/endpoints/{lin}/jobs"), auth, Some(json!({"type":"notify_user","title":"","message":"x"})))
+            .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        &format!("/endpoints/{lin}/jobs"),
+        auth,
+        Some(json!({"type":"notify_user","title":"Reboot","message":"At 6 PM"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&lin_auth), Some(ci("0.13.0", 0))).await;
+    assert_eq!(r["jobs"][0]["kind"]["type"], "notify_user", "{r}");
+}

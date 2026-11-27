@@ -9,7 +9,7 @@ use od_core::{ComplianceItem, JobKind, OsFamily};
 use tokio::sync::watch;
 
 use crate::state::AgentState;
-use crate::{accounts, certs, inventory, jobs, laps, policy, policy_scripts};
+use crate::{accounts, certs, enduser, helpdesk, inventory, jobs, laps, policy, policy_scripts};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PATCH_SCAN_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
@@ -44,6 +44,7 @@ pub async fn enroll(server: &str, token: &str, fingerprint: Option<String>) -> R
         cert_not_after: None,
         servers: Vec::new(),
         epoch: 0,
+        notice_acks: Default::default(),
     };
     state.save()?;
     Ok(state)
@@ -86,6 +87,9 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
         });
     }
     let mut sent_patches: Option<od_core::PatchReport> = None;
+    let mut notice = enduser::NoticeWatcher::default();
+    let mut notice_item: Option<ComplianceItem> = None;
+    let mut help_desk = helpdesk::HelpDesk::default();
 
     loop {
         // Scan for OS updates in the background every few hours.
@@ -100,6 +104,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
         all_compliance.extend(account_item.clone());
         all_compliance.extend(laps_item.clone());
         all_compliance.extend(cert_item.clone());
+        all_compliance.extend(notice_item.clone());
         let req = CheckinRequest {
             agent_version: VERSION.into(),
             inventory: if send_inventory {
@@ -113,6 +118,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
             account_versions: state.accounts.iter().map(|(k, v)| (k.clone(), v.password_version)).collect(),
             known_epoch: state.epoch,
             platform: crate::updater::PLATFORM.into(),
+            chat_since: help_desk.since(),
         };
 
         let wait = match client.post::<CheckinResponse, _>("/agent/checkin", &req).await {
@@ -194,9 +200,21 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                     }
                 }
 
+                // End-user experience: managed-device notice, help desk, and
+                // the rules remote sessions must follow.
+                let session_rules = enduser::SessionRules::from_settings(&resp.settings);
+                let (item, acks_changed) = notice.maintain(&resp.settings, &mut state.notice_acks).await;
+                notice_item = item;
+                if acks_changed {
+                    if let Err(e) = state.save() {
+                        tracing::error!("saving agent state: {e:#}");
+                    }
+                }
+                help_desk.sync(&resp.settings, resp.chat, &client).await;
+
                 // Remote shells an admin opened.
                 for req in resp.shells {
-                    crate::shell::spawn(req, client.clone());
+                    crate::shell::spawn(req, client.clone(), session_rules);
                 }
 
                 // Jobs run concurrently; each reports its own result.

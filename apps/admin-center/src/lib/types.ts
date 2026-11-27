@@ -1,6 +1,6 @@
 // Mirrors od-core's Rust types.
 export type Uuid = string;
-export type OsFamily = "windows" | "macos" | "linux";
+export type OsFamily = "windows" | "macos" | "linux" | "android";
 export type Role = "user" | "admin";
 
 export interface OrgUnit { id: Uuid; name: string; description: string; parent_id: Uuid | null; created_at: string }
@@ -29,7 +29,7 @@ export interface Endpoint {
 }
 export interface EnrollmentToken { token: string; description: string; ou_id: Uuid | null; uses: number; max_uses: number | null; expires_at: string | null; created_at: string; created_by: string }
 export type Shell = "default" | "powershell" | "bash" | "zsh" | "cmd";
-export type JobKind = { type: "script"; shell: Shell; script: string; env?: Record<string, string> } | { type: "refresh_inventory" } | { type: "restart_agent" } | { type: "scan_updates" } | { type: "install_updates"; security_only: boolean; reboot: boolean };
+export type JobKind = { type: "script"; shell: Shell; script: string; env?: Record<string, string> } | { type: "refresh_inventory" } | { type: "restart_agent" } | { type: "scan_updates" } | { type: "install_updates"; security_only: boolean; reboot: boolean } | { type: "notify_user"; title: string; message: string };
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export interface Job {
   id: Uuid; endpoint_id: Uuid; kind: JobKind; status: JobStatus; script_id: Uuid | null; batch_id: Uuid | null; exit_code: number | null; output: string;
@@ -67,12 +67,21 @@ export type Setting =
   | { kind: "update_deferral"; quality_days: number; feature_days: number }
   | { kind: "local_admin_password"; account: string; length: number; rotate_days: number }
   | { kind: "certificate_auto_enrollment"; renew_days: number }
-  | { kind: "trusted_root_certificate"; name: string; pem: string };
+  | { kind: "trusted_root_certificate"; name: string; pem: string }
+  | { kind: "consent_notice"; title: string; text: string; require_acknowledgement: boolean }
+  | { kind: "remote_session_consent"; mode: "off" | "notify" | "ask"; unattended_access: boolean }
+  | { kind: "help_desk"; enabled: boolean; contact: string }
+  | { kind: "remote_tools"; remote_shell: boolean; remote_desktop: boolean };
 export type SettingKind = Setting["kind"];
+
+export interface PolicyTargets { all_endpoints: boolean; ou_ids: Uuid[]; endpoint_ids?: Uuid[]; os_families?: OsFamily[] }
+
+export interface ChatMessage { id: number; from_it: boolean; author: string; text: string; at: string }
+export interface ChatThread { endpoint_id: Uuid; hostname: string; last: ChatMessage; unread: number }
 
 export interface Policy {
   id: Uuid; name: string; description: string; enabled: boolean; priority: number;
-  targets: { all_endpoints: boolean; ou_ids: Uuid[] }; settings: Setting[]; created_at: string; updated_at: string;
+  targets: PolicyTargets; settings: Setting[]; created_at: string; updated_at: string;
 }
 export type SupportLevel = "enforced" | "report_only" | "unsupported";
 export interface PlatformSupport { os: OsFamily; level: SupportLevel; mechanism: string }

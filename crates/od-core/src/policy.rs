@@ -85,9 +85,53 @@ pub enum Setting {
         #[serde(default)]
         params: std::collections::BTreeMap<String, String>,
     },
+    /// Tell people this device is managed by the organization, and what IT
+    /// can see and do. Shown at each new sign-in until acknowledged.
+    ConsentNotice {
+        title: String,
+        text: String,
+        /// Ask the user to press "I understand", and report who did and when.
+        #[serde(default)]
+        require_acknowledgement: bool,
+    },
+    /// What the signed-in user sees before an admin's remote shell or remote
+    /// desktop session starts: "off", "notify" or "ask" (user must allow it).
+    RemoteSessionConsent {
+        mode: String,
+        /// Allow sessions when nobody is signed in to ask.
+        #[serde(default)]
+        unattended_access: bool,
+    },
+    /// Let users chat with IT from the device (help desk).
+    HelpDesk {
+        enabled: bool,
+        /// Other ways to reach IT, shown next to the chat (phone, email).
+        #[serde(default)]
+        contact: String,
+    },
+    /// Turn the Admin Center's remote tools on or off for these endpoints.
+    RemoteTools { remote_shell: bool, remote_desktop: bool },
     /// A setting from a newer version. Agents skip it and report it as unsupported.
     #[serde(other)]
     Unknown,
+}
+
+/// How [`Setting::RemoteSessionConsent`] treats a new remote session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionConsent {
+    Off,
+    Notify,
+    Ask,
+}
+
+impl SessionConsent {
+    pub fn parse(mode: &str) -> SessionConsent {
+        match mode {
+            "notify" => SessionConsent::Notify,
+            "ask" => SessionConsent::Ask,
+            _ => SessionConsent::Off,
+        }
+    }
 }
 
 impl Setting {
@@ -124,6 +168,10 @@ impl Setting {
             Setting::AppReputation { .. } => "app_reputation",
             Setting::SecurityAuditing { .. } => "security_auditing",
             Setting::UpdateDeferral { .. } => "update_deferral",
+            Setting::ConsentNotice { .. } => "consent_notice",
+            Setting::RemoteSessionConsent { .. } => "remote_session_consent",
+            Setting::HelpDesk { .. } => "help_desk",
+            Setting::RemoteTools { .. } => "remote_tools",
         }
     }
 
@@ -209,6 +257,32 @@ impl Setting {
             Setting::UpdateDeferral { quality_days, feature_days } => {
                 format!("Defer quality updates {quality_days} d, feature updates {feature_days} d")
             }
+            Setting::ConsentNotice { title, require_acknowledgement, .. } => {
+                if *require_acknowledgement {
+                    format!("Managed-device notice \"{title}\" (users must acknowledge)")
+                } else {
+                    format!("Managed-device notice \"{title}\"")
+                }
+            }
+            Setting::RemoteSessionConsent { mode, unattended_access } => {
+                let base = match SessionConsent::parse(mode) {
+                    SessionConsent::Ask => "Users must allow remote sessions",
+                    SessionConsent::Notify => "Users are told when a remote session starts",
+                    SessionConsent::Off => "No prompt for remote sessions",
+                };
+                if *unattended_access {
+                    format!("{base}; unattended access allowed")
+                } else {
+                    base.into()
+                }
+            }
+            Setting::HelpDesk { enabled, .. } => onoff(*enabled, "Help desk chat on", "Help desk chat off"),
+            Setting::RemoteTools { remote_shell, remote_desktop } => match (remote_shell, remote_desktop) {
+                (true, true) => "Remote shell and remote desktop allowed".into(),
+                (true, false) => "Remote shell allowed, remote desktop off".into(),
+                (false, true) => "Remote desktop allowed, remote shell off".into(),
+                (false, false) => "Remote shell and remote desktop off".into(),
+            },
         }
     }
 }
@@ -225,6 +299,30 @@ pub struct PolicyTargets {
     /// Apply to endpoints in these OUs (and their child OUs).
     #[serde(default)]
     pub ou_ids: Vec<Uuid>,
+    /// Also apply to these endpoints directly, wherever they are.
+    #[serde(default)]
+    pub endpoint_ids: Vec<Uuid>,
+    /// Only apply on these platforms; empty means every platform. Works like
+    /// a WMI filter on a GPO link.
+    #[serde(default)]
+    pub os_families: Vec<OsFamily>,
+}
+
+/// The endpoint a policy is being resolved for.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PolicyScope {
+    pub endpoint_id: Option<Uuid>,
+    pub ou_id: Option<Uuid>,
+    pub os: Option<OsFamily>,
+}
+
+impl PolicyScope {
+    pub fn ou(ou_id: Option<Uuid>) -> PolicyScope {
+        PolicyScope { ou_id, ..Default::default() }
+    }
+    pub fn endpoint(e: &crate::model::Endpoint) -> PolicyScope {
+        PolicyScope { endpoint_id: Some(e.id), ou_id: e.ou_id, os: Some(e.os) }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,6 +389,21 @@ fn ps(os: OsFamily, level: SupportLevel, mechanism: &'static str) -> PlatformSup
 /// Every setting the policy editor offers, with plain-language help and the
 /// native mechanism used on each OS.
 pub fn catalog() -> Vec<CatalogEntry> {
+    let mut c = catalog_desktop();
+    // What the Android agent can do without Device Owner rights: report.
+    for (kind, mech) in [
+        ("screen_lock", "Reports whether a screen lock (PIN, pattern or password) is set"),
+        ("disk_encryption", "Reports storage encryption (always on since Android 10)"),
+    ] {
+        if let Some(e) = c.iter_mut().find(|e| e.kind == kind) {
+            e.support.push(ps(OsFamily::Android, SupportLevel::ReportOnly, mech));
+        }
+    }
+    c.extend(catalog_end_user());
+    c
+}
+
+fn catalog_desktop() -> Vec<CatalogEntry> {
     use OsFamily::*;
     use SupportLevel::*;
     vec![
@@ -577,6 +690,79 @@ pub fn catalog() -> Vec<CatalogEntry> {
     ]
 }
 
+/// End-user experience: disclosure, consent and help desk.
+fn catalog_end_user() -> Vec<CatalogEntry> {
+    use OsFamily::*;
+    use SupportLevel::*;
+    vec![
+        CatalogEntry {
+            kind: "consent_notice",
+            title: "Managed-device notice",
+            category: "End-user experience",
+            summary: "Tells each person who signs in that the organization manages this device and what IT can see and do. Optionally asks them to press \"I understand\" and records who did and when.",
+            ad_equivalent: "Interactive logon message / Intune enrollment privacy notice",
+            support: vec![
+                ps(Windows, Enforced, "Message box in the user's session (WTSSendMessage)"),
+                ps(Macos, Enforced, "Dialog in the user's session (osascript)"),
+                ps(Linux, Enforced, "kdialog or zenity dialog in the user's session"),
+                ps(Android, Enforced, "Notification and in-app notice"),
+            ],
+            choices: vec![],
+            default: Setting::ConsentNotice {
+                title: "This device is managed".into(),
+                text: "Your organization's IT team manages this device with OpenDirectory. IT can see its hardware, software, settings and security status, apply settings, install updates and run maintenance scripts. IT can't read your files, messages or browsing unless a remote session is opened, and you'll be told when that happens.".into(),
+                require_acknowledgement: true,
+            },
+        },
+        CatalogEntry {
+            kind: "remote_session_consent",
+            title: "Remote session consent",
+            category: "End-user experience",
+            summary: "Controls what the signed-in user sees before IT opens a remote shell or remote desktop session: nothing, a notification, or a prompt they must accept. Unattended access decides what happens when nobody is signed in.",
+            ad_equivalent: "RDS: Set rules for remote control of user sessions (Full Control with user's permission)",
+            support: vec![
+                ps(Windows, Enforced, "Yes/No message box in the console session (WTSSendMessage)"),
+                ps(Macos, Enforced, "Allow/Deny dialog (osascript)"),
+                ps(Linux, Enforced, "kdialog or zenity prompt; notify-send for notifications"),
+            ],
+            choices: vec![FieldChoice {
+                field: "mode",
+                options: vec![("ask", "Ask the user to allow it"), ("notify", "Tell the user it started"), ("off", "No prompt or notice")],
+            }],
+            default: Setting::RemoteSessionConsent { mode: "ask".into(), unattended_access: true },
+        },
+        CatalogEntry {
+            kind: "help_desk",
+            title: "Help desk chat",
+            category: "End-user experience",
+            summary: "Lets people message IT from the device and get replies, without any app running in the background. Desktops get a \"Contact IT\" shortcut that opens a local chat page; Android has it in the app.",
+            ad_equivalent: "Company Portal: Contact IT / help desk",
+            support: vec![
+                ps(Windows, Enforced, "\"Contact IT\" Start menu shortcut to a local chat page"),
+                ps(Macos, Enforced, "\"Contact IT\" in /Applications, opens a local chat page"),
+                ps(Linux, Enforced, "\"Contact IT\" desktop entry, opens a local chat page"),
+                ps(Android, Enforced, "Help desk screen in the app"),
+            ],
+            choices: vec![],
+            default: Setting::HelpDesk { enabled: true, contact: String::new() },
+        },
+        CatalogEntry {
+            kind: "remote_tools",
+            title: "Remote tools",
+            category: "End-user experience",
+            summary: "Turns the Admin Center's remote shell and remote desktop on or off for these endpoints. The agent enforces it too, so a device that has them off refuses sessions.",
+            ad_equivalent: "Remote Assistance / Remote Desktop: Allow users to connect remotely",
+            support: vec![
+                ps(Windows, Enforced, "Endpoint Agent refuses disabled session types"),
+                ps(Macos, Enforced, "Endpoint Agent refuses disabled session types"),
+                ps(Linux, Enforced, "Endpoint Agent refuses disabled session types"),
+            ],
+            choices: vec![],
+            default: Setting::RemoteTools { remote_shell: true, remote_desktop: true },
+        },
+    ]
+}
+
 #[allow(clippy::too_many_arguments)]
 fn e(
     kind: &'static str,
@@ -613,14 +799,22 @@ pub struct EffectiveSetting {
 /// Does this policy target an endpoint in `endpoint_ou`? `ou_ancestry` maps an OU
 /// to its parent so links on a parent OU apply to children, like GPO
 /// inheritance.
-pub fn policy_applies(policy: &Policy, endpoint_ou: Option<Uuid>, ou_parent: &HashMap<Uuid, Option<Uuid>>) -> bool {
+pub fn policy_applies(policy: &Policy, scope: &PolicyScope, ou_parent: &HashMap<Uuid, Option<Uuid>>) -> bool {
     if !policy.enabled {
         return false;
+    }
+    if let Some(os) = scope.os {
+        if !policy.targets.os_families.is_empty() && !policy.targets.os_families.contains(&os) {
+            return false;
+        }
     }
     if policy.targets.all_endpoints {
         return true;
     }
-    let mut cur = endpoint_ou;
+    if scope.endpoint_id.is_some_and(|id| policy.targets.endpoint_ids.contains(&id)) {
+        return true;
+    }
+    let mut cur = scope.ou_id;
     let mut guard = 0;
     while let Some(ou) = cur {
         if policy.targets.ou_ids.contains(&ou) {
@@ -637,12 +831,8 @@ pub fn policy_applies(policy: &Policy, endpoint_ou: Option<Uuid>, ou_parent: &Ha
 
 /// Resultant Set of Policy: merge every policy that applies to an endpoint.
 /// Lower `priority` wins; accumulating settings (accounts, packages) add up.
-pub fn effective_settings(
-    policies: &[Policy],
-    endpoint_ou: Option<Uuid>,
-    ou_parent: &HashMap<Uuid, Option<Uuid>>,
-) -> Vec<EffectiveSetting> {
-    let mut applicable: Vec<&Policy> = policies.iter().filter(|p| policy_applies(p, endpoint_ou, ou_parent)).collect();
+pub fn effective_settings(policies: &[Policy], scope: PolicyScope, ou_parent: &HashMap<Uuid, Option<Uuid>>) -> Vec<EffectiveSetting> {
+    let mut applicable: Vec<&Policy> = policies.iter().filter(|p| policy_applies(p, &scope, ou_parent)).collect();
     applicable.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.name.cmp(&b.name)));
 
     let mut out: Vec<EffectiveSetting> = Vec::new();
@@ -666,8 +856,15 @@ pub fn effective_settings(
 }
 
 /// Settings added after v0.2, with the first agent version that understands them.
-const SETTING_SINCE: &[(&str, &str)] =
-    &[("local_admin_password", "0.5.0"), ("trusted_root_certificate", "0.6.0"), ("certificate_auto_enrollment", "0.7.0")];
+const SETTING_SINCE: &[(&str, &str)] = &[
+    ("local_admin_password", "0.5.0"),
+    ("trusted_root_certificate", "0.6.0"),
+    ("certificate_auto_enrollment", "0.7.0"),
+    ("consent_notice", "0.13.0"),
+    ("remote_session_consent", "0.13.0"),
+    ("help_desk", "0.13.0"),
+    ("remote_tools", "0.13.0"),
+];
 const V02_SETTINGS: &[&str] = &[
     "automatic_updates",
     "disk_encryption",
@@ -736,10 +933,10 @@ mod tests {
 
     #[test]
     fn lower_priority_number_wins_and_lists_overrides() {
-        let all = PolicyTargets { all_endpoints: true, ou_ids: vec![] };
+        let all = PolicyTargets { all_endpoints: true, ..Default::default() };
         let a = pol("Baseline", 100, all.clone(), vec![Setting::ScreenLock { minutes: 15 }]);
         let b = pol("Finance", 10, all, vec![Setting::ScreenLock { minutes: 5 }]);
-        let eff = effective_settings(&[a, b], None, &HashMap::new());
+        let eff = effective_settings(&[a, b], PolicyScope::default(), &HashMap::new());
         assert_eq!(eff.len(), 1);
         assert_eq!(eff[0].setting, Setting::ScreenLock { minutes: 5 });
         assert_eq!(eff[0].policy_name, "Finance");
@@ -756,29 +953,44 @@ mod tests {
         tree.insert(child, Some(parent));
         tree.insert(other, None);
         let p =
-            pol("Parent link", 1, PolicyTargets { all_endpoints: false, ou_ids: vec![parent] }, vec![Setting::Firewall { enabled: true }]);
-        assert!(policy_applies(&p, Some(child), &tree));
-        assert!(policy_applies(&p, Some(parent), &tree));
-        assert!(!policy_applies(&p, Some(other), &tree));
-        assert!(!policy_applies(&p, None, &tree));
+            pol("Parent link", 1, PolicyTargets { ou_ids: vec![parent], ..Default::default() }, vec![Setting::Firewall { enabled: true }]);
+        assert!(policy_applies(&p, &PolicyScope::ou(Some(child)), &tree));
+        assert!(policy_applies(&p, &PolicyScope::ou(Some(parent)), &tree));
+        assert!(!policy_applies(&p, &PolicyScope::ou(Some(other)), &tree));
+        assert!(!policy_applies(&p, &PolicyScope::ou(None), &tree));
     }
 
     #[test]
     fn accounts_accumulate() {
-        let all = PolicyTargets { all_endpoints: true, ou_ids: vec![] };
+        let all = PolicyTargets { all_endpoints: true, ..Default::default() };
         let g1 = Uuid::new_v4();
         let g2 = Uuid::new_v4();
         let a = pol("A", 1, all.clone(), vec![Setting::LocalAccounts { group_id: g1, admin: false }]);
         let b = pol("B", 2, all, vec![Setting::LocalAccounts { group_id: g2, admin: true }]);
-        let eff = effective_settings(&[a, b], None, &HashMap::new());
+        let eff = effective_settings(&[a, b], PolicyScope::default(), &HashMap::new());
         assert_eq!(eff.len(), 2);
     }
 
     #[test]
+    fn endpoint_and_platform_targeting() {
+        let id = Uuid::new_v4();
+        let mut p =
+            pol("Direct", 1, PolicyTargets { endpoint_ids: vec![id], ..Default::default() }, vec![Setting::Firewall { enabled: true }]);
+        let tree = HashMap::new();
+        let me = PolicyScope { endpoint_id: Some(id), ou_id: None, os: Some(OsFamily::Linux) };
+        assert!(policy_applies(&p, &me, &tree));
+        assert!(!policy_applies(&p, &PolicyScope { endpoint_id: Some(Uuid::new_v4()), ..me }, &tree));
+        p.targets = PolicyTargets { all_endpoints: true, os_families: vec![OsFamily::Android], ..Default::default() };
+        assert!(!policy_applies(&p, &me, &tree));
+        assert!(policy_applies(&p, &PolicyScope { os: Some(OsFamily::Android), ..me }, &tree));
+        assert_eq!(Setting::HelpDesk { enabled: true, contact: String::new() }.min_agent_version(), "0.13.0");
+    }
+
+    #[test]
     fn disabled_policies_are_ignored() {
-        let mut p = pol("Off", 1, PolicyTargets { all_endpoints: true, ou_ids: vec![] }, vec![Setting::Firewall { enabled: true }]);
+        let mut p = pol("Off", 1, PolicyTargets { all_endpoints: true, ..Default::default() }, vec![Setting::Firewall { enabled: true }]);
         p.enabled = false;
-        assert!(effective_settings(&[p], None, &HashMap::new()).is_empty());
+        assert!(effective_settings(&[p], PolicyScope::default(), &HashMap::new()).is_empty());
     }
 
     #[test]
@@ -786,7 +998,10 @@ mod tests {
         let cat = catalog();
         for e in &cat {
             assert_eq!(e.kind, e.default.kind());
-            assert_eq!(e.support.len(), 3, "{} must list all OSes", e.kind);
+            // Every desktop OS is listed; Android only where its agent does something.
+            for os in [OsFamily::Windows, OsFamily::Macos, OsFamily::Linux] {
+                assert!(e.support.iter().any(|p| p.os == os), "{} must list {os:?}", e.kind);
+            }
         }
     }
 

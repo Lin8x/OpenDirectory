@@ -3,6 +3,9 @@
 mod accounts;
 mod agent;
 mod certs;
+mod desktop;
+mod enduser;
+mod helpdesk;
 mod inventory;
 mod jobs;
 mod laps;
@@ -170,6 +173,10 @@ async fn async_main(cmd: Command) -> Result<()> {
             }
             println!("Service:    {} (headless, {} priority)", service::status(), service::Priority::load().label());
             println!("Version:    {}", agent::VERSION);
+            match desktop::console_user().await {
+                Some(u) => println!("Console:    {} is signed in (notices and prompts appear there)", u.name),
+                None => println!("Console:    nobody signed in"),
+            }
         }
         Command::Inventory => {
             println!("{}", serde_json::to_string_pretty(&inventory::collect().await)?);
