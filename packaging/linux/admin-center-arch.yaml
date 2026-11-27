@@ -1,0 +1,26 @@
+# nfpm config for the Admin Center's Arch Linux package (pacman -U). It
+# repackages the files from the release .deb, which build-admin-center-arch.sh
+# extracts into ${ROOT}.
+name: opendirectory-admin-center
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+maintainer: OpenDirectory <opendirectory@users.noreply.github.com>
+homepage: https://github.com/Lin8x/OpenDirectory
+description: OpenDirectory Admin Center, directory, Group Policy and endpoint management for every OS
+depends:
+  - webkit2gtk-4.1
+  - gtk3
+  - libayatana-appindicator
+contents:
+  - src: ${ROOT}/usr/bin/opendirectory-admin-center
+    dst: /usr/bin/opendirectory-admin-center
+    file_info:
+      mode: 0755
+  - src: ${ROOT}/usr/share/applications/OpenDirectory Admin Center.desktop
+    dst: /usr/share/applications/opendirectory-admin-center.desktop
+  - src: ${ROOT}/usr/share/icons/hicolor/32x32/apps/opendirectory-admin-center.png
+    dst: /usr/share/icons/hicolor/32x32/apps/opendirectory-admin-center.png
+  - src: ${ROOT}/usr/share/icons/hicolor/128x128/apps/opendirectory-admin-center.png
+    dst: /usr/share/icons/hicolor/128x128/apps/opendirectory-admin-center.png

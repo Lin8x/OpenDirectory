@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for Flathub, GNOME Software and KDE Discover.
+     packaging/render-manifests.sh fills in the release version and date.
+     Flathub also needs <project_license>: add it once the repository has a
+     LICENSE file (see packaging/README.md). -->
+<component type="desktop-application">
+  <id>io.github.lin8x.OpenDirectory</id>
+  <name>OpenDirectory Admin Center</name>
+  <summary>Directory, Group Policy and endpoint management for every OS</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <developer id="io.github.lin8x">
+    <name>OpenDirectory</name>
+  </developer>
+  <description>
+    <p>
+      OpenDirectory gives you the parts of Windows Server and Active Directory
+      that matter day to day: users, security groups, organizational units,
+      Group Policy, remote scripts and device inventory. It manages Windows,
+      macOS and Linux endpoints from one console.
+    </p>
+    <p>
+      The Admin Center works fully offline. It can host the Management Server
+      on this computer or connect to one running elsewhere.
+    </p>
+    <ul>
+      <li>Users, security groups and organizational units</li>
+      <li>Group Policy Objects with security baselines</li>
+      <li>Script Library, patch management and remote shell</li>
+      <li>DNS, DHCP, a certificate authority and RADIUS</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.lin8x.OpenDirectory.desktop</launchable>
+  <url type="homepage">https://github.com/Lin8x/OpenDirectory</url>
+  <url type="bugtracker">https://github.com/Lin8x/OpenDirectory/issues</url>
+  <url type="vcs-browser">https://github.com/Lin8x/OpenDirectory</url>
+  <categories>
+    <category>System</category>
+    <category>Network</category>
+  </categories>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/Lin8x/OpenDirectory/main/docs/screenshots/overview.png</image>
+      <caption>Overview of the directory and endpoints</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Lin8x/OpenDirectory/main/docs/screenshots/policies.png</image>
+      <caption>Group Policy Objects</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Lin8x/OpenDirectory/main/docs/screenshots/endpoint-detail.png</image>
+      <caption>Endpoint inventory and compliance</caption>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <releases>
+    <release version="@VERSION@" date="@DATE@">
+      <url type="details">https://github.com/Lin8x/OpenDirectory/releases/tag/v@VERSION@</url>
+    </release>
+  </releases>
+</component>

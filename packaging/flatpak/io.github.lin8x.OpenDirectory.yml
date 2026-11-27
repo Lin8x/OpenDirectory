@@ -1,0 +1,50 @@
+# Flatpak manifest for the OpenDirectory Admin Center.
+#
+# This is a template: packaging/render-manifests.sh fills in the version and
+# checksum for a release, and the release workflow attaches the result
+# (store-manifests.tar.gz) and a test bundle built from it
+# (OpenDirectory-AdminCenter-linux-x86_64.flatpak).
+#
+# The app repackages the release .deb, as Tauri recommends for Flathub. The
+# tray icon needs libayatana-appindicator from Flathub's shared-modules: clone
+# https://github.com/flathub/shared-modules next to this file (the Flathub
+# repo does this with a git submodule). See packaging/README.md.
+id: io.github.lin8x.OpenDirectory
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+command: opendirectory-admin-center
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # Talks to Management Servers and, when it hosts the directory itself,
+  # listens for Endpoint Agents on 8443.
+  - --share=network
+  # Tray icon.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Desktop notifications.
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+
+  - name: opendirectory-admin-center
+    buildsystem: simple
+    sources:
+      - type: file
+        url: https://github.com/Lin8x/OpenDirectory/releases/download/v@VERSION@/OpenDirectory-AdminCenter-linux-amd64.deb
+        sha256: "@DEB_SHA256@"
+        dest-filename: admin-center.deb
+        only-arches: [x86_64]
+      - type: file
+        path: io.github.lin8x.OpenDirectory.metainfo.xml
+    build-commands:
+      - ar -x admin-center.deb
+      - tar -xf data.tar.*
+      - install -Dm755 usr/bin/opendirectory-admin-center /app/bin/opendirectory-admin-center
+      - install -Dm644 "usr/share/applications/OpenDirectory Admin Center.desktop" /app/share/applications/io.github.lin8x.OpenDirectory.desktop
+      - desktop-file-edit --set-icon=io.github.lin8x.OpenDirectory /app/share/applications/io.github.lin8x.OpenDirectory.desktop
+      - install -Dm644 usr/share/icons/hicolor/32x32/apps/opendirectory-admin-center.png /app/share/icons/hicolor/32x32/apps/io.github.lin8x.OpenDirectory.png
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/opendirectory-admin-center.png /app/share/icons/hicolor/128x128/apps/io.github.lin8x.OpenDirectory.png
+      - install -Dm644 io.github.lin8x.OpenDirectory.metainfo.xml /app/share/metainfo/io.github.lin8x.OpenDirectory.metainfo.xml

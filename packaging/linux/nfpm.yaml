@@ -1,0 +1,27 @@
+# nfpm config for the Linux packages of the Endpoint Agent, the Management
+# Server and the od CLI. One file builds all three: build-packages.sh sets the
+# variables below for each component and asks nfpm for deb, rpm and
+# archlinux packages.
+name: ${PKG_NAME}
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+section: admin
+priority: optional
+maintainer: OpenDirectory <opendirectory@users.noreply.github.com>
+vendor: OpenDirectory
+homepage: https://github.com/Lin8x/OpenDirectory
+description: ${PKG_DESCRIPTION}
+contents:
+  - src: ${BIN_PATH}
+    dst: /usr/bin/${BIN_NAME}
+    file_info:
+      mode: 0755
+  - src: ${README}
+    dst: /usr/share/doc/${PKG_NAME}/README.md
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: ${POSTINSTALL}
+  preremove: ${PREREMOVE}

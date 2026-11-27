@@ -1,0 +1,30 @@
+#!/bin/sh
+# Endpoint Agent .pkg post-install. Enrolls unattended when your MDM (Jamf,
+# Kandji, Mosyle, Munki, ...) staged an enrollment file first:
+#
+#   /Library/Application Support/OpenDirectory/enroll.conf (mode 0600, root)
+#     SERVER=https://dc01.example.com:8443
+#     TOKEN=XXXX-XXXX-XXXX-XXXX
+#     FINGERPRINT=<sha256 from Admin Center > Enrollment>
+#
+# Without it, the package only installs /usr/local/bin/opendirectory-agent and
+# you run the enrollment command from Admin Center > Enrollment.
+conf="/Library/Application Support/OpenDirectory/enroll.conf"
+agent=/usr/local/bin/opendirectory-agent
+
+if [ -f "$conf" ]; then
+  SERVER='' TOKEN='' FINGERPRINT=''
+  . "$conf"
+  if [ -n "$SERVER" ] && [ -n "$TOKEN" ]; then
+    set -- enroll --server "$SERVER" --token "$TOKEN" --install
+    [ -n "$FINGERPRINT" ] && set -- "$@" --fingerprint "$FINGERPRINT"
+    if "$agent" "$@"; then
+      rm -f "$conf"
+      echo "OpenDirectory Endpoint Agent enrolled with $SERVER."
+    else
+      echo "OpenDirectory Endpoint Agent: enrollment with $SERVER failed." >&2
+      exit 1
+    fi
+  fi
+fi
+exit 0

@@ -1,0 +1,16 @@
+pkgbase = opendirectory-admin-center-bin
+	pkgdesc = Directory, Group Policy and endpoint management for every OS (Admin Center)
+	pkgver = @VERSION@
+	pkgrel = 1
+	url = https://github.com/Lin8x/OpenDirectory
+	arch = x86_64
+	license = custom
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = libayatana-appindicator
+	provides = opendirectory-admin-center
+	conflicts = opendirectory-admin-center
+	source_x86_64 = opendirectory-admin-center-@VERSION@.deb::https://github.com/Lin8x/OpenDirectory/releases/download/v@VERSION@/OpenDirectory-AdminCenter-linux-amd64.deb
+	sha256sums_x86_64 = @DEB_SHA256@
+
+pkgname = opendirectory-admin-center-bin
