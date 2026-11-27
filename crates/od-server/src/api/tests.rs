@@ -1084,3 +1084,48 @@ async fn older_agents_only_get_settings_and_jobs_they_understand() {
     let (st, _) = call(&app, Method::POST, &format!("/endpoints/{eid}/jobs"), auth, Some(json!({"type":"nonsense"}))).await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn enrollment_downloads_the_agent_from_this_server() {
+    let dir = std::env::temp_dir().join(format!("od-enroll-dl-{}", uuid::Uuid::new_v4()));
+    let mut st = state();
+    st.info = Arc::new(ServerInfo { data_dir: dir.to_string_lossy().into(), ..(*st.info).clone() });
+    let app = app_with(st);
+    let bearer = setup(&app).await;
+    let auth = Some(bearer.as_str());
+
+    // An admin uploads the build (as on a network without internet access).
+    let build: Vec<u8> = (0..200 * 1024).map(|i| (i % 251) as u8).collect();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/agent-updates/upload/linux-x64")
+        .header("authorization", bearer.as_str())
+        .body(Body::from(build.clone()))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let (_, t) = call(&app, Method::POST, "/enrollment-tokens", auth, Some(json!({"description":"Lab","max_uses":1}))).await;
+    let code = t["token"].as_str().unwrap();
+
+    let get = |path: String| {
+        let app = app.clone();
+        async move {
+            let resp = app.oneshot(Request::builder().uri(path).body(Body::empty()).unwrap()).await.unwrap();
+            let status = resp.status();
+            (status, resp.into_body().collect().await.unwrap().to_bytes())
+        }
+    };
+    let (st, _) = get("/api/v1/enroll/agent/linux-x64?token=WRONG-TOKEN".into()).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _) = get(format!("/api/v1/enroll/agent/beos-x64?token={code}")).await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (st, body) = get(format!("/api/v1/enroll/agent/linux-x64?token={code}")).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(body.as_ref(), build.as_slice());
+
+    // Downloading doesn't use up the single-use token; enrolling does.
+    let (_, toks) = call(&app, Method::GET, "/enrollment-tokens", auth, None).await;
+    assert_eq!(toks[0]["uses"], 0);
+    let _ = std::fs::remove_dir_all(dir);
+}

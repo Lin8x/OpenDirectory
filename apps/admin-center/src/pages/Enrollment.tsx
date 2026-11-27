@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, post } from "../lib/api";
@@ -10,8 +10,11 @@ import { ago, dateTime } from "../lib/format";
 import { Badge, Button, Callout, Card, CodeBlock, Dialog, Explain, Field, Input, OsIcon, PageHeader, Select, Tabs, useToast } from "../components/ui";
 import { OuSelect, ouPath } from "./Users";
 
-/** Agent binaries attached to every GitHub Release by the release workflow. */
-const RELEASES = "https://github.com/Lin8x/OpenDirectory/releases/latest/download";
+/** Agent builds this Management Server holds (Settings > Endpoint Agent updates). */
+interface AgentBuilds {
+  version: string;
+  builds: { platform: string; cached: boolean; sha256?: string }[];
+}
 
 export default function Enrollment() {
   const { me } = useSession();
@@ -20,7 +23,9 @@ export default function Enrollment() {
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [os, setOs] = useState<"windows" | "macos" | "linux">("windows");
-  const [source, setSource] = useState<"download" | "copied">("download");
+  const [source, setSource] = useState<"server" | "copied">("server");
+  const agents = useQuery<AgentBuilds>("/agent-updates");
+  const [preparing, setPreparing] = useState(false);
   // Watch for computers that enroll while this page is open.
   const [openedAt] = useState(() => Date.now());
   const endpoints = useQuery<Endpoint[]>("/endpoints", { poll: 4000 });
@@ -33,9 +38,17 @@ export default function Enrollment() {
   const fp = me?.server.tls_fingerprint;
   const fpArg = fp ? ` --fingerprint ${fp}` : "";
 
+  const sha = (platform: string) => agents.data?.builds.find((b) => b.platform === platform && b.cached)?.sha256;
+  const missing = (agents.data?.builds ?? []).filter((b) => !b.cached).map((b) => b.platform);
+
   const cmds = useMemo(() => {
     const t = tok?.token ?? "<TOKEN>";
     const enroll = `enroll --server ${url} --token ${t}${fpArg} --install`;
+    // The agent comes from this Management Server. Its certificate is
+    // self-signed (the agent pins it with --fingerprint), so the download skips
+    // the CA check and the SHA-256 of the build is verified instead.
+    const dl = (platform: string) => `${url}/api/v1/enroll/agent/${platform}?token=${t}`;
+    const shaOf = (platform: string) => sha(platform) ?? "<SHA-256>";
     if (source === "copied") {
       return {
         windows: `# In an elevated PowerShell (Run as Administrator), from the folder with opendirectory-agent.exe:\n.\\opendirectory-agent.exe ${enroll}`,
@@ -44,11 +57,32 @@ export default function Enrollment() {
       };
     }
     return {
-      windows: `# In an elevated PowerShell (Run as Administrator):\nInvoke-WebRequest ${RELEASES}/opendirectory-agent-windows-x64.exe -OutFile opendirectory-agent.exe\n.\\opendirectory-agent.exe ${enroll}`,
-      macos: `# In Terminal:\ncurl -fLo opendirectory-agent ${RELEASES}/opendirectory-agent-macos-$([ "$(uname -m)" = arm64 ] && echo arm64 || echo x64)\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
-      linux: `# In a terminal:\ncurl -fLo opendirectory-agent ${RELEASES}/opendirectory-agent-linux-x64\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
+      windows: [
+        "# In an elevated PowerShell (Run as Administrator):",
+        "[Net.ServicePointManager]::SecurityProtocol = 'Tls12'",
+        "[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }",
+        `Invoke-WebRequest -UseBasicParsing "${dl("windows-x64")}" -OutFile opendirectory-agent.exe`,
+        `if ((Get-FileHash opendirectory-agent.exe).Hash -ne "${shaOf("windows-x64")}") { throw "Checksum mismatch: don't run this file" }`,
+        `.\\opendirectory-agent.exe ${enroll}`,
+      ].join("\n"),
+      macos: [
+        "# In Terminal:",
+        `arch=$([ "$(uname -m)" = arm64 ] && echo arm64 || echo x64)`,
+        `curl -fksSLo opendirectory-agent "${url}/api/v1/enroll/agent/macos-$arch?token=${t}"`,
+        `[ "$arch" = arm64 ] && sum=${shaOf("macos-arm64")} || sum=${shaOf("macos-x64")}`,
+        `echo "$sum  opendirectory-agent" | shasum -a 256 -c - || exit 1`,
+        "chmod +x opendirectory-agent",
+        `sudo ./opendirectory-agent ${enroll}`,
+      ].join("\n"),
+      linux: [
+        "# In a terminal:",
+        `curl -fksSLo opendirectory-agent "${dl("linux-x64")}"`,
+        `echo "${shaOf("linux-x64")}  opendirectory-agent" | sha256sum -c - || exit 1`,
+        "chmod +x opendirectory-agent",
+        `sudo ./opendirectory-agent ${enroll}`,
+      ].join("\n"),
     };
-  }, [tok, url, fpArg, source]);
+  }, [tok, url, fpArg, source, agents.data]);
 
   return (
     <>
@@ -71,7 +105,7 @@ export default function Enrollment() {
           </Card>
           <Card title="2. Install the Endpoint Agent">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Button size="sm" variant={source === "download" ? "primary" : "ghost"} onClick={() => setSource("download")}>Download from GitHub</Button>
+              <Button size="sm" variant={source === "server" ? "primary" : "ghost"} onClick={() => setSource("server")}>Download from this server</Button>
               <Button size="sm" variant={source === "copied" ? "primary" : "ghost"} onClick={() => setSource("copied")}>I copied the file (offline)</Button>
             </div>
             <Tabs value={os} onChange={setOs} tabs={[
@@ -81,7 +115,22 @@ export default function Enrollment() {
             ]} />
             <CodeBlock code={cmds[os]} label={os === "windows" ? "PowerShell (Administrator)" : "Terminal"} />
             <div className="mt-3 space-y-2 text-sm text-ink-2">
-              {source === "copied" && <p>Get <code className="rounded bg-panel-2 px-1 font-mono text-xs">opendirectory-agent</code> for this OS from the GitHub release page on another computer and copy it over with a USB drive or file share. It's a single file with no dependencies.</p>}
+              {source === "server" && <p>The computer downloads the Endpoint Agent from this Management Server, checks its SHA-256 and enrolls. It needs to reach <code className="font-mono text-xs">{url}</code>, nothing else.</p>}
+              {source === "server" && missing.length > 0 && (
+                <Callout tone="warn" title="This server doesn't have every agent build yet">
+                  <p>Missing: {missing.join(", ")}. The server gets the builds that match its version once, then keeps them for enrollment and agent updates.</p>
+                  <Button size="sm" className="mt-2" loading={preparing} icon={<RefreshCw className="size-3.5" />} onClick={async () => {
+                    setPreparing(true);
+                    try {
+                      const res = await post<{ platform: string; ok: boolean; error?: string }[]>("/agent-updates/fetch");
+                      const bad = res.filter((x) => !x.ok);
+                      toast(bad.length ? "bad" : "good", bad.length ? `Couldn't get: ${bad.map((b) => b.platform).join(", ")}. ${bad[0]?.error ?? ""}` : "Every agent build is ready");
+                      void agents.reload();
+                    } finally { setPreparing(false); }
+                  }}>Get agent builds</Button>
+                </Callout>
+              )}
+              {source === "copied" && <p>Copy <code className="rounded bg-panel-2 px-1 font-mono text-xs">opendirectory-agent</code> for this OS to the computer with a USB drive or file share, for example from a computer that's already enrolled. It's a single file with no dependencies.</p>}
               {os === "windows" && <p>Installs the <b>OpenDirectory Endpoint Agent</b> Windows Service (automatic start, runs as SYSTEM, restarts on failure). Works on Windows 10 and 11 Home, Pro and Enterprise, and Windows Server.</p>}
               {os === "macos" && <p>Installs a launchd daemon at <code className="font-mono text-xs">/Library/LaunchDaemons/dev.opendirectory.agent.plist</code> that starts at boot and stays running.</p>}
               {os === "linux" && <p>Installs a systemd service <code className="font-mono text-xs">opendirectory-agent.service</code>, enabled at boot with automatic restart.</p>}

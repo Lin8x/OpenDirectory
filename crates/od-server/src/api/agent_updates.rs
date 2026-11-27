@@ -4,13 +4,18 @@
 //! release (or a mirror set with OD_AGENT_UPDATE_URL), or an admin uploads
 //! them for networks without internet access. Agents download from the
 //! Management Server over their pinned connection and check the SHA-256.
+//!
+//! The same cached builds are what new computers install: the enrollment
+//! command on the Enrollment page downloads the agent from this Management
+//! Server (`/enroll/agent/{platform}`, gated by the enrollment token) and checks
+//! its SHA-256 before running it.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
@@ -153,6 +158,46 @@ pub async fn download(
     let (path, sha, _) = cached(&s, &platform).ok_or_else(|| ApiError::not_found("Agent build"))?;
     let bytes = tokio::fs::read(path).await.map_err(anyhow::Error::from)?;
     Ok(([(header::CONTENT_TYPE, "application/octet-stream".to_string()), (header::ETAG, format!("\"{sha}\""))], bytes))
+}
+
+#[derive(Deserialize)]
+pub struct EnrollDownload {
+    token: String,
+}
+
+/// New computers download the agent here during enrollment. Needs a valid
+/// enrollment token (it isn't used up; enrolling does that). When this
+/// version's build isn't cached yet, the server fetches it once.
+pub async fn enroll_download(
+    State(s): State<AppState>,
+    Path(platform): Path<String>,
+    Query(q): Query<EnrollDownload>,
+) -> ApiResult<impl IntoResponse> {
+    if s.db.valid_token(q.token.trim())?.is_none() {
+        return Err(ApiError::forbidden("That enrollment token is invalid, expired or used up"));
+    }
+    if !PLATFORMS.contains(&platform.as_str()) {
+        return Err(ApiError::not_found("Agent platform"));
+    }
+    if cached(&s, &platform).is_none() {
+        fetch(&s, &platform).await.map_err(|e| {
+            tracing::warn!("couldn't fetch the Endpoint Agent build for {platform}: {e:#}");
+            ApiError::new(
+                StatusCode::NOT_FOUND,
+                "This Management Server doesn't have the Endpoint Agent build for that platform yet. Get it in Settings > Endpoint Agent updates",
+            )
+        })?;
+    }
+    let (path, sha, _) = cached(&s, &platform).ok_or_else(|| ApiError::not_found("Agent build"))?;
+    let bytes = tokio::fs::read(path).await.map_err(anyhow::Error::from)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", asset(&platform))),
+            (header::ETAG, format!("\"{sha}\"")),
+        ],
+        bytes,
+    ))
 }
 
 #[derive(Serialize)]

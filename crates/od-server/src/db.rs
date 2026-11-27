@@ -712,6 +712,18 @@ impl Db {
         )?;
         Ok(())
     }
+    /// The token if it's still valid, without using it up.
+    pub fn valid_token(&self, token: &str) -> Result<Option<EnrollmentToken>> {
+        let t = self
+            .lock()
+            .query_row(
+                "SELECT token, description, ou_id, uses, max_uses, expires_at, created_at, created_by FROM enrollment_tokens WHERE token = ?",
+                [token],
+                Self::map_token,
+            )
+            .optional()?;
+        Ok(t.filter(|t| !(t.expires_at.map(|e| e < Utc::now()).unwrap_or(false) || t.max_uses.map(|m| t.uses >= m).unwrap_or(false))))
+    }
     /// Atomically validate and consume one use of a token.
     pub fn consume_token(&self, token: &str) -> Result<Option<EnrollmentToken>> {
         let c = self.lock();
