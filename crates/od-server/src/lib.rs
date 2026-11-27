@@ -118,6 +118,7 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
         tracing::info!("Restored from backup; the previous data is in {}", kept.display());
     }
     let db = db::Db::open(&data_dir.join("directory.db"))?;
+    recovery::record_factory_reset(&db, data_dir);
     let sealer = crypto::Sealer::load_or_create(&data_dir.join("master.key"))?;
     Ok(AppState {
         db,

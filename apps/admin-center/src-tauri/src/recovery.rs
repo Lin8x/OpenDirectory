@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 /// First argument that turns the Admin Center binary into the elevated helper.
 pub const HELPER_ARG: &str = "--break-glass-reset";
+/// Same, for a factory reset of the hosted directory.
+pub const FACTORY_ARG: &str = "--factory-reset";
 const FILE_PREFIX: &str = "od-break-glass-";
 
 #[derive(Serialize, Deserialize)]
@@ -39,14 +41,18 @@ pub fn accounts(data_dir: &Path) -> Result<Vec<Account>, String> {
 /// reset and exit without opening a window.
 pub fn run_helper_if_requested() {
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) != Some(HELPER_ARG) {
-        return;
-    }
-    let (Some(data_dir), Some(user), Some(request)) = (args.get(2), args.get(3), args.get(4)) else {
-        std::process::exit(2);
+    let (outcome, request) = match (args.get(1).map(String::as_str), args.get(2), args.get(3), args.get(4)) {
+        (Some(HELPER_ARG), Some(data_dir), Some(user), Some(request)) => {
+            let request = PathBuf::from(request);
+            (helper(Path::new(data_dir), user, &request), request)
+        }
+        (Some(FACTORY_ARG), Some(data_dir), Some(request), None) => {
+            let request = PathBuf::from(request);
+            (factory_helper(Path::new(data_dir), &request), request)
+        }
+        (Some(HELPER_ARG | FACTORY_ARG), ..) => std::process::exit(2),
+        _ => return,
     };
-    let request = PathBuf::from(request);
-    let outcome = helper(Path::new(data_dir), user, &request);
     let result = result_path(&request);
     let text = match &outcome {
         Ok(()) => "ok".to_string(),
@@ -87,9 +93,32 @@ fn helper(data_dir: &Path, user: &str, request: &Path) -> Result<(), String> {
     .map_err(|e| format!("{e:#}"))
 }
 
+fn factory_helper(data_dir: &Path, request: &Path) -> Result<(), String> {
+    if !request.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(FILE_PREFIX)) {
+        return Err("Unexpected request file".into());
+    }
+    let _ = std::fs::remove_file(request);
+    od_server::recovery::factory_reset(data_dir, Some("the Admin Center".into())).map(|_| ()).map_err(|e| format!("{e:#}"))
+}
+
+/// Factory reset of the hosted directory after the OS administrator prompt.
+/// The caller must have stopped the server first.
+pub fn factory_reset(work_dir: &Path, data_dir: &Path) -> Result<(), String> {
+    run_elevated(work_dir, b"{}", |request| vec![FACTORY_ARG.to_string(), data_dir.display().to_string(), request.display().to_string()])
+}
+
 /// Reset `user`'s password after the OS administrator prompt. Blocks until
 /// the prompt is answered and the helper exits.
 pub fn reset(work_dir: &Path, data_dir: &Path, user: &str, password: &str) -> Result<(), String> {
+    let body = serde_json::to_vec(&Request { password: password.to_string() }).map_err(|e| e.to_string())?;
+    run_elevated(work_dir, &body, |request| {
+        vec![HELPER_ARG.to_string(), data_dir.display().to_string(), user.to_string(), request.display().to_string()]
+    })
+}
+
+/// Write `body` to a private request file, run this app elevated with the
+/// arguments `args(request)` and return what the helper reported.
+fn run_elevated(work_dir: &Path, body: &[u8], args: impl FnOnce(&Path) -> Vec<String>) -> Result<(), String> {
     let dir = work_dir.join("recovery");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     #[cfg(unix)]
@@ -100,12 +129,10 @@ pub fn reset(work_dir: &Path, data_dir: &Path, user: &str, password: &str) -> Re
     let request = dir.join(format!("{FILE_PREFIX}{}.json", od_server::crypto::random_token(8)));
     let result = result_path(&request);
     let _ = std::fs::remove_file(&result);
-    let body = serde_json::to_vec(&Request { password: password.to_string() }).map_err(|e| e.to_string())?;
-    od_server::crypto::write_private(&request, &body).map_err(|e| format!("{e:#}"))?;
+    od_server::crypto::write_private(&request, body).map_err(|e| format!("{e:#}"))?;
 
     let exe = helper_exe()?;
-    let args = [HELPER_ARG.to_string(), data_dir.display().to_string(), user.to_string(), request.display().to_string()];
-    let launched = elevate(&exe, &args);
+    let launched = elevate(&exe, &args(&request));
 
     let _ = std::fs::remove_file(&request);
     let outcome = std::fs::read_to_string(&result).ok();
@@ -114,7 +141,7 @@ pub fn reset(work_dir: &Path, data_dir: &Path, user: &str, password: &str) -> Re
     match outcome.as_deref() {
         Some("ok") => Ok(()),
         Some(msg) => Err(msg.to_string()),
-        None => Err("The reset didn't finish. Nothing was changed.".into()),
+        None => Err("The administrator step didn't finish. Nothing was changed.".into()),
     }
 }
 
@@ -153,7 +180,7 @@ fn elevate(exe: &Path, args: &[String]) -> Result<(), String> {
     let sh = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
     let cmd = std::iter::once(exe.display().to_string()).chain(args.iter().cloned()).map(|a| sh(&a)).collect::<Vec<_>>().join(" ");
     let script = format!(
-        "do shell script \"{}\" with prompt \"OpenDirectory needs an administrator to reset a Domain Admin's password.\" with administrator privileges",
+        "do shell script \"{}\" with prompt \"OpenDirectory needs an administrator of this computer to continue.\" with administrator privileges",
         cmd.replace('\\', "\\\\").replace('"', "\\\"")
     );
     let out = std::process::Command::new("/usr/bin/osascript").arg("-e").arg(script).output().map_err(|e| e.to_string())?;

@@ -10,6 +10,7 @@ pub mod directory;
 mod endpoints;
 pub mod integrations;
 mod lab;
+pub mod maintenance;
 mod mobile;
 mod netsvc;
 pub mod passwords;
@@ -116,6 +117,8 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/{id}/import", post(integrations::import))
         .route("/backups/test", post(backups::test_new))
         .route("/backups/download", post(backups::download_now))
+        .route("/maintenance/reset-settings", get(maintenance::settings_scope).post(maintenance::reset_settings))
+        .route("/maintenance/factory-reset", post(maintenance::authorize_factory_reset))
         .route("/backups/restore", post(backups::restore_upload).layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024)))
         .route("/replication", get(replication::status))
         .route("/replication/role", get(replication::role))

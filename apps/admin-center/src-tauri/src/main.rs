@@ -184,6 +184,34 @@ async fn recovery_reset(app: State<'_, Arc<App>>, username: String, password: St
         .map_err(|e| e.to_string())?
 }
 
+/// Factory reset of the directory hosted on this computer. Needs a ticket
+/// from `POST /maintenance/factory-reset` (admin re-authentication and the
+/// typed domain name), then the OS administrator prompt. Stops the server,
+/// erases its data and starts it again empty, which opens the setup wizard.
+#[tauri::command]
+async fn factory_reset(app: State<'_, Arc<App>>, ticket: String) -> Result<ConnectionState, String> {
+    let data_dir = local_data_dir(&app).await?;
+    let valid = od_server::db::Db::open(&data_dir.join("directory.db"))
+        .map(|db| od_server::api::maintenance::take_factory_reset_ticket(&db, &ticket))
+        .unwrap_or(false);
+    if !valid {
+        return Err("The confirmation expired. Start the factory reset again.".into());
+    }
+    let port = app.load().listen_port.unwrap_or(8443);
+    if let Some(server) = app.inner.lock().await.server.take() {
+        server.shutdown();
+    }
+    // Let the server's tasks finish and close the database (Windows can't
+    // delete open files).
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let work_dir = data_dir.parent().map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let dd = data_dir.clone();
+    let erased = tauri::async_runtime::spawn_blocking(move || recovery::factory_reset(&work_dir, &dd)).await.map_err(|e| e.to_string())?;
+    // Start again either way: empty after a reset, unchanged if it was cancelled.
+    let state = start_local(&app, port).await?;
+    erased.map(|_| state)
+}
+
 /// Saves an export (e.g. the audit log as CSV) to the user's Downloads folder
 /// and returns the full path. A numbered suffix avoids overwriting.
 #[tauri::command]
@@ -474,7 +502,8 @@ fn main() {
             shell_connect,
             shell_send,
             recovery_accounts,
-            recovery_reset
+            recovery_reset,
+            factory_reset
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenDirectory Admin Center");

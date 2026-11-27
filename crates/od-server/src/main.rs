@@ -49,6 +49,14 @@ enum Cmd {
     /// host itself (needs root or Administrator; not available over the network).
     #[command(subcommand)]
     Admin(AdminCmd),
+    /// Factory reset: erase the directory, GPOs, enrolled endpoints, keys and
+    /// certificates so the next start runs the setup wizard. Stop the
+    /// Management Server first. Needs root or Administrator.
+    FactoryReset {
+        /// Skip the prompt by giving the domain name being erased.
+        #[arg(long)]
+        confirm: Option<String>,
+    },
     /// Started by the Windows Service Control Manager.
     #[command(hide = true)]
     WindowsService,
@@ -139,6 +147,7 @@ fn main() -> anyhow::Result<()> {
                 &ResetOptions { username: user.clone(), password, enable: *enable, via: None },
             )
         }
+        Cmd::FactoryReset { confirm } => factory_reset(&args.data_dir, args.listen, confirm.clone()),
         Cmd::WindowsService => {
             #[cfg(windows)]
             {
@@ -151,6 +160,36 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
+}
+
+fn factory_reset(data_dir: &std::path::Path, listen: SocketAddr, confirm: Option<String>) -> anyhow::Result<()> {
+    let Some(domain) = od_server::recovery::directory_domain(data_dir)? else {
+        anyhow::bail!("No directory found in {}. Pass the Management Server's data directory with --data-dir.", data_dir.display());
+    };
+    if std::net::TcpListener::bind(listen).is_err() {
+        anyhow::bail!(
+            "Port {} is in use, so the Management Server looks like it's running. Stop it first (for example `sudo systemctl stop opendirectory-server`).",
+            listen.port()
+        );
+    }
+    let typed = match confirm {
+        Some(c) => c,
+        None => {
+            println!("This erases the directory {domain} in {}: users, groups, OUs, GPOs, enrolled endpoints, scripts, keys, certificates and the audit log.", data_dir.display());
+            println!("Enrolled endpoints stop being managed. Make a backup first if you might need any of it.");
+            print!("Type the domain name to confirm: ");
+            std::io::Write::flush(&mut std::io::stdout())?;
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            line
+        }
+    };
+    if typed.trim().to_lowercase() != domain {
+        anyhow::bail!("That isn't {domain}. Nothing was erased.");
+    }
+    od_server::recovery::factory_reset(data_dir, None)?;
+    println!("Factory reset complete. Start the Management Server and open the Admin Center to run the setup wizard.");
+    Ok(())
 }
 
 async fn run(config: od_server::ServerConfig) -> anyhow::Result<()> {

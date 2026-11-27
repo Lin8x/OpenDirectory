@@ -11,7 +11,7 @@
 use std::io::{BufRead, IsTerminal};
 use std::path::Path;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use od_core::Role;
 
 use crate::crypto::Sealer;
@@ -265,6 +265,68 @@ pub fn reset_password(data_dir: &Path, opts: &ResetOptions) -> Result<()> {
     }
     println!("If the sign-in screen says there were too many failed attempts, wait for the lockout to end or restart the server.");
     Ok(())
+}
+
+const RESET_NOTE: &str = "factory-reset.json";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ResetNote {
+    at: chrono::DateTime<chrono::Utc>,
+    actor: String,
+    previous_domain: String,
+    via: Option<String>,
+}
+
+/// The domain of the directory in `data_dir`, if there is one.
+pub fn directory_domain(data_dir: &Path) -> Result<Option<String>> {
+    let db_path = data_dir.join("directory.db");
+    if !db_path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(Db::open(&db_path)?.meta_get("domain")?.unwrap_or_default()))
+}
+
+/// Factory reset: erase everything in `data_dir` (directory, GPOs, endpoints,
+/// keys, certificates, backups staged there) so the next start runs the
+/// setup wizard. The Management Server must not be running on it. Needs
+/// root or an elevated Administrator. Leaves a note that the next start
+/// records as the first audit log entry. Returns the erased domain.
+pub fn factory_reset(data_dir: &Path, via: Option<String>) -> Result<String> {
+    if !is_elevated() {
+        bail!("A factory reset needs root (sudo) or an elevated Administrator on the Management Server host.");
+    }
+    let Some(domain) = directory_domain(data_dir)? else {
+        bail!("No directory found in {}. Pass the Management Server's data directory with --data-dir.", data_dir.display());
+    };
+    #[cfg(unix)]
+    let owner = {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(data_dir).map(|m| (m.uid(), m.gid()))?
+    };
+    for entry in std::fs::read_dir(data_dir)? {
+        let path = entry?.path();
+        let removed = if path.is_dir() && !path.is_symlink() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        removed.with_context(|| format!("remove {}", path.display()))?;
+    }
+    let note = ResetNote { at: chrono::Utc::now(), actor: operator(), previous_domain: domain.clone(), via };
+    let note_path = data_dir.join(RESET_NOTE);
+    std::fs::write(&note_path, serde_json::to_vec_pretty(&note)?)?;
+    #[cfg(unix)]
+    std::os::unix::fs::chown(&note_path, Some(owner.0), Some(owner.1))?;
+    Ok(domain)
+}
+
+/// Called at startup: record a factory reset done while the server was
+/// stopped as the new directory's first audit log entry.
+pub fn record_factory_reset(db: &Db, data_dir: &Path) {
+    let path = data_dir.join(RESET_NOTE);
+    let Ok(raw) = std::fs::read(&path) else { return };
+    if let Ok(n) = serde_json::from_slice::<ResetNote>(&raw) {
+        let via = n.via.map(|v| format!(" from {v}")).unwrap_or_default();
+        let details = format!("Factory reset{via} at {}; the previous directory and its audit log were erased", n.at.to_rfc3339());
+        db.audit(&n.actor, "domain.factory_reset", &n.previous_domain, &details);
+    }
+    let _ = std::fs::remove_file(&path);
 }
 
 #[cfg(test)]
