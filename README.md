@@ -13,8 +13,8 @@ Install the **Admin Center**, the desktop app you manage everything from. Every 
 ### Windows
 
 <p>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-windows-x64-setup.exe"><img alt="Download now (from GitHub): Windows .exe" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.exe-0078D4?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOFYyMkwwIDIwLjZ6TTEwLjkgMTIuNkgyNFYyNGwtMTMuMS0xLjl6Ii8+PC9zdmc+Cg==&logoColor=white&labelColor=24292f"></a>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-windows-x64.msi"><img alt="Download now (from GitHub): Windows .msi" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.msi-0078D4?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOFYyMkwwIDIwLjZ6TTEwLjkgMTIuNkgyNFYyNGwtMTMuMS0xLjl6Ii8+PC9zdmc+Cg==&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-windows-x64-setup.exe"><img alt="Download now (from GitHub): Windows .exe" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.exe-0078D4?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOFYyMkwwIDIwLjZ6TTEwLjkgMTIuNkgyNFYyNGwtMTMuMS0xLjl6Ii8+PC9zdmc+Cg==&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-windows-x64.msi"><img alt="Download now (from GitHub): Windows .msi" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.msi-0078D4?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOFYyMkwwIDIwLjZ6TTEwLjkgMTIuNkgyNFYyNGwtMTMuMS0xLjl6Ii8+PC9zdmc+Cg==&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
 </p>
 
 One-line install (PowerShell, as your usual user):
@@ -28,7 +28,7 @@ Windows 10 and 11, x64. Choose the `.msi` for Group Policy Software Installation
 ### macOS
 
 <p>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-macos-universal.dmg"><img alt="Download now (from GitHub): macOS .dmg" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.dmg-000000?logo=apple&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-macos-universal.dmg"><img alt="Download now (from GitHub): macOS .dmg" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.dmg-000000?logo=apple&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
 </p>
 
 One-line install:
@@ -48,12 +48,12 @@ Universal build for Apple silicon and Intel Macs.
 ### Linux
 
 <p>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-amd64.deb"><img alt="Download now (from GitHub): Linux .deb" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.deb-A81D33?logo=debian&logoColor=white&labelColor=24292f"></a>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.rpm"><img alt="Download now (from GitHub): Linux .rpm" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.rpm-294172?logo=fedora&logoColor=white&labelColor=24292f"></a>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.pkg.tar.zst"><img alt="Download now (from GitHub): Arch Linux .pkg.tar.zst" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.pkg.tar.zst-1793D1?logo=archlinux&logoColor=white&labelColor=24292f"></a>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.AppImage"><img alt="Download now (from GitHub): Linux .AppImage" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.AppImage-2F3136?logo=linux&logoColor=white&labelColor=24292f"></a>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.flatpak"><img alt="Download now (from GitHub): Linux .flatpak" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.flatpak-4A90D9?logo=flathub&logoColor=white&labelColor=24292f"></a>
-<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-amd64.snap"><img alt="Download now (from GitHub): Linux .snap" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.snap-82BEA0?logo=snapcraft&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-amd64.deb"><img alt="Download now (from GitHub): Linux .deb" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.deb-A81D33?logo=debian&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.rpm"><img alt="Download now (from GitHub): Linux .rpm" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.rpm-294172?logo=fedora&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.pkg.tar.zst"><img alt="Download now (from GitHub): Arch Linux .pkg.tar.zst" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.pkg.tar.zst-1793D1?logo=archlinux&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.AppImage"><img alt="Download now (from GitHub): Linux .AppImage" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.AppImage-2F3136?logo=linux&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.flatpak"><img alt="Download now (from GitHub): Linux .flatpak" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.flatpak-4A90D9?logo=flathub&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-amd64.snap"><img alt="Download now (from GitHub): Linux .snap" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.snap-82BEA0?logo=snapcraft&style=for-the-badge&logoColor=white&labelColor=24292f"></a>
 </p>
 
 One-line install. It picks the `.deb`, `.rpm`, Arch package or AppImage for your distribution, and on apt, dnf and zypper systems it adds the OpenDirectory repository so updates arrive with your other updates:
