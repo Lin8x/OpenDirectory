@@ -10,6 +10,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      repackage:
+        description: "Only rebuild the packages, checksums and repositories for this existing release tag (e.g. v0.12.0)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -28,12 +33,22 @@ jobs:
     outputs:
       tag: ${{ steps.v.outputs.tag }}
       release: ${{ steps.v.outputs.release }}
+      package: ${{ steps.v.outputs.package }}
     steps:
       - uses: actions/checkout@v4
       - id: v
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPACKAGE: ${{ inputs.repackage }}
         run: |
+          if [ -n "$REPACKAGE" ]; then
+            gh release view "$REPACKAGE" --repo "${{ github.repository }}" >/dev/null
+            echo "tag=$REPACKAGE" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "package=true" >> "$GITHUB_OUTPUT"
+            echo "Repackaging $REPACKAGE"
+            exit 0
+          fi
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           tag="v$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -42,6 +57,7 @@ jobs:
             echo "$tag is already released; nothing to do."
           else
             echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "package=true" >> "$GITHUB_OUTPUT"
             echo "Releasing $tag"
           fi
 
@@ -95,8 +111,9 @@ jobs:
           tagName: ${{ needs.plan.outputs.tag }}
           releaseName: OpenDirectory ${{ needs.plan.outputs.tag }}
           releaseBody: |
-            Install the **Admin Center** for your OS from the files below (`.msi`/`-setup.exe` for Windows, `.dmg` for macOS, `.deb`/`.rpm`/`.AppImage` for Linux).
-            The **Endpoint Agent**, **Management Server** and **od CLI** binaries are attached as `opendirectory-agent-*`, `opendirectory-server-*` and `od-*`.
+            **Admin Center:** see [Download](https://github.com/${{ github.repository }}#download) for one-line installs, package managers and per-OS buttons. Installers below are `OpenDirectory-AdminCenter-*`: `.msi` or `-setup.exe` for Windows, `.dmg` for macOS, and `.deb`, `.rpm`, `.pkg.tar.zst` (Arch), `.AppImage`, `.snap` or `.flatpak` for Linux.
+            **Endpoint Agent** fleet packages: `OpenDirectory-Agent-windows-x64.msi` (silent install with `SERVER`, `TOKEN` and `FINGERPRINT`), `OpenDirectory-Agent-macos-universal.pkg`, and `opendirectory-agent-linux-*` `.deb`, `.rpm` and `.pkg.tar.zst`. The **Management Server** and **od CLI** come as raw binaries (`opendirectory-server-*`, `od-*`) and Linux packages (`opendirectory-server-*`, `opendirectory-cli-*`).
+            Check downloads against `SHA256SUMS`.
 
             Installers are not code-signed yet: Windows SmartScreen will ask you to confirm ("More info" → "Run anyway"), and on macOS right-click the app and choose Open the first time.
             Existing installs offer this update automatically when the Admin Center opens.
@@ -146,3 +163,237 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ needs.plan.outputs.tag }}" out/* --clobber --repo "${{ github.repository }}"
+
+  # ---------------------------------------------------------------- packages
+  # Everything below repackages what the jobs above attached, so a failure
+  # here never blocks the core release.
+
+  linux-packages:
+    name: Linux packages and stable download names
+    needs: [plan, admin-center, binaries]
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.package == 'true' }}
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nfpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+      - name: Download release assets
+        run: |
+          mkdir -p in out
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir in \
+            -p 'OpenDirectory.Admin.Center*' -p 'opendirectory-agent-linux-x64' \
+            -p 'opendirectory-server-linux-x64' -p 'od-linux-x64'
+          ls -l in
+      - name: Stable names for the Admin Center installers
+        # releases/latest/download/<name> then always serves the newest build,
+        # which the README buttons and install scripts rely on.
+        working-directory: in
+        run: |
+          v=${TAG#v}
+          cp "OpenDirectory.Admin.Center_${v}_x64-setup.exe" ../out/OpenDirectory-AdminCenter-windows-x64-setup.exe
+          cp "OpenDirectory.Admin.Center_${v}_x64_en-US.msi" ../out/OpenDirectory-AdminCenter-windows-x64.msi
+          cp "OpenDirectory.Admin.Center_${v}_universal.dmg" ../out/OpenDirectory-AdminCenter-macos-universal.dmg
+          cp "OpenDirectory.Admin.Center_${v}_amd64.deb" ../out/OpenDirectory-AdminCenter-linux-amd64.deb
+          cp "OpenDirectory.Admin.Center-${v}-1.x86_64.rpm" ../out/OpenDirectory-AdminCenter-linux-x86_64.rpm
+          cp "OpenDirectory.Admin.Center_${v}_amd64.AppImage" ../out/OpenDirectory-AdminCenter-linux-x86_64.AppImage
+      - name: Admin Center Arch Linux package
+        run: packaging/linux/build-admin-center-arch.sh "$TAG" out/OpenDirectory-AdminCenter-linux-amd64.deb out
+      - name: Agent, server and CLI packages (.deb, .rpm, Arch)
+        run: packaging/linux/build-packages.sh "$TAG" in out
+      - name: Install scripts
+        run: cp packaging/install/install.sh packaging/install/install.ps1 out/
+      - name: Attach to the release
+        run: gh release upload "$TAG" out/* --clobber --repo "${{ github.repository }}"
+
+  agent-msi:
+    name: Endpoint Agent .msi
+    needs: [plan, binaries]
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.package == 'true' }}
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: Build
+        shell: pwsh
+        run: |
+          gh release download $env:TAG --repo "${{ github.repository }}" --dir in -p 'opendirectory-agent-windows-x64.exe'
+          ./packaging/windows/build-agent-msi.ps1 -Version $env:TAG -AgentExe in/opendirectory-agent-windows-x64.exe -Out out/OpenDirectory-Agent-windows-x64.msi
+      - name: Attach to the release
+        shell: bash
+        run: gh release upload "$TAG" out/OpenDirectory-Agent-windows-x64.msi --clobber --repo "${{ github.repository }}"
+
+  agent-pkg:
+    name: Endpoint Agent .pkg
+    needs: [plan, binaries]
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.package == 'true' }}
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir in \
+            -p 'opendirectory-agent-macos-arm64' -p 'opendirectory-agent-macos-x64'
+          packaging/macos/build-agent-pkg.sh "$TAG" in/opendirectory-agent-macos-arm64 in/opendirectory-agent-macos-x64 out/OpenDirectory-Agent-macos-universal.pkg
+      - name: Attach to the release
+        run: gh release upload "$TAG" out/OpenDirectory-Agent-macos-universal.pkg --clobber --repo "${{ github.repository }}"
+
+  snap:
+    name: Admin Center Snap
+    needs: [plan, linux-packages]
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.package == 'true' }}
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          gh release download "$TAG" --repo "${{ github.repository }}" --dir packaging/snap -p 'OpenDirectory-AdminCenter-linux-amd64.deb'
+          mv packaging/snap/OpenDirectory-AdminCenter-linux-amd64.deb packaging/snap/admin-center.deb
+          cp apps/admin-center/src-tauri/icons/icon.png packaging/snap/icon.png
+          sed -i "s/^version: .*/version: \"${TAG#v}\"/" packaging/snap/snapcraft.yaml
+      - uses: snapcore/action-build@v1
+        id: build
+        with:
+          path: packaging/snap
+      - name: Attach to the release
+        run: |
+          cp "${{ steps.build.outputs.snap }}" OpenDirectory-AdminCenter-linux-amd64.snap
+          gh release upload "$TAG" OpenDirectory-AdminCenter-linux-amd64.snap --clobber --repo "${{ github.repository }}"
+      - name: Publish to the Snap Store
+        if: env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        uses: snapcore/action-publish@v1
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: stable
+
+  flatpak:
+    name: Admin Center Flatpak
+    needs: [plan, linux-packages]
+    if: ${{ !failure() && !cancelled() && needs.plan.outputs.package == 'true' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-47
+      options: --privileged
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render the manifest for this release
+        run: |
+          mkdir -p assets
+          curl -fsSL -o assets/OpenDirectory-AdminCenter-linux-amd64.deb \
+            "https://github.com/${{ github.repository }}/releases/download/$TAG/OpenDirectory-AdminCenter-linux-amd64.deb"
+          packaging/render-manifests.sh "$TAG" assets rendered
+          git clone --depth 1 https://github.com/flathub/shared-modules rendered/flatpak/shared-modules
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: rendered/flatpak/io.github.lin8x.OpenDirectory.yml
+          bundle: OpenDirectory-AdminCenter-linux-x86_64.flatpak
+          upload-artifact: false
+          cache: false
+      # The container has no gh CLI; the publish job attaches the bundle.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: OpenDirectory-AdminCenter-linux-x86_64.flatpak
+
+  publish:
+    name: Checksums, store manifests, Homebrew and package repositories
+    needs: [plan, linux-packages, agent-msi, agent-pkg, snap, flatpak]
+    if: ${{ always() && needs.plan.outputs.package == 'true' && needs.linux-packages.result == 'success' }}
+    runs-on: ubuntu-22.04
+    outputs:
+      repos: ${{ steps.repos.outputs.built }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      REPO_SIGNING_KEY: ${{ secrets.REPO_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download every release asset
+        run: gh release download "$TAG" --repo "${{ github.repository }}" --dir assets --skip-existing
+      - name: Download the Flatpak bundle
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: flatpak
+          path: flatpak
+      - name: Attach the Flatpak bundle
+        if: hashFiles('flatpak/*.flatpak') != ''
+        run: |
+          gh release upload "$TAG" flatpak/*.flatpak --clobber --repo "${{ github.repository }}"
+          cp flatpak/*.flatpak assets/
+      - name: SHA256SUMS
+        working-directory: assets
+        run: |
+          rm -f SHA256SUMS store-manifests.tar.gz
+          sha256sum -- * > ../SHA256SUMS
+          cat ../SHA256SUMS
+      - name: Store and package-manager manifests
+        run: |
+          packaging/render-manifests.sh "$TAG" assets store-manifests
+          tar -czf store-manifests.tar.gz -C store-manifests .
+      - name: Attach to the release
+        run: gh release upload "$TAG" SHA256SUMS store-manifests.tar.gz --clobber --repo "${{ github.repository }}"
+      - name: Update the Homebrew tap
+        if: env.HOMEBREW_TAP_TOKEN != ''
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Lin8x/homebrew-opendirectory.git" tap
+          mkdir -p tap/Casks
+          cp store-manifests/homebrew/Casks/*.rb tap/Casks/
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks
+          git diff --cached --quiet || git commit -m "opendirectory-admin-center ${TAG#v}"
+          git push
+      - name: Build the APT and DNF repositories
+        id: repos
+        if: env.REPO_SIGNING_KEY != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils createrepo-c
+          mkdir -p pkgs
+          cp assets/OpenDirectory-AdminCenter-linux-amd64.deb assets/OpenDirectory-AdminCenter-linux-x86_64.rpm \
+            assets/opendirectory-*-linux-amd64.deb assets/opendirectory-*-linux-x86_64.rpm pkgs/
+          packaging/repo/build-repos.sh pkgs site
+          cp packaging/install/install.sh packaging/install/install.ps1 site/
+          printf '<!doctype html><meta charset="utf-8"><title>OpenDirectory packages</title><meta http-equiv="refresh" content="0; url=https://github.com/%s#download"><a href="https://github.com/%s#download">OpenDirectory downloads</a>\n' \
+            "${{ github.repository }}" "${{ github.repository }}" > site/index.html
+          echo "built=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.repos.outputs.built == 'true'
+        with:
+          path: site
+
+  pages:
+    name: Deploy the package repositories to GitHub Pages
+    needs: publish
+    if: ${{ always() && needs.publish.outputs.repos == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deploy
