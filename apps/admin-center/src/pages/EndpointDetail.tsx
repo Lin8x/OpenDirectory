@@ -10,6 +10,7 @@ import { OuSelect } from "./Users";
 import { JobRow } from "./Jobs";
 import { RemoteShell } from "../components/RemoteShell";
 import { RemoteDesktop } from "../components/RemoteDesktop";
+import { RemoteViewer } from "../components/RemoteViewer";
 import { HelpDeskChat } from "../components/HelpDeskChat";
 import { ManageTab } from "../components/manage/Manage";
 import { Dialog, Input } from "../components/ui";
@@ -121,7 +122,7 @@ export default function EndpointDetail() {
       {tab === "policy" && <PolicyTab e={e} />}
       {tab === "manage" && <ManageTab endpoint={e} />}
       {tab === "scripts" && <ScriptsTab e={e} />}
-      {tab === "shell" && <div className="space-y-5"><RemoteShell endpoint={e} /><RemoteDesktop endpoint={e} /></div>}
+      {tab === "shell" && <div className="space-y-5"><RemoteViewer endpoint={e} /><RemoteShell endpoint={e} /><RemoteDesktop endpoint={e} /></div>}
 
       <Confirm open={confirm} onClose={() => setConfirm(false)} danger title={`Retire ${e.hostname}?`} confirmLabel="Retire endpoint"
         body="The agent's credentials are revoked and the endpoint is removed from the directory. Settings and accounts already applied stay on the computer. To manage it again, enroll it with a new token."
@@ -256,7 +257,7 @@ function ScriptsTab({ e }: { e: Endpoint }) {
   );
 }
 
-function LapsCard({ id }: { id: string }) {
+export function LapsCard({ id }: { id: string }) {
   const toast = useToast();
   const [v, setV] = useState<{ account: string; password: string; previous_password: string | null; rotated_at: string; rotation_pending: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);

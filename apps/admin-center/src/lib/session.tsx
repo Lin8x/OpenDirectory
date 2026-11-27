@@ -1,11 +1,30 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { desktop, get, getToken, isDesktop, post, setToken, setUnauthorizedHandler, type ConnectionState } from "./api";
+import { desktop, get, getToken, isDesktop, post, setMfaEnrollmentHandler, setToken, setUnauthorizedHandler, type ConnectionState } from "./api";
 import type { ServerInfo, User } from "./types";
 import { useLocalStorage } from "./hooks";
 
-export type Phase = "loading" | "connect" | "unreachable" | "setup" | "login" | "ready";
+export type Phase = "loading" | "connect" | "unreachable" | "setup" | "login" | "mfa" | "ready";
 
-interface Me { user: User; organization: string | null; domain: string | null; server: ServerInfo }
+/** Delegable permissions (see Delegation of Control). */
+export type Permission =
+  | "view_endpoints" | "remote_desktop" | "remote_shell" | "endpoint_actions" | "run_scripts" | "read_laps" | "help_desk"
+  | "view_users" | "reset_passwords" | "manage_services" | "manage_software" | "manage_processes" | "manage_containers";
+
+export interface Me {
+  user: User; organization: string | null; domain: string | null; server: ServerInfo;
+  /** False for delegated operators, who get the operator console. */
+  domain_admin: boolean;
+  permissions: Permission[];
+  delegations: { id: string; name: string; permissions: Permission[]; expires_at: string | null }[];
+  mfa_enabled: boolean;
+  mfa_enrollment_required: boolean;
+}
+
+/** Whether the signed-in account holds a permission anywhere in its scope. */
+export function useCan() {
+  const { me } = useSession();
+  return (p: Permission) => !!me && (me.domain_admin || me.permissions.includes(p));
+}
 interface SetupInfo { needs_setup: boolean; organization: string | null; domain: string | null; server: ServerInfo }
 
 interface SessionCtx {
@@ -49,8 +68,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     if (!getToken()) { setPhase("login"); return; }
     try {
-      setMe(await get<Me>("/auth/me"));
-      setPhase("ready");
+      const m = await get<Me>("/auth/me");
+      setMe(m);
+      setPhase(m.mfa_enrollment_required ? "mfa" : "ready");
     } catch {
       setToken(null);
       setPhase("login");
@@ -59,6 +79,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => { setToken(null); setMe(null); setPhase("login"); });
+    setMfaEnrollmentHandler(() => setPhase("mfa"));
     void refresh();
   }, [refresh]);
 

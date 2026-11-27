@@ -1,10 +1,15 @@
-# OpenDirectory Management Server + web Admin Center.
+# OpenDirectory Management Server + web console (Admin Center in the browser).
 #
-#   docker compose up -d
+#   OD_PUBLIC_HOST=192.168.1.10 docker compose up -d
 #
-# Open https://<host>:8443, accept the self-signed certificate (or set
-# OD_TLS_CERT/OD_TLS_KEY), and create your domain. Works as a Portainer stack
-# too: paste this file into Stacks > Add stack. See docs/DOCKER.md.
+# Then open https://<host>:8443 in any browser on your network, accept the
+# self-signed certificate (or set OD_TLS_CERT/OD_TLS_KEY), and create your
+# domain (or sign in). Works as a Portainer stack too. See docs/DOCKER.md.
+#
+# Two services:
+#   opendirectory  the Management Server, API and web console (port 8443)
+#   guacd          Apache Guacamole's proxy daemon, for Remote Desktop (RDP)
+#                  in the browser. It's only reachable inside this stack.
 services:
   opendirectory:
     # Builds the image from this repository. Once a published image exists
@@ -12,18 +17,34 @@ services:
     build: .
     image: opendirectory:local
     container_name: opendirectory
+    hostname: opendirectory
     restart: unless-stopped
+    depends_on:
+      - guacd
     ports:
+      # Web console, Admin Center, od CLI and Endpoint Agents on the LAN.
       - "8443:8443"
+      # Internet Gateway for agents outside your network (agents only, mutual
+      # TLS). Turn it on in the console under Internet Gateway, then uncomment.
+      # - "8444:8444"
     environment:
-      # Host name or IP that endpoints use to reach this server (shown in enrollment commands).
+      # Host name or IP that endpoints and browsers use to reach this server.
       OD_PUBLIC_HOST: ${OD_PUBLIC_HOST:-}
+      # Browser RDP: where guacd is, and how guacd reaches this container back.
+      OD_GUACD: guacd:4822
+      OD_GUACD_CALLBACK: opendirectory
       # Optional: your own certificate instead of the self-signed one.
       # OD_TLS_CERT: /certs/fullchain.pem
       # OD_TLS_KEY: /certs/privkey.pem
     volumes:
       - opendirectory-data:/var/lib/opendirectory
       # - ./certs:/certs:ro
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: opendirectory-guacd
+    restart: unless-stopped
+    # No published ports: only the Management Server talks to it.
 
 volumes:
   opendirectory-data:

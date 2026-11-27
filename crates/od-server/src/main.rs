@@ -66,6 +66,12 @@ enum Cmd {
 enum AdminCmd {
     /// List the Domain Admins in this directory.
     List,
+    /// Remove an account's two-factor sign-in (lost phone). Signs out the
+    /// account's sessions and writes an audit log entry.
+    ResetMfa {
+        /// Logon name, e.g. `admin`, `CORP\admin` or `admin@corp.example.com`.
+        user: String,
+    },
     /// Reset a Domain Admin's password when nobody can sign in to the Admin
     /// Center. Signs out the account's sessions and writes an audit log entry.
     ResetPassword {
@@ -108,6 +114,7 @@ fn main() -> anyhow::Result<()> {
             std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("web"))).filter(|p| p.join("index.html").exists())
         }),
         tls_cert: args.tls_cert.clone().zip(args.tls_key.clone()),
+        web_assets: None,
     };
     let svc_args = || od_server::service::ServiceArgs {
         data_dir: std::path::absolute(&args.data_dir).unwrap_or(args.data_dir.clone()),
@@ -133,6 +140,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Cmd::Admin(AdminCmd::List) => od_server::recovery::list_admins(&args.data_dir),
+        Cmd::Admin(AdminCmd::ResetMfa { user }) => od_server::recovery::reset_mfa(&args.data_dir, user),
         Cmd::Admin(AdminCmd::ResetPassword { user, generate, password_stdin, enable }) => {
             use od_server::recovery::{NewPassword, ResetOptions};
             let password = if *generate {

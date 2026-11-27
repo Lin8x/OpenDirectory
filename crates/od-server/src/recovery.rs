@@ -329,6 +329,24 @@ pub fn record_factory_reset(db: &Db, data_dir: &Path) {
     let _ = std::fs::remove_file(&path);
 }
 
+/// `opendirectory-server admin reset-mfa <user>`: remove an account's
+/// authenticator app when its owner lost it and nobody else can reset it.
+pub fn reset_mfa(data_dir: &Path, username: &str) -> Result<()> {
+    let (db, _) = open(data_dir)?;
+    if crate::api::replication::Runtime::load(data_dir).is_replica() {
+        bail!("This server is a replica and copies its directory from the primary. Run this on the primary Management Server.");
+    }
+    let name = normalize(username);
+    let Some(user) = db.get_user_by_username(&name)? else {
+        bail!("There's no account named \"{name}\".");
+    };
+    db.set_mfa_secret(user.id, None)?;
+    db.delete_user_sessions(user.id)?;
+    db.audit(&operator(), "mfa.reset.break_glass", &user.username, "Authenticator removed on the Management Server console; signed out");
+    println!("Two-factor sign-in removed for {}. If the domain requires it, they set it up again at their next sign-in.", user.username);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -19,6 +19,7 @@ async fn agents_use_the_gateway_with_device_certificates() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

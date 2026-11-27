@@ -16,6 +16,7 @@ async fn agent_updates_follow_the_rollout_ring() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

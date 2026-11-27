@@ -36,7 +36,7 @@ ENV OD_DATA_DIR=/var/lib/opendirectory \
     OD_LISTEN=0.0.0.0:8443 \
     OD_WEB_UI=/usr/share/opendirectory/web
 VOLUME ["/var/lib/opendirectory"]
-EXPOSE 8443
+EXPOSE 8443 8444
 USER opendirectory
 ENTRYPOINT ["/usr/bin/tini", "--", "opendirectory-server"]
 CMD ["run"]

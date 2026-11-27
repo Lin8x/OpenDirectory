@@ -28,6 +28,8 @@ mod linux {
     const EV_KEY: u16 = 1;
     const EV_REL: u16 = 2;
     const EV_ABS: u16 = 3;
+    const REL_X: u16 = 0;
+    const REL_Y: u16 = 1;
     const REL_HWHEEL: u16 = 6;
     const REL_WHEEL: u16 = 8;
     const ABS_X: u16 = 0;
@@ -135,6 +137,8 @@ mod linux {
                     }
                     ioctl(f, UI_SET_ABSBIT, ABS_X as u64)?;
                     ioctl(f, UI_SET_ABSBIT, ABS_Y as u64)?;
+                    ioctl(f, UI_SET_RELBIT, REL_X as u64)?;
+                    ioctl(f, UI_SET_RELBIT, REL_Y as u64)?;
                     ioctl(f, UI_SET_RELBIT, REL_WHEEL as u64)?;
                     ioctl(f, UI_SET_RELBIT, REL_HWHEEL as u64)?;
                     ioctl(f, UI_SET_PROPBIT, INPUT_PROP_DIRECT as u64)?;
@@ -150,6 +154,11 @@ mod linux {
                 InputEvent::Move { x, y } => {
                     self.ptr.emit(EV_ABS, ABS_X, (x.clamp(0.0, 1.0) * ABS_MAX as f64) as i32);
                     self.ptr.emit(EV_ABS, ABS_Y, (y.clamp(0.0, 1.0) * ABS_MAX as f64) as i32);
+                    self.ptr.sync();
+                }
+                InputEvent::MoveBy { dx, dy } => {
+                    self.ptr.emit(EV_REL, REL_X, dx.clamp(-2000.0, 2000.0) as i32);
+                    self.ptr.emit(EV_REL, REL_Y, dy.clamp(-2000.0, 2000.0) as i32);
                     self.ptr.sync();
                 }
                 InputEvent::Button { b, d } => {
@@ -263,6 +272,9 @@ mod win {
                     let ax = (x.clamp(0.0, 1.0) * 65535.0) as i32;
                     let ay = (y.clamp(0.0, 1.0) * 65535.0) as i32;
                     send(&[mouse(ax, ay, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)]);
+                }
+                InputEvent::MoveBy { dx, dy } => {
+                    send(&[mouse(dx.clamp(-2000.0, 2000.0) as i32, dy.clamp(-2000.0, 2000.0) as i32, 0, MOUSEEVENTF_MOVE)]);
                 }
                 InputEvent::Button { b, d } => {
                     let (flag, data) = match (b, d) {

@@ -18,6 +18,7 @@ async fn break_glass_reset_signs_in_and_is_audited() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();
@@ -71,6 +72,7 @@ async fn reset_settings_and_factory_reset_ticket() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

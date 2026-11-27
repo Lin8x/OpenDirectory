@@ -77,11 +77,18 @@
 - Internet Gateway: an agent-only listener with mutual TLS. A built-in Device Identity CA issues each agent a certificate bound to its endpoint; agents fall back to it off the LAN and can enroll through it.
 - Android Endpoint Agent (`apps/android-agent`): a 48 KB app with JobScheduler check-ins every 15 minutes, inventory and security status, the managed-device notice and help desk. Report-only: no Device Owner (Android Enterprise) yet, so it can't enforce settings, and it isn't built by CI yet.
 
+## Done (unreleased)
+
+- Delegation of Control: users or groups get scoped permissions (view, remote desktop, remote shell, actions, scripts, LAPS, help desk, users, password reset, and service, software, process and container management) over endpoints, OUs (with inheritance) or groups, with optional expiry. Delegated operators get their own console and see nothing outside their scope.
+- Two-factor sign-in (TOTP) with a domain policy to require it, Reset two-factor for admins and `admin reset-mfa` for break-glass.
+- Web console served by the desktop app's built-in server as well as standalone and Docker servers.
+- Remote desktop in the browser: a low-latency stream encoded on the endpoint's GPU (NVENC, AMF, Quick Sync, VAAPI, VideoToolbox, software fallback) with keyboard, mouse and game mode on Windows and Linux; RDP through guacd; VNC with noVNC.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 and macOS 14+, and of the Domain Controller role on a clean Ubuntu or Debian server. Ship signed installers.
 2. **Revert removed settings.** When a setting leaves a GPO, return the endpoint to its previous value.
 3. **Windows certificate store import** for auto-enrolled certificates, and EAP-TLS in the RADIUS server.
 4. **Over-the-air MDM.** Apple MDM (needs an APNs certificate) and Android Enterprise.
-5. **Delegated administration.** Roles narrower than Domain Admin (help desk, read-only), scoped to OUs.
+5. **Remote desktop follow-ups.** Audio in the low-latency stream, multi-monitor selection, keyboard and mouse control on macOS (the stream is view-only there today), and clipboard sync. Browser RDP through guacd still needs testing against real Windows hosts.
 7. **DHCP failover** between primary and replica, and automatic promotion with a witness.

@@ -1,6 +1,6 @@
 # 9. Everyday tasks and fixing common problems
 
-[Guide home](README.md) · Previous: [Walkthrough: your first computer](08-walkthrough-first-endpoint.md) · Next: [Glossary](glossary.md)
+[Guide home](README.md) · Previous: [Walkthrough: your first computer](08-walkthrough-first-endpoint.md) · Next: [The web console and delegated access](10-web-console-and-delegation.md)
 
 Short recipes for the things you'll do most often, then the problems people hit most and how to fix them.
 

@@ -26,6 +26,7 @@ async fn serves_zone_records_and_endpoints() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

@@ -8,7 +8,7 @@ import { JoinDialog } from "./Replication";
 import { BrandMark, useBranding } from "../lib/branding";
 import { Button, Callout, Field, Input, Select, Switch, cx } from "../components/ui";
 
-function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
+export function Frame({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="relative grid min-h-full place-items-center overflow-hidden px-6 py-10">
       <div className="pointer-events-none absolute -left-40 -top-40 size-[520px] rounded-full bg-accent/10 blur-3xl" />
@@ -241,15 +241,23 @@ export function LoginPage() {
   const [forgot, setForgot] = useState(false);
   const [u, setU] = useState("");
   const [p, setP] = useState("");
+  const [otp, setOtp] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
-      const r = await post<{ token: string }>("/auth/login", { username: u, password: p });
+      const r = await post<{ token: string }>("/auth/login", { username: u, password: p, ...(otp !== null ? { otp } : {}) });
       await signIn(r.token);
-    } catch (e) { setErr((e as Error).message); setBusy(false); }
+    } catch (e) {
+      // Accounts with two-factor sign-in get a second step.
+      if (e instanceof ApiError && e.code === "mfa_required") {
+        if (otp === null) { setOtp(""); setBusy(false); return; }
+        setOtp("");
+      }
+      setErr((e as Error).message); setBusy(false);
+    }
   };
   return (
     <Frame>
@@ -258,9 +266,14 @@ export function LoginPage() {
         <p className="mt-1 text-sm text-ink-2">{setup?.organization ?? "Your organization"} · <span className="text-ink-3">{setup?.domain}</span></p>
         <div className="mt-5 space-y-4">
           <Field label="Username"><Input value={u} onChange={(e) => setU(e.target.value)} autoFocus placeholder={`${setup?.domain?.split(".")[0]?.toUpperCase() ?? "DOMAIN"}\\username`} autoComplete="username" /></Field>
-          <Field label="Password"><Input type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></Field>
+          <Field label="Password"><Input type="password" value={p} onChange={(e) => { setP(e.target.value); setOtp(null); }} autoComplete="current-password" /></Field>
+          {otp !== null && (
+            <Field label="Authenticator code" hint="The 6-digit code from your authenticator app.">
+              <Input value={otp} onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="123456" />
+            </Field>
+          )}
           {err && <Callout tone="warn">{err}</Callout>}
-          <Button variant="primary" className="w-full" loading={busy} type="submit" disabled={!u || !p}>Sign in</Button>
+          <Button variant="primary" className="w-full" loading={busy} type="submit" disabled={!u || !p || (otp !== null && otp.length !== 6)}>{otp !== null ? "Verify" : "Sign in"}</Button>
         </div>
         <div className="mt-5 flex items-center justify-between border-t border-line pt-4 text-xs text-ink-3">
           <span className="flex items-center gap-1.5"><Laptop className="size-3.5" />{connection?.mode === "local" ? "Hosted on this computer" : connection?.url ?? "Development server"}</span>

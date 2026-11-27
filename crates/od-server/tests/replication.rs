@@ -14,6 +14,7 @@ async fn start(name: &str) -> (od_server::RunningServer, ServerTarget) {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

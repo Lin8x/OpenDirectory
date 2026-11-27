@@ -19,7 +19,7 @@ export function RemoteDesktop({ endpoint }: { endpoint: Endpoint }) {
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => () => { if (open) void invoke("tunnel_stop", { localPort: open.local }); }, [open]);
   if (!isDesktop) {
-    return <Card title="Remote desktop"><p className="text-sm text-ink-3">Remote desktop tunnels need the desktop Admin Center, which can open a local port for your RDP or VNC client. In a browser, use the Remote shell tab.</p></Card>;
+    return <Card title="Remote desktop with your own client"><p className="text-sm text-ink-3">To use your own RDP or VNC app through a local tunnel, use the desktop Admin Center. In a browser, use the in-browser remote desktop above.</p></Card>;
   }
   const start = async (s: { port: number; label: string; client: string }) => {
     setErr(null);

@@ -244,6 +244,9 @@ pub enum InputEvent {
     /// Pointer moved.
     #[serde(rename = "m")]
     Move { x: f64, y: f64 },
+    /// Relative pointer motion in pixels (pointer lock, for games).
+    #[serde(rename = "rm")]
+    MoveBy { dx: f64, dy: f64 },
     /// Button 0 left, 1 middle, 2 right, 3 back, 4 forward.
     #[serde(rename = "b")]
     Button { b: u8, d: bool },

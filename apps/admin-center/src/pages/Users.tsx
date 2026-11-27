@@ -181,6 +181,9 @@ function UserDrawer({ user, groups, ous, onClose, onChanged }: { user: User; gro
       actions={<>
         <Button size="sm" icon={<KeyRound className="size-3.5" />} onClick={() => setPwOpen(true)}>Reset password</Button>
         <Button size="sm" icon={user.enabled ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />} onClick={() => save({ enabled: !user.enabled }, user.enabled ? "Account disabled" : "Account enabled")}>{user.enabled ? "Disable" : "Enable"}</Button>
+        <Button size="sm" title="Remove their authenticator app (lost phone). They set it up again at the next sign-in if it's required." onClick={async () => {
+          try { await del(`/users/${user.id}/mfa`); toast("good", "Two-factor sign-in reset; they've been signed out"); } catch (e) { toast("bad", (e as Error).message); }
+        }}>Reset two-factor</Button>
       </>}>
       <div className="mb-4 flex flex-wrap gap-1.5">
         {user.enabled ? <Badge tone="good">Enabled</Badge> : <Badge>Disabled</Badge>}

@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "../lib/hooks";
 import {
   Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, Globe, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
-  BookMarked, KeyRound, LifeBuoy, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound, CopyPlus } from "lucide-react";
+  BookMarked, KeyRound, LifeBuoy, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, ShieldHalf, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound, CopyPlus } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
 import type { SearchHit } from "../lib/types";
@@ -18,6 +18,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
       { to: "/users", label: "Users", icon: <UsersIcon className="size-4" /> },
       { to: "/groups", label: "Security Groups", icon: <UsersRound className="size-4" /> },
       { to: "/ous", label: "Organizational Units", icon: <FolderTree className="size-4" /> },
+      { to: "/delegation", label: "Delegation of Control", icon: <ShieldHalf className="size-4" /> },
       { to: "/password-policies", label: "Password Policies", icon: <KeyRound className="size-4" /> },
       { to: "/recycle-bin", label: "Recycle Bin", icon: <Trash2 className="size-4" /> },
     ],
@@ -158,7 +159,7 @@ const QUICK = [
 
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
-  { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Mobile Devices", to: "/mobile" }, { label: "Enrollment", to: "/enroll" },
+  { label: "Organizational Units", to: "/ous" }, { label: "Delegation of Control (delegated admins)", to: "/delegation" }, { label: "Endpoints", to: "/endpoints" }, { label: "Mobile Devices", to: "/mobile" }, { label: "Enrollment", to: "/enroll" },
   { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Help Desk (chat with users)", to: "/helpdesk" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Domain Controller (Samba AD DC)", to: "/domain-controller" }, { label: "Replication & Failover (replica servers)", to: "/replication" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
   { label: "Learn", to: "/learn" }, { label: "Beginner's Guide", to: "/guide" }, { label: "Server & connection settings", to: "/settings" },
 ];

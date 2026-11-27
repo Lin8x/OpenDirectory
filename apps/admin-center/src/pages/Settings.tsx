@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { MfaCard } from "../components/Mfa";
 import { post, put, saveBinary, setToken } from "../lib/api";
 import { useQuery } from "../lib/hooks";
 import type { OrgUnit } from "../lib/types";
@@ -32,11 +33,13 @@ export default function Settings() {
         <Card title="Connect another Admin Center or od CLI">
           <div className="space-y-3">
             <CodeBlock label="Server address" code={s?.endpoint_url ?? ""} />
+            <CodeBlock label="Web console (open in any browser)" code={`${s?.endpoint_url ?? ""}/`} />
             {s?.tls_fingerprint && <CodeBlock label="TLS fingerprint" code={s.tls_fingerprint} />}
             <CodeBlock label="od CLI" code={`od login --server ${s?.endpoint_url} ${s?.tls_fingerprint ? `--fingerprint ${s.tls_fingerprint} ` : ""}--username ${me?.user.username}`} />
             <Explain term="fingerprint" />
           </div>
         </Card>
+        <MfaCard />
         <Card title="Preferences">
           <div className="space-y-4">
             <Switch checked={learn} onChange={setLearn} label="Learn mode: show explanations throughout the app" />

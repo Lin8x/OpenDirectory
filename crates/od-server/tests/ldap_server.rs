@@ -15,6 +15,7 @@ async fn ldap_bind_and_search_like_active_directory() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

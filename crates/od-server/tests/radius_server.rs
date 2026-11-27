@@ -39,6 +39,7 @@ async fn radius_pap_accepts_group_members_only() {
         public_host: Some("127.0.0.1".into()),
         web_ui: None,
         tls_cert: None,
+        web_assets: None,
     })
     .await
     .unwrap();

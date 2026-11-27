@@ -3,7 +3,10 @@ import { PrefsProvider, SessionProvider, useLearnMode, useSession } from "./lib/
 import ClassicShell from "./components/ClassicShell";
 import { Loading, ToastProvider } from "./components/ui";
 import Shell from "./components/Shell";
-import { ConnectPage, LoginPage, SetupWizard, UnreachablePage } from "./pages/Onboarding";
+import { ConnectPage, Frame as CenterFrame, LoginPage, SetupWizard, UnreachablePage } from "./pages/Onboarding";
+import { MfaRequired } from "./components/Mfa";
+import OperatorConsole from "./pages/Operator";
+import Delegation from "./pages/Delegation";
 import Overview from "./pages/Overview";
 import Users from "./pages/Users";
 import Groups from "./pages/Groups";
@@ -34,7 +37,7 @@ import { UpdatesProvider } from "./lib/updates";
 import { BrandingProvider } from "./lib/branding";
 
 function Gate() {
-  const { phase } = useSession();
+  const { phase, me } = useSession();
   const { ui } = useLearnMode();
   const Frame = ui === "classic" ? ClassicShell : Shell;
   switch (phase) {
@@ -43,7 +46,10 @@ function Gate() {
     case "unreachable": return <UnreachablePage />;
     case "setup": return <SetupWizard />;
     case "login": return <LoginPage />;
+    case "mfa": return <CenterFrame><MfaRequired /></CenterFrame>;
     case "ready":
+      // Delegated operators get a console with only what they were given.
+      if (me && !me.domain_admin) return <OperatorConsole />;
       return (
         <Frame>
           <Routes>
@@ -51,6 +57,7 @@ function Gate() {
             <Route path="/users" element={<Users />} />
             <Route path="/groups" element={<Groups />} />
             <Route path="/ous" element={<OrgUnits />} />
+            <Route path="/delegation" element={<Delegation />} />
             <Route path="/endpoints" element={<Endpoints />} />
             <Route path="/mobile" element={<Mobile />} />
             <Route path="/helpdesk" element={<HelpDesk />} />

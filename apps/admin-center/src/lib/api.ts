@@ -10,7 +10,8 @@ export const isDesktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" 
 const DEV_SERVER = (import.meta.env.VITE_OD_SERVER as string | undefined) ?? (import.meta.env.DEV ? "http://127.0.0.1:8080" : "");
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  /** Machine-readable reason, e.g. "mfa_required". */
+  constructor(public status: number, message: string, public code?: string) { super(message); }
 }
 
 let token: string | null = localStorage.getItem("od.session");
@@ -22,6 +23,8 @@ export function setToken(t: string | null) {
 }
 export function getToken() { return token; }
 export function setUnauthorizedHandler(fn: () => void) { onUnauthorized = fn; }
+let onMfaEnrollment: (() => void) | null = null;
+export function setMfaEnrollmentHandler(fn: () => void) { onMfaEnrollment = fn; }
 
 interface RawResponse { status: number; body: unknown }
 
@@ -49,8 +52,10 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   }
   if (res.status >= 200 && res.status < 300) return res.body as T;
   const msg = (res.body && typeof res.body === "object" && "error" in res.body) ? String((res.body as { error: unknown }).error) : `Request failed (${res.status})`;
+  const code = (res.body && typeof res.body === "object" && "code" in res.body) ? String((res.body as { code: unknown }).code) : undefined;
   if (res.status === 401 && token) onUnauthorized?.();
-  throw new ApiError(res.status, msg);
+  if (code === "mfa_enrollment_required") onMfaEnrollment?.();
+  throw new ApiError(res.status, msg, code);
 }
 
 /** Base URL of the API for WebSockets in the browser. */

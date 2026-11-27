@@ -46,7 +46,7 @@ One GPO applies through each platform's native mechanism (`net accounts`, `pwpol
 <td valign="top">
 
 ### Endpoint management
-Live inventory and compliance, a Script Library with 20 templates, patch management, remote shell, RDP/VNC/SSH tunnels and a help desk chat. No inbound ports needed.
+Live inventory and compliance, a Script Library with 20 templates, patch management, remote shell, remote desktop in the browser (a GPU-encoded low-latency stream for games and creative apps, plus RDP and VNC), RDP/VNC/SSH tunnels and a help desk chat. No inbound ports needed.
 
 </td>
 <td valign="top">
@@ -331,7 +331,7 @@ The Management Server can host the roles a Windows Server usually provides, each
 <details>
 <summary><b>Sign-in and break-glass recovery</b></summary>
 
-The Admin Center always asks Domain Admins to sign in, because it can run scripts, open remote shells and change Group Policy on every enrolled endpoint. The first Domain Admin is the account you create in the setup wizard; there is no default or generated password.
+The Admin Center always asks for a sign-in, because it can run scripts, open remote shells and change Group Policy on every enrolled endpoint. The first Domain Admin is the account you create in the setup wizard; there is no default or generated password. Two-factor sign-in with any authenticator app is built in, and a policy can require it. **Delegation of Control** lets accounts that aren't Domain Admins sign in and manage only the endpoints, OUs, groups and users delegated to them, optionally until a set time.
 
 If every Domain Admin is locked out and the directory is hosted in the Admin Center on this computer, click **Forgot password?** on the sign-in screen. Your operating system asks for an administrator password in its own prompt (polkit on Linux, UAC on Windows, the macOS authorization dialog), so OpenDirectory never sees it. Then you pick the Domain Admin and set a new password.
 
@@ -364,7 +364,7 @@ The reset follows the password policy, signs out the account's existing sessions
 
 <br>
 
-The Management Server can serve the Admin Center to any browser (`--web-ui <folder>`, or a `web` folder next to the binary). The Docker image does this out of the box:
+The Management Server serves the Admin Center to any browser: the **web console**, at the same address agents use (for example `https://192.168.1.10:8443/`). A directory hosted in the desktop Admin Center serves it too, so other computers can sign in with just a browser. Standalone servers use `--web-ui <folder>` or a `web` folder next to the binary. The Docker image does this out of the box, and its Compose file adds guacd for Remote Desktop in the browser:
 
 ```bash
 docker compose up -d     # builds the image from this repository and starts it on port 8443

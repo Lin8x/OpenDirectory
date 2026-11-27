@@ -24,6 +24,7 @@ Read these in order. Each one builds on the one before, and each takes about fiv
 7. [Walkthrough: install and create your domain](07-walkthrough-setup.md)
 8. [Walkthrough: enroll and manage your first computer](08-walkthrough-first-endpoint.md)
 9. [Everyday tasks and fixing common problems](09-everyday-tasks.md)
+10. [The web console, delegated access and remote desktop](10-web-console-and-delegation.md): manage from any browser, give people access to just some devices, and use a computer remotely, even for games.
 
 ## Reference
 

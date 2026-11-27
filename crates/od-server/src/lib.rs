@@ -58,7 +58,7 @@ pub struct ServerInfo {
     pub data_dir: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ServerConfig {
     pub data_dir: PathBuf,
     /// Address for Endpoint Agents and remote admins (TLS when enabled).
@@ -74,7 +74,14 @@ pub struct ServerConfig {
     pub web_ui: Option<PathBuf>,
     /// Use this certificate and key (PEM) instead of the self-signed one.
     pub tls_cert: Option<(PathBuf, PathBuf)>,
+    /// The web Admin Center from memory instead of a folder: the desktop
+    /// Admin Center passes its own embedded UI, so a directory hosted in the
+    /// app is also reachable from a browser on another computer.
+    pub web_assets: Option<AssetFn>,
 }
+
+/// Looks up a web UI file by path (e.g. `assets/index.js`): bytes and MIME type.
+pub type AssetFn = Arc<dyn Fn(&str) -> Option<(Vec<u8>, String)> + Send + Sync>;
 
 impl Default for ServerConfig {
     fn default() -> Self {
@@ -86,6 +93,7 @@ impl Default for ServerConfig {
             public_host: None,
             web_ui: None,
             tls_cert: None,
+            web_assets: None,
         }
     }
 }
@@ -177,19 +185,41 @@ pub fn router(state: AppState) -> Router {
 /// Serve the built Admin Center for browsers, with strict security headers.
 /// Unknown paths fall back to index.html (the UI routes on the URL hash).
 pub fn with_web_ui(app: Router, dir: &std::path::Path) -> Router {
-    use axum::http::{header, HeaderValue};
     use tower_http::services::{ServeDir, ServeFile};
+    app.merge(secure_headers(Router::new().fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))))))
+}
+
+/// Serve the web Admin Center from an in-memory asset lookup.
+pub fn with_web_assets(app: Router, assets: AssetFn) -> Router {
+    use axum::http::{header, StatusCode};
+    use axum::response::IntoResponse;
+    let ui = Router::new().fallback(move |uri: axum::http::Uri| {
+        let assets = assets.clone();
+        async move {
+            let path = uri.path().trim_start_matches('/');
+            let path = if path.is_empty() { "index.html" } else { path };
+            if path.starts_with("api/") {
+                return StatusCode::NOT_FOUND.into_response();
+            }
+            match assets(path).or_else(|| assets("index.html")) {
+                Some((bytes, mime)) => ([(header::CONTENT_TYPE, mime)], bytes).into_response(),
+                None => StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+    });
+    app.merge(secure_headers(ui))
+}
+
+fn secure_headers(ui: Router) -> Router {
+    use axum::http::{header, HeaderValue};
     use tower_http::set_header::SetResponseHeaderLayer;
-    let ui = Router::new()
-        .fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))))
-        .layer(SetResponseHeaderLayer::overriding(
+    ui.layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"),
+            HeaderValue::from_static("default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"),
         ))
         .layer(SetResponseHeaderLayer::overriding(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY")))
         .layer(SetResponseHeaderLayer::overriding(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
-        .layer(SetResponseHeaderLayer::overriding(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")));
-    app.merge(ui)
+        .layer(SetResponseHeaderLayer::overriding(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")))
 }
 
 fn detect_host() -> String {
@@ -249,6 +279,9 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     if let Some(dir) = config.web_ui.as_ref().filter(|d| d.join("index.html").exists()) {
         tracing::info!("Serving the Admin Center web UI from {}", dir.display());
         app = with_web_ui(app, dir);
+    } else if let Some(assets) = config.web_assets.clone() {
+        tracing::info!("Serving the built-in web Admin Center");
+        app = with_web_assets(app, assets);
     }
 
     let mut tasks = Vec::new();

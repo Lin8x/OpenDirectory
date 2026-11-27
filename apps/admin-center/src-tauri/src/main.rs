@@ -49,6 +49,9 @@ struct App {
     inner: Mutex<Inner>,
     config_path: PathBuf,
     data_dir: PathBuf,
+    /// This app's own UI, also served to browsers by a directory hosted here
+    /// (the web console), so other computers can sign in with a browser.
+    web_assets: od_server::AssetFn,
 }
 
 impl App {
@@ -76,6 +79,7 @@ async fn start_local(app: &App, port: u16) -> Result<ConnectionState, String> {
         public_host: None,
         web_ui: None,
         tls_cert: None,
+        web_assets: Some(app.web_assets.clone()),
     };
     let server = od_server::start(cfg).await.map_err(|e| {
         let msg = format!("{e:#}");
@@ -439,7 +443,14 @@ fn main() {
             }
             let config_dir = app.path().app_config_dir()?;
             let data_dir = app.path().app_data_dir()?.join("server");
-            let state = Arc::new(App { inner: Mutex::new(Inner::default()), config_path: config_dir.join("connection.json"), data_dir });
+            let resolver = app.asset_resolver();
+            let web_assets: od_server::AssetFn = Arc::new(move |path: &str| resolver.get(path.to_string()).map(|a| (a.bytes, a.mime_type)));
+            let state = Arc::new(App {
+                inner: Mutex::new(Inner::default()),
+                config_path: config_dir.join("connection.json"),
+                data_dir,
+                web_assets,
+            });
             app.manage(state.clone());
             app.manage(Arc::new(Shells::default()));
             app.manage(Arc::new(Tunnels::default()));
