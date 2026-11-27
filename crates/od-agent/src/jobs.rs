@@ -20,6 +20,20 @@ pub async fn run(job: &AgentJob) -> JobResult {
             JobResult { exit_code: Some(0), output: "Inventory will be sent with the next check-in".into(), success: true }
         }
         JobKind::RestartAgent => JobResult { exit_code: Some(0), output: "Agent restarting".into(), success: true },
+        JobKind::NotifyUser { title, message } => match crate::desktop::console_user().await {
+            None => JobResult { exit_code: None, output: "Nobody is signed in at this device's screen".into(), success: false },
+            Some(u) => {
+                if crate::desktop::notify(title, message).await {
+                    JobResult { exit_code: Some(0), output: format!("Shown to {}", u.name), success: true }
+                } else {
+                    JobResult {
+                        exit_code: None,
+                        output: format!("{} is signed in, but the message couldn't be shown", u.name),
+                        success: false,
+                    }
+                }
+            }
+        },
         JobKind::Unknown => {
             JobResult { exit_code: None, output: "This job type needs a newer Endpoint Agent; update the agent".into(), success: false }
         }

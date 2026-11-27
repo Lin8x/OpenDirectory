@@ -53,6 +53,9 @@ pub struct AgentState {
     /// The highest primary epoch seen.
     #[serde(default)]
     pub epoch: u64,
+    /// Managed-device notice acknowledgements, by user.
+    #[serde(default)]
+    pub notice_acks: BTreeMap<String, crate::enduser::NoticeAck>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -64,7 +64,15 @@ pub async fn checkin(
     let replica = s.replication.is_replica();
 
     let ou_parent: HashMap<Uuid, Option<Uuid>> = s.db.list_ous()?.into_iter().map(|o| (o.id, o.parent_id)).collect();
-    let eff = effective_settings(&s.db.list_policies()?, auth.ou_id, &ou_parent);
+    let endpoint = s.db.get_endpoint(auth.id)?;
+    let endpoint_os = endpoint.as_ref().map(|e| e.os);
+    let scope = match &endpoint {
+        Some(e) => od_core::policy::PolicyScope::endpoint(e),
+        None => od_core::policy::PolicyScope::ou(auth.ou_id),
+    };
+    let eff = effective_settings(&s.db.list_policies()?, scope, &ou_parent);
+    // Phones can't run scripts or hold local sign-in accounts.
+    let mobile = endpoint_os == Some(od_core::OsFamily::Android);
 
     // Resolve sign-in account settings into concrete accounts.
     let mut accounts: HashMap<Uuid, ManagedAccount> = HashMap::new();
@@ -72,9 +80,9 @@ pub async fn checkin(
     let users: HashMap<Uuid, od_core::User> = s.db.list_users()?.into_iter().map(|u| (u.id, u)).collect();
     let mut settings = Vec::new();
     let mut scripts = Vec::new();
-    let endpoint_os = s.db.get_endpoint(auth.id)?.map(|e| e.os);
     for es in eff {
         match es.setting {
+            Setting::RunScript { .. } | Setting::LocalAccounts { .. } if mobile => {}
             Setting::RunScript { script_id, trigger, params } => {
                 let Some(sc) = s.db.get_script(script_id)? else { continue };
                 if endpoint_os.map(|os| !sc.supports(os)).unwrap_or(false) {
@@ -140,7 +148,14 @@ pub async fn checkin(
             }
         }
     }
-    let (servers, epoch) = super::replication::servers_for_agents(&s);
+    let (mut servers, epoch) = super::replication::servers_for_agents(&s);
+    // The Internet Gateway is the last resort, after every LAN address.
+    if let Some(g) = crate::gateway::public_endpoint(&s) {
+        if servers.is_empty() {
+            servers.push(ServerEndpoint { url: s.info.endpoint_url.clone(), fingerprint: s.info.tls_fingerprint.clone(), primary: true });
+        }
+        servers.push(g);
+    }
     let mut accounts: Vec<ManagedAccount> = accounts.into_values().collect();
     accounts.sort_by(|a, b| a.username.cmp(&b.username));
     Ok(Json(CheckinResponse {
@@ -155,6 +170,7 @@ pub async fn checkin(
         servers,
         epoch,
         update: super::agent_updates::offer(&s, &req.agent_version, &req.platform, auth.ou_id, &ou_parent),
+        chat: s.db.chat_after(auth.id, req.chat_since.max(0), 100)?,
     }))
 }
 

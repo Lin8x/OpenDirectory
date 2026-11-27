@@ -26,7 +26,7 @@ impl LogonWatcher {
             return vec![];
         }
         self.last_poll = Some(Instant::now());
-        let now: BTreeSet<String> = inventory::collect().await.logged_in_users.into_iter().collect();
+        let now: BTreeSet<String> = inventory::logged_in_users().await.into_iter().collect();
         let fresh = match &self.known {
             Some(prev) => now.difference(prev).cloned().collect(),
             None => vec![],

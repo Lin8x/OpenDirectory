@@ -69,6 +69,14 @@
 - Version-aware check-ins: older agents get only the settings and jobs they understand; agents skip unknown ones.
 - Agent self-update from the Management Server with SHA-256 check, automatic rollback, and rollout rings (all, pilot OUs, off).
 
+## Done (v0.13)
+
+- Headless, low-footprint agent service: single-threaded runtime, below-normal CPU and I/O priority on every OS (`install --priority low|normal`), capped log file, and a lighter sign-in check. No tray or window, and not hidden: it runs under its own service name and `status` shows it.
+- End-user experience GPO settings: managed-device notice with recorded acknowledgement, remote session consent (off, notify, ask; unattended access), help desk chat, and remote tools on/off. A Message user action and a Help Desk page.
+- GPO links can target individual endpoints and filter by platform (like a WMI filter).
+- Internet Gateway: an agent-only listener with mutual TLS. A built-in Device Identity CA issues each agent a certificate bound to its endpoint; agents fall back to it off the LAN and can enroll through it.
+- Android Endpoint Agent (`apps/android-agent`): a 48 KB app with JobScheduler check-ins every 15 minutes, inventory and security status, the managed-device notice and help desk. Report-only: no Device Owner (Android Enterprise) yet, so it can't enforce settings, and it isn't built by CI yet.
+
 ## Next
 
 1. **Real-hardware validation** on Windows 10/11 and macOS 14+, and of the Domain Controller role on a clean Ubuntu or Debian server. Ship signed installers.

@@ -194,6 +194,7 @@ fn apply_plan(s: &AppState, plan: &od_core::baselines::Plan) -> ApiResult<(Optio
             targets: PolicyTargets {
                 all_endpoints: p.all_endpoints,
                 ou_ids: p.ou_links.iter().filter_map(|n| ou_ids.get(n).copied()).collect(),
+                ..Default::default()
             },
             settings: p.settings.clone(),
             created_at: now,
@@ -211,6 +212,7 @@ fn apply_plan(s: &AppState, plan: &od_core::baselines::Plan) -> ApiResult<(Optio
             targets: PolicyTargets {
                 all_endpoints: !pilot,
                 ou_ids: if pilot { ou_ids.get("Pilot").copied().into_iter().collect() } else { vec![] },
+                ..Default::default()
             },
             settings: vec![Setting::LocalAccounts { group_id: *gid, admin: plan.signin_admin }],
             created_at: now,

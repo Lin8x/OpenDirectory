@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS laps (
   endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE, account TEXT NOT NULL,
   password_sealed BLOB NOT NULL, previous_sealed BLOB, rotated_at TEXT NOT NULL, rotate_requested INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS helpdesk_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+  from_it INTEGER NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS helpdesk_by_endpoint ON helpdesk_messages(endpoint_id, id);
+CREATE TABLE IF NOT EXISTS device_certs (
+  fingerprint TEXT PRIMARY KEY, endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+  not_after TEXT NOT NULL, issued_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -684,6 +693,104 @@ impl Db {
         Ok(self.lock().execute("DELETE FROM endpoints WHERE id = ?", [id.to_string()])? > 0)
     }
 
+    // ---------- Internet Gateway device certificates ----------
+    /// Register a newly issued device certificate, keeping only it and the
+    /// one before (so a renewal can't lock a device out mid-way).
+    pub fn add_device_cert(&self, endpoint: Uuid, fingerprint: &str, not_after: DateTime<Utc>) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "DELETE FROM device_certs WHERE endpoint_id = ?1 AND fingerprint NOT IN
+               (SELECT fingerprint FROM device_certs WHERE endpoint_id = ?1 ORDER BY issued_at DESC LIMIT 1)",
+            [endpoint.to_string()],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO device_certs(fingerprint, endpoint_id, not_after, issued_at) VALUES(?, ?, ?, ?)",
+            rusqlite::params![fingerprint, endpoint.to_string(), ts(not_after), ts(Utc::now())],
+        )?;
+        Ok(())
+    }
+    pub fn device_cert_owner(&self, fingerprint: &str) -> Result<Option<Uuid>> {
+        let id: Option<String> = self
+            .lock()
+            .query_row(
+                "SELECT endpoint_id FROM device_certs WHERE fingerprint = ? AND not_after > ?",
+                [fingerprint, &ts(Utc::now())],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(id.map(uid))
+    }
+    pub fn device_cert_count(&self, endpoint: Uuid) -> Result<i64> {
+        Ok(self.lock().query_row("SELECT COUNT(*) FROM device_certs WHERE endpoint_id = ?", [endpoint.to_string()], |r| r.get(0))?)
+    }
+    pub fn device_cert_endpoints(&self) -> Result<i64> {
+        Ok(self.lock().query_row("SELECT COUNT(DISTINCT endpoint_id) FROM device_certs", [], |r| r.get(0))?)
+    }
+
+    // ---------- help desk ----------
+    pub fn add_chat(&self, endpoint: Uuid, from_it: bool, author: &str, text: &str) -> Result<od_core::protocol::ChatMessage> {
+        let at = Utc::now();
+        let conn = self.lock();
+        // Messages from IT start out read; the user's start out unread.
+        conn.execute(
+            "INSERT INTO helpdesk_messages(endpoint_id, from_it, author, body, at, read) VALUES(?, ?, ?, ?, ?, ?)",
+            rusqlite::params![endpoint.to_string(), from_it, author, text, ts(at), from_it],
+        )?;
+        Ok(od_core::protocol::ChatMessage { id: conn.last_insert_rowid(), from_it, author: author.into(), text: text.into(), at })
+    }
+    /// Messages for one endpoint after `since`, oldest first, at most `limit`
+    /// (the newest ones when there are more).
+    pub fn chat_after(&self, endpoint: Uuid, since: i64, limit: u32) -> Result<Vec<od_core::protocol::ChatMessage>> {
+        let conn = self.lock();
+        let mut st = conn.prepare(
+            "SELECT id, from_it, author, body, at FROM helpdesk_messages WHERE endpoint_id = ? AND id > ? ORDER BY id DESC LIMIT ?",
+        )?;
+        let mut v = st
+            .query_map(rusqlite::params![endpoint.to_string(), since, limit], |r| {
+                Ok(od_core::protocol::ChatMessage {
+                    id: r.get(0)?,
+                    from_it: r.get(1)?,
+                    author: r.get(2)?,
+                    text: r.get(3)?,
+                    at: req_ts(r.get(4)?),
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        v.reverse();
+        Ok(v)
+    }
+    pub fn mark_chat_read(&self, endpoint: Uuid) -> Result<()> {
+        self.lock().execute("UPDATE helpdesk_messages SET read = 1 WHERE endpoint_id = ? AND read = 0", [endpoint.to_string()])?;
+        Ok(())
+    }
+    /// One row per endpoint with messages: (endpoint, last message, unread count).
+    pub fn chat_threads(&self) -> Result<Vec<(Uuid, od_core::protocol::ChatMessage, i64)>> {
+        let conn = self.lock();
+        let mut st = conn.prepare(
+            "SELECT m.endpoint_id, m.id, m.from_it, m.author, m.body, m.at,
+                    (SELECT COUNT(*) FROM helpdesk_messages u WHERE u.endpoint_id = m.endpoint_id AND u.read = 0)
+             FROM helpdesk_messages m
+             WHERE m.id = (SELECT MAX(id) FROM helpdesk_messages x WHERE x.endpoint_id = m.endpoint_id)
+             ORDER BY m.id DESC",
+        )?;
+        let v = st
+            .query_map([], |r| {
+                Ok((
+                    uid(r.get(0)?),
+                    od_core::protocol::ChatMessage {
+                        id: r.get(1)?,
+                        from_it: r.get(2)?,
+                        author: r.get(3)?,
+                        text: r.get(4)?,
+                        at: req_ts(r.get(5)?),
+                    },
+                    r.get(6)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(v)
+    }
+
     // ---------- enrollment tokens ----------
     fn map_token(r: &Row) -> rusqlite::Result<EnrollmentToken> {
         Ok(EnrollmentToken {
@@ -1092,5 +1199,6 @@ fn os_str(o: OsFamily) -> &'static str {
         OsFamily::Windows => "windows",
         OsFamily::Macos => "macos",
         OsFamily::Linux => "linux",
+        OsFamily::Android => "android",
     }
 }

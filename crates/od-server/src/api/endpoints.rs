@@ -111,6 +111,11 @@ pub async fn create_job(
             return Err(ApiError::bad_request("Scripts are limited to 256 KB"));
         }
     }
+    if let JobKind::NotifyUser { title, message } = &kind {
+        if title.trim().is_empty() || message.trim().is_empty() || title.len() > 120 || message.len() > 2000 {
+            return Err(ApiError::bad_request("A message needs a title (up to 120 characters) and text (up to 2000)"));
+        }
+    }
     if matches!(kind, JobKind::RefreshInventory) {
         s.db.request_inventory(id)?;
     }

@@ -17,6 +17,7 @@ import Scripts from "./pages/Scripts";
 import Patches from "./pages/Patches";
 import Backups from "./pages/Backups";
 import Mobile from "./pages/Mobile";
+import HelpDesk from "./pages/HelpDesk";
 import NetworkServices from "./pages/NetworkServices";
 import RecycleBin from "./pages/RecycleBin";
 import DomainController from "./pages/DomainController";
@@ -51,6 +52,7 @@ function Gate() {
             <Route path="/ous" element={<OrgUnits />} />
             <Route path="/endpoints" element={<Endpoints />} />
             <Route path="/mobile" element={<Mobile />} />
+            <Route path="/helpdesk" element={<HelpDesk />} />
             <Route path="/endpoints/:id" element={<EndpointDetail />} />
             <Route path="/enroll" element={<Enrollment />} />
             <Route path="/gpos" element={<Policies />} />

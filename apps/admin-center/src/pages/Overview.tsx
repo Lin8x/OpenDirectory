@@ -125,7 +125,7 @@ function Progress({ value }: { value: number }) {
 }
 
 function FleetBars({ byOs, total }: { byOs: Record<string, number>; total: number }) {
-  const rows: { os: "windows" | "macos" | "linux"; label: string }[] = [{ os: "windows", label: "Windows" }, { os: "macos", label: "macOS" }, { os: "linux", label: "Linux" }];
+  const rows: { os: "windows" | "macos" | "linux" | "android"; label: string }[] = [{ os: "windows", label: "Windows" }, { os: "macos", label: "macOS" }, { os: "linux", label: "Linux" }, { os: "android", label: "Android" }];
   if (!total) return <p className="text-sm text-ink-3">No endpoints enrolled yet. <Link to="/enroll" className="text-accent hover:underline">Enroll one</Link>.</p>;
   return (
     <div className="space-y-3">

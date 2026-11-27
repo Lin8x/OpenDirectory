@@ -64,6 +64,24 @@ Settings an OS can't do are reported as *Unsupported* in compliance instead of f
 
 The agent runs as SYSTEM / root because creating accounts and changing security settings requires it.
 
+### Headless and low-footprint
+
+The agent has no tray icon or window. It isn't hidden: it runs under its own service name in the standard program folder, and `opendirectory-agent status` shows it. To stay out of the user's way it:
+
+- runs on a single-threaded async runtime (it mostly waits on the network), with a small blocking pool for OS commands;
+- runs at low priority by default: systemd `Nice=10`, `CPUWeight=20`, `IOWeight=20` and best-effort I/O priority 7; launchd `ProcessType=Background`, `LowPriorityIO` and `Nice 10`; Windows `BELOW_NORMAL_PRIORITY_CLASS`. `install --priority normal` turns this off. A self-update rewrites the unit file so new tuning reaches old installs;
+- checks who is signed in without a full inventory, and keeps one previous log file (10 MB cap) on Windows.
+
+When the agent needs the user (managed-device notice, remote session prompt, Message user), it borrows their desktop briefly: `WTSSendMessage` on Windows, `osascript` via `launchctl asuser` on macOS, and kdialog, zenity or notify-send via `runuser` on Linux.
+
+### Help desk chat
+
+With the Help desk chat setting on, the agent serves a chat page on `127.0.0.1:47800` only and adds a "Contact IT" shortcut (Start menu `.url`, `/Applications/Contact IT.webloc`, or a `.desktop` entry). The page checks `Host` and `Origin` and needs a custom header on POST, so other websites can't use it. Messages go straight to the server; replies arrive at the next check-in (a reply wakes the agent through the long poll) and show as a desktop notification. Anyone signed in to the computer can read the chat on that machine.
+
+### Internet Gateway
+
+An optional second TLS listener (default port 8444) for agents outside the LAN. It serves only `/api/v1/agent/*`, never the admin API or web UI. Each agent creates a key and gets a device certificate from the built-in Device Identity CA (CN = endpoint ID, 1 year, renewed 30 days before expiry). The gateway asks for client certificates; apart from enrollment and a device's first certificate request, it refuses requests without a registered certificate, and the certificate must belong to the endpoint in the `Authorization` header. Retiring an endpoint deletes its certificates. Agents pin the server fingerprint as on the LAN, so no public CA or DNS name is needed. The gateway URL is sent to agents as the last entry in the failover list. Failed enrollments are rate limited per IP.
+
 ### Check-in loop
 
 Every 15 seconds the agent sends inventory (on change or every few minutes), compliance results and the versions of the accounts it manages. The server answers with the current RSoP, the accounts to create or update, and queued jobs (remote script, refresh inventory, restart agent). Network failures back off exponentially. Pull-only means endpoints need no inbound ports and work behind NAT.
@@ -103,7 +121,7 @@ Windows Home can't join an AD domain and ignores Group Policy, and the Pro featu
 - Settings removed from a GPO are not reverted on the endpoint.
 - Disk encryption is reported, not enforced (enabling BitLocker/FileVault/LUKS needs user interaction or recovery key escrow).
 - Remote scripts are fire-and-collect, not interactive. Live remote desktop is on the roadmap.
-- Mobile devices are not managed yet.
+- The Android agent reports and informs but doesn't enforce settings: that needs Android Enterprise (Device Owner), which isn't included yet.
 
 ## Updates and releases
 

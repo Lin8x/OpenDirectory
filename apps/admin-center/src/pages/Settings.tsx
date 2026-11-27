@@ -55,6 +55,7 @@ export default function Settings() {
         <BrandingCard />
         <UpdatesCard />
         <AgentUpdatesCard />
+        <InternetGatewayCard />
         <StartupCard hosting={connection?.mode === "local"} />
       </div>
       <div className="mt-5"><ResetCard hosting={isDesktop && connection?.mode === "local"} /></div>
@@ -355,6 +356,55 @@ function AgentUpdatesCard() {
         {s.outdated === 0 ? <span className="text-good">Every endpoint runs agent {s.version}.</span> : <span>{s.outdated} endpoint(s) run an older agent: {s.versions.filter(([v]) => v !== s.version).map(([v, n]) => `${n} on ${v}`).join(", ")}.</span>}
       </div>
       {s.manual > 0 && <div className="mt-2"><Explain>{s.manual} endpoint(s) run an agent from before automatic updates (0.11 or older). Update those once by running the install command again; after that they update themselves. Builds download on demand from the GitHub release; on a network without internet access, upload them with POST /api/v1/agent-updates/upload/&lt;platform&gt;.</Explain></div>}
+    </Card>
+  );
+}
+
+interface GatewayView { enabled: boolean; port: number; public_url: string; status: string; tls_fingerprint: string | null; devices_with_certificates: number; endpoints: number }
+
+/** Internet Gateway: agents outside the office reach this server over mutual TLS. */
+function InternetGatewayCard() {
+  const g = useQuery<GatewayView>("/internet-gateway");
+  const toast = useToast();
+  const [draft, setDraft] = useState<{ port: number; public_url: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const v = g.data;
+  if (!v) return null;
+  const d = draft ?? { port: v.port, public_url: v.public_url };
+  const save = async (enabled: boolean) => {
+    setBusy(true);
+    try {
+      const r = await put<GatewayView>("/internet-gateway", { enabled, ...d });
+      g.setData?.(r); setDraft(null);
+      toast(r.status.startsWith("Listening") || !enabled ? "good" : "bad", enabled ? r.status : "Internet Gateway turned off");
+    } catch (e) { toast("bad", (e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <Card title="Internet access for agents" subtitle="Let laptops and phones check in from home or on the road, not only on the office network.">
+      <div className="space-y-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={v.enabled && v.status.startsWith("Listening") ? "good" : v.enabled ? "bad" : "neutral"}>{v.enabled ? v.status : "Off"}</Badge>
+          <span className="text-ink-3">{v.devices_with_certificates} of {v.endpoints} endpoints have a device certificate</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+          <Field label="Public address" hint="The DNS name or public IP your router forwards to this server, with the port.">
+            <Input value={d.public_url} placeholder="https://od.example.com:8444" onChange={(e) => setDraft({ ...d, public_url: e.target.value })} />
+          </Field>
+          <Field label="Port"><Input type="number" value={d.port} onChange={(e) => setDraft({ ...d, port: Number(e.target.value) })} /></Field>
+        </div>
+        <ol className="list-decimal space-y-1 pl-5 text-ink-2">
+          <li>On your router or firewall, forward TCP port {d.port} to this server.</li>
+          <li>Enter the public address and turn it on.</li>
+          <li>Agents learn the address at their next check-in and use it whenever the office network can't be reached. New devices can also enroll with it.</li>
+        </ol>
+        <Explain>The gateway serves only Endpoint Agents, never the Admin Center or sign-in. Each agent gets a device certificate from a built-in Device Identity CA and must present it (mutual TLS), and the agent pins this server's certificate fingerprint, so no public certificate or VPN is needed. Retiring an endpoint revokes its certificate.</Explain>
+        <div className="flex gap-2">
+          {v.enabled ? <>
+            <Button variant="primary" loading={busy} disabled={!draft} onClick={() => save(true)}>Save</Button>
+            <Button loading={busy} onClick={() => save(false)}>Turn off</Button>
+          </> : <Button variant="primary" loading={busy} disabled={!d.public_url.trim()} onClick={() => save(true)}>Turn on</Button>}
+        </div>
+      </div>
     </Card>
   );
 }

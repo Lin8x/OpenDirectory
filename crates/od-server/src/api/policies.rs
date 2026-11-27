@@ -212,7 +212,7 @@ pub struct RsopEntry {
 pub async fn rsop(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<RsopEntry>>> {
     let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
     let ou_parent: HashMap<Uuid, Option<Uuid>> = s.db.list_ous()?.into_iter().map(|o| (o.id, o.parent_id)).collect();
-    let eff = effective_settings(&s.db.list_policies()?, e.ou_id, &ou_parent);
+    let eff = effective_settings(&s.db.list_policies()?, od_core::policy::PolicyScope::endpoint(&e), &ou_parent);
     let cat = policy_catalog();
     Ok(Json(
         eff.into_iter()
@@ -224,4 +224,13 @@ pub async fn rsop(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>
             })
             .collect(),
     ))
+}
+
+/// The settings that apply to one endpoint (Resultant Set of Policy).
+pub fn endpoint_settings(s: &AppState, e: &od_core::Endpoint) -> ApiResult<Vec<od_core::policy::Setting>> {
+    let ou_parent: HashMap<Uuid, Option<Uuid>> = s.db.list_ous()?.into_iter().map(|o| (o.id, o.parent_id)).collect();
+    Ok(effective_settings(&s.db.list_policies()?, od_core::policy::PolicyScope::endpoint(e), &ou_parent)
+        .into_iter()
+        .map(|e| e.setting)
+        .collect())
 }

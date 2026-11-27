@@ -12,7 +12,8 @@ It ships as a native desktop app (the **Admin Center**) that works fully offline
 | --- | --- | --- |
 | Admin Center | `opendirectory-admin-center` | Native desktop app (Tauri). Hosts the Management Server in-process, or connects to a remote one. Tray icon keeps it running. |
 | Management Server | `opendirectory-server` | Directory database (SQLite), Group Policy engine, REST API over TLS. Same code as the embedded server. |
-| Endpoint Agent | `opendirectory-agent` | Background service: Windows Service, launchd daemon, or systemd unit. Checks in every 15 seconds. |
+| Endpoint Agent | `opendirectory-agent` | Headless background service at low priority: Windows Service, launchd daemon, or systemd unit. Checks in every 15 seconds, over the LAN or the Internet Gateway. |
+| Android agent | `apps/android-agent` | 48 KB Android app. Checks in about every 15 minutes through the system job scheduler; reports inventory and security status, shows the managed-device notice, and has help desk chat. |
 | CLI | `od` | Everything the Admin Center does, scriptable, with `od explain <term>` for newcomers. |
 
 ## Quick start
@@ -120,6 +121,7 @@ crates/od-server   Management Server (axum + SQLite)
 crates/od-agent    Endpoint Agent
 crates/od-cli      `od`
 apps/admin-center  Admin Center (React + Tauri)
+apps/android-agent Android Endpoint Agent (Kotlin, no AndroidX)
 docs/              architecture and roadmap
 ```
 

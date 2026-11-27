@@ -9,10 +9,12 @@ pub enum OsFamily {
     Windows,
     Macos,
     Linux,
+    /// Phones and tablets running the OpenDirectory Android agent.
+    Android,
 }
 
 impl OsFamily {
-    pub const ALL: [OsFamily; 3] = [OsFamily::Windows, OsFamily::Macos, OsFamily::Linux];
+    pub const ALL: [OsFamily; 4] = [OsFamily::Windows, OsFamily::Macos, OsFamily::Linux, OsFamily::Android];
 
     pub fn current() -> OsFamily {
         if cfg!(target_os = "windows") {
@@ -29,6 +31,7 @@ impl OsFamily {
             OsFamily::Windows => "Windows",
             OsFamily::Macos => "macOS",
             OsFamily::Linux => "Linux",
+            OsFamily::Android => "Android",
         }
     }
 }
@@ -235,6 +238,11 @@ pub enum JobKind {
         #[serde(default)]
         reboot: bool,
     },
+    /// Show a message to whoever is signed in (like `msg` on Windows).
+    NotifyUser {
+        title: String,
+        message: String,
+    },
     /// A job type from a newer version.
     #[serde(other)]
     Unknown,
@@ -245,6 +253,7 @@ impl JobKind {
     pub fn min_agent_version(&self) -> &'static str {
         match self {
             JobKind::ScanUpdates | JobKind::InstallUpdates { .. } => "0.5.0",
+            JobKind::NotifyUser { .. } => "0.13.0",
             _ => "0.0.0",
         }
     }
@@ -266,6 +275,7 @@ impl JobKind {
             JobKind::ScanUpdates => "Scan for updates".into(),
             JobKind::InstallUpdates { security_only: true, .. } => "Install security updates".into(),
             JobKind::InstallUpdates { .. } => "Install updates".into(),
+            JobKind::NotifyUser { title, .. } => format!("Message the user: {title}"),
             JobKind::Unknown => "Unknown job type".into(),
         }
     }

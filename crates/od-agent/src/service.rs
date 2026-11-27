@@ -2,6 +2,12 @@
 //! a systemd unit on Linux, a launchd daemon on macOS and a Windows Service
 //! on Windows. Each starts at boot, runs as root/SYSTEM before anyone signs
 //! in, and is restarted automatically if it stops.
+//!
+//! The agent is headless: it has no tray icon, window or other UI of its
+//! own. It isn't hidden either. It runs under its own service name, lives in
+//! the standard program folder, and `opendirectory-agent status` shows it.
+//! By default the service runs at low priority (see [`Priority`]) so it
+//! yields CPU and disk to whatever the user is doing.
 
 #[allow(unused_imports)]
 use anyhow::{bail, Context, Result};
@@ -10,6 +16,59 @@ use std::path::PathBuf;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const SERVICE_NAME: &str = "OpenDirectoryAgent";
 pub const DISPLAY_NAME: &str = "OpenDirectory Endpoint Agent";
+
+/// Scheduling priority for the service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Priority {
+    /// Below-normal CPU and I/O priority: the agent yields to the user's apps.
+    #[default]
+    Low,
+    /// The OS default priority.
+    Normal,
+}
+
+impl Priority {
+    fn path() -> PathBuf {
+        crate::state::data_dir().join("service-priority")
+    }
+    /// The priority chosen at install time (low if never set).
+    pub fn load() -> Priority {
+        match std::fs::read_to_string(Self::path()).map(|s| s.trim().to_string()).as_deref() {
+            Ok("normal") => Priority::Normal,
+            _ => Priority::Low,
+        }
+    }
+    fn save(self) -> Result<()> {
+        std::fs::create_dir_all(crate::state::data_dir())?;
+        std::fs::write(Self::path(), self.label())?;
+        Ok(())
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Priority::Low => "low",
+            Priority::Normal => "normal",
+        }
+    }
+}
+
+/// Lower this process's own priority. The service managers on Linux and
+/// macOS already do this from the unit file; this covers Windows and
+/// `opendirectory-agent run` started by hand.
+pub fn apply_priority(p: Priority) {
+    if p == Priority::Normal {
+        return;
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS};
+        SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
+    }
+    #[cfg(unix)]
+    {
+        // Nice 10 for this process; children (scripts, package managers) inherit it.
+        let _ = std::process::Command::new("renice").args(["-n", "10", "-p", &std::process::id().to_string()]).output();
+    }
+}
 
 pub fn install_path() -> PathBuf {
     if cfg!(windows) {
@@ -63,15 +122,38 @@ fn sh(program: &str, args: &[&str]) -> Result<std::process::Output> {
 const UNIT_PATH: &str = "/etc/systemd/system/opendirectory-agent.service";
 
 #[cfg(target_os = "linux")]
-pub fn install() -> Result<()> {
+fn unit_text(bin: &std::path::Path, p: Priority) -> String {
+    // Low priority: nice 10, a small CPU and I/O share when the system is
+    // busy (full speed when it's idle), and the lowest best-effort disk I/O priority.
+    let tuning = match p {
+        Priority::Low => "Nice=10\nCPUWeight=20\nIOWeight=20\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n",
+        Priority::Normal => "",
+    };
+    format!(
+        "[Unit]\nDescription={DISPLAY_NAME}\nDocumentation=https://github.com/Lin8x/OpenDirectory\nAfter=network-online.target\nWants=network-online.target\n\n\
+         [Service]\nType=simple\nExecStart={} run\nRestart=always\nRestartSec=5\n{tuning}\n[Install]\nWantedBy=multi-user.target\n",
+        bin.display()
+    )
+}
+
+/// Bring an existing unit file up to date after a self-update, without
+/// restarting. The new settings apply at the next service start.
+#[cfg(target_os = "linux")]
+pub fn refresh_definition() {
+    let Ok(cur) = std::fs::read_to_string(UNIT_PATH) else { return };
+    let want = unit_text(&install_path(), Priority::load());
+    if cur != want && std::fs::write(UNIT_PATH, want).is_ok() {
+        let _ = sh("systemctl", &["daemon-reload"]);
+        tracing::info!("Updated the service definition in {UNIT_PATH}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn install(p: Priority) -> Result<()> {
     require_root()?;
     let bin = copy_self()?;
-    let unit = format!(
-        "[Unit]\nDescription={DISPLAY_NAME}\nDocumentation=https://github.com/Lin8x/OpenDirectory\nAfter=network-online.target\nWants=network-online.target\n\n\
-         [Service]\nType=simple\nExecStart={} run\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\n",
-        bin.display()
-    );
-    std::fs::write(UNIT_PATH, unit)?;
+    p.save()?;
+    std::fs::write(UNIT_PATH, unit_text(&bin, p))?;
     sh("systemctl", &["daemon-reload"])?;
     let o = sh("systemctl", &["enable", "--now", "opendirectory-agent.service"])?;
     if !o.status.success() {
@@ -103,11 +185,13 @@ pub fn status() -> String {
 const PLIST_PATH: &str = "/Library/LaunchDaemons/dev.opendirectory.agent.plist";
 
 #[cfg(target_os = "macos")]
-pub fn install() -> Result<()> {
-    require_root()?;
-    let bin = copy_self()?;
-    std::fs::create_dir_all("/Library/Logs/OpenDirectory")?;
-    let plist = format!(
+fn plist_text(bin: &std::path::Path, p: Priority) -> String {
+    // Background: launchd throttles CPU and disk I/O when the Mac is busy.
+    let tuning = match p {
+        Priority::Low => "  <key>ProcessType</key><string>Background</string>\n  <key>LowPriorityIO</key><true/>\n  <key>Nice</key><integer>10</integer>\n",
+        Priority::Normal => "",
+    };
+    format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -119,11 +203,31 @@ pub fn install() -> Result<()> {
   <key>ThrottleInterval</key><integer>5</integer>
   <key>StandardOutPath</key><string>/Library/Logs/OpenDirectory/agent.log</string>
   <key>StandardErrorPath</key><string>/Library/Logs/OpenDirectory/agent.log</string>
-</dict>
+{tuning}</dict>
 </plist>
 "#,
         bin.display()
-    );
+    )
+}
+
+/// Bring an existing launchd definition up to date after a self-update. The
+/// new settings apply the next time launchd loads it.
+#[cfg(target_os = "macos")]
+pub fn refresh_definition() {
+    let Ok(cur) = std::fs::read_to_string(PLIST_PATH) else { return };
+    let want = plist_text(&install_path(), Priority::load());
+    if cur != want && std::fs::write(PLIST_PATH, want).is_ok() {
+        tracing::info!("Updated the service definition in {PLIST_PATH}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn install(p: Priority) -> Result<()> {
+    require_root()?;
+    let bin = copy_self()?;
+    p.save()?;
+    std::fs::create_dir_all("/Library/Logs/OpenDirectory")?;
+    let plist = plist_text(&bin, p);
     let _ = sh("launchctl", &["bootout", "system", PLIST_PATH]);
     std::fs::write(PLIST_PATH, plist)?;
     let o = sh("launchctl", &["bootstrap", "system", PLIST_PATH])?;
@@ -159,12 +263,16 @@ pub fn status() -> String {
 
 // ---------------------------------------------------------------- Windows
 #[cfg(windows)]
-pub fn install() -> Result<()> {
+pub fn refresh_definition() {}
+
+#[cfg(windows)]
+pub fn install(p: Priority) -> Result<()> {
     use std::ffi::OsString;
     use windows_service::service::{ServiceAccess, ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceType};
     use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
     let bin = copy_self()?;
+    p.save()?;
     let mgr = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE)
         .context("Open the Service Control Manager (run this from an elevated prompt)")?;
     if let Ok(existing) = mgr.open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE | ServiceAccess::QUERY_STATUS) {
@@ -267,7 +375,8 @@ pub mod win {
             process_id: None,
         };
         status.set_service_status(set(ServiceState::Running, ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN))?;
-        let rt = tokio::runtime::Runtime::new()?;
+        crate::service::apply_priority(crate::service::Priority::load());
+        let rt = crate::runtime()?;
         let restart = rt.block_on(crate::agent::run(rx)).unwrap_or_else(|e| {
             tracing::error!("{e:#}");
             true
@@ -282,7 +391,9 @@ pub mod win {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-pub fn install() -> Result<()> {
+pub fn refresh_definition() {}
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+pub fn install(_p: Priority) -> Result<()> {
     bail!("Installing as a service isn't supported on this OS yet; use `opendirectory-agent run`")
 }
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]

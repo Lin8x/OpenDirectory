@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ArrowLeft, Globe, Plus, Save, Trash2, X } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, post, put } from "../lib/api";
-import type { CatalogEntry, Group, OrgUnit, Policy, Script, ScriptTrigger, Setting, SettingKind, SupportLevel } from "../lib/types";
+import type { CatalogEntry, Endpoint, Group, OrgUnit, OsFamily, Policy, Script, ScriptTrigger, Setting, SettingKind, SupportLevel } from "../lib/types";
+import { osLabel } from "../lib/format";
 import {
   Badge, Button, Card, Confirm, Dialog, Explain, Field, Input, Loading, OsIcon, Select, Switch, Textarea, cx, useToast,
 } from "../components/ui";
@@ -11,7 +12,8 @@ import { OuSelect, ouPath } from "./Users";
 import { useCaRoot } from "./NetworkServices";
 
 type Draft = Omit<Policy, "id" | "created_at" | "updated_at">;
-const EMPTY: Draft = { name: "", description: "", enabled: true, priority: 100, targets: { all_endpoints: true, ou_ids: [] }, settings: [] };
+const EMPTY: Draft = { name: "", description: "", enabled: true, priority: 100, targets: { all_endpoints: true, ou_ids: [], endpoint_ids: [], os_families: [] }, settings: [] };
+const ALL_OS: OsFamily[] = ["windows", "macos", "linux", "android"];
 
 const levelTone: Record<SupportLevel, "good" | "warn" | "neutral"> = { enforced: "good", report_only: "warn", unsupported: "neutral" };
 const levelLabel: Record<SupportLevel, string> = { enforced: "Enforced", report_only: "Reports", unsupported: "No" };
@@ -27,6 +29,8 @@ export default function PolicyEditor() {
   const groups = useQuery<Group[]>("/groups");
   const scripts = useQuery<Script[]>("/scripts");
   const ous = useQuery<OrgUnit[]>("/ous");
+  const endpoints = useQuery<Endpoint[]>("/endpoints");
+  const [addEp, setAddEp] = useState("");
   const [d, setD] = useState<Draft | null>(isNew ? EMPTY : null);
   const [picker, setPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -126,8 +130,38 @@ export default function PolicyEditor() {
                     <Button disabled={!addOu} onClick={() => { setD({ ...d, targets: { ...d.targets, ou_ids: [...d.targets.ou_ids, addOu!] } }); setAddOu(null); }}>Link</Button>
                   </div>
                   <p className="text-xs text-ink-3">Endpoints in child OUs receive it too.</p>
+                  <div className="space-y-1.5 border-t border-line pt-3">
+                    <p className="text-xs font-medium text-ink-2">Individual endpoints</p>
+                    {(d.targets.endpoint_ids ?? []).map((eid) => (
+                      <div key={eid} className="flex items-center justify-between rounded-md bg-panel-2 px-2.5 py-1.5 text-sm">{endpoints.data?.find((e) => e.id === eid)?.hostname ?? eid}
+                        <button className="text-ink-3 hover:text-bad" onClick={() => setD({ ...d, targets: { ...d.targets, endpoint_ids: (d.targets.endpoint_ids ?? []).filter((x) => x !== eid) } })}><X className="size-3.5" /></button>
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      <Select value={addEp} onChange={(e) => setAddEp(e.target.value)}>
+                        <option value="">Choose an endpoint…</option>
+                        {(endpoints.data ?? []).filter((e) => !(d.targets.endpoint_ids ?? []).includes(e.id)).map((e) => <option key={e.id} value={e.id}>{e.hostname}</option>)}
+                      </Select>
+                      <Button disabled={!addEp} onClick={() => { setD({ ...d, targets: { ...d.targets, endpoint_ids: [...(d.targets.endpoint_ids ?? []), addEp] } }); setAddEp(""); }}>Add</Button>
+                    </div>
+                  </div>
                 </>
               )}
+              <div className="space-y-1.5 border-t border-line pt-3">
+                <p className="text-xs font-medium text-ink-2">Platform filter</p>
+                <div className="flex flex-wrap gap-3">
+                  {ALL_OS.map((os) => {
+                    const list = d.targets.os_families ?? [];
+                    return <Switch key={os} checked={list.length === 0 || list.includes(os)} label={<span className="flex items-center gap-1.5"><OsIcon os={os} className="size-3.5" />{osLabel[os]}</span>}
+                      onChange={(on) => {
+                        const cur = list.length === 0 ? ALL_OS : list;
+                        const next = on ? [...cur, os] : cur.filter((x) => x !== os);
+                        setD({ ...d, targets: { ...d.targets, os_families: next.length === ALL_OS.length ? [] : next } });
+                      }} />;
+                  })}
+                </div>
+                <p className="text-xs text-ink-3">Like a WMI filter: endpoints on unticked platforms skip this GPO.</p>
+              </div>
             </div>
           </Card>
         </div>
@@ -279,7 +313,7 @@ function ScriptSettingForm({ v, onChange, scripts }: { v: Extract<Setting, { kin
 /** Fallback editor for settings without a dedicated form: one input per field. */
 const LABELS: Record<string, string> = {
   enabled: "On", required: "Required", allowed: "Allowed", threshold: "Wrong passwords before lockout", duration_minutes: "Lockout duration (minutes)",
-  days: "Days (0 = never)", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
+  days: "Days (0 = never)", require_acknowledgement: "Users must acknowledge", unattended_access: "Allow when nobody is signed in", contact: "Other ways to reach IT (optional)", remote_shell: "Remote shell", remote_desktop: "Remote desktop", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
 };
 
 function GenericSettingForm({ s, onChange, entry }: { s: Setting; onChange: (s: Setting) => void; entry?: CatalogEntry }) {
@@ -294,6 +328,7 @@ function GenericSettingForm({ s, onChange, entry }: { s: Setting; onChange: (s: 
         if (choice) return <Field key={k} label={label}><Select value={String(val)} onChange={(e) => set(e.target.value)}>{choice.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>;
         if (typeof val === "boolean") return <div key={k} className="pt-6"><Switch checked={val} onChange={set} label={label} /></div>;
         if (typeof val === "number") return <Field key={k} label={label}><Input type="number" value={val} onChange={(e) => set(Number(e.target.value))} /></Field>;
+        if (k === "text") return <div key={k} className="sm:col-span-2"><Field label={label}><Textarea rows={4} value={String(val)} onChange={(e) => set(e.target.value)} /></Field></div>;
         if (Array.isArray(val)) return <div key={k} className="sm:col-span-2"><Field label={label}><PackageList value={val as string[]} onChange={set} /></Field></div>;
         return <Field key={k} label={label}><Input value={String(val)} onChange={(e) => set(e.target.value)} /></Field>;
       })}
