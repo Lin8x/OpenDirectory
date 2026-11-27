@@ -12,7 +12,7 @@ export default function Policies() {
   const nav = useNavigate();
   return (
     <>
-      <PageHeader title="Group Policy" term="gpo" subtitle="Group Policy Objects that configure Windows, macOS and Linux endpoints from one place."
+      <PageHeader title="Group Policy" guide="03-group-policy" term="gpo" subtitle="Group Policy Objects that configure Windows, macOS and Linux endpoints from one place."
         actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => nav("/gpos/new")}>New GPO</Button>} />
       <Card padded={false}>
         {ps.loading && !ps.data ? <Loading /> : (

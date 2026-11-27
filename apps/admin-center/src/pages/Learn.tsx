@@ -23,7 +23,7 @@ export default function Learn() {
   const tab = params.get("tab") === "kb" ? "kb" : "concepts";
   return (
     <>
-      <PageHeader title="Learn" subtitle="How OpenDirectory works, the networking and identity concepts behind it, and their Active Directory counterparts." />
+      <PageHeader title="Learn" guide="README" subtitle="How OpenDirectory works, the networking and identity concepts behind it, and their Active Directory counterparts." />
       <div className="mb-5"><Tabs value={tab} onChange={(t) => setParams(t === "kb" ? { tab: "kb" } : {})} tabs={[{ id: "concepts", label: "OpenDirectory concepts" }, { id: "kb", label: "Knowledge Base" }]} /></div>
       {tab === "kb" ? <KnowledgeBase /> : <Concepts />}
     </>

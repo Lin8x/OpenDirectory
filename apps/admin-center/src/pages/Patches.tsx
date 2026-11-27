@@ -24,7 +24,7 @@ export default function Patches() {
   const upToDate = scanned.filter((e) => e.inventory.patches!.pending.length === 0).length;
   return (
     <>
-      <PageHeader title="Patch Management" term="patching" subtitle="Pending OS updates on every endpoint from Windows Update, apt, dnf and softwareupdate. Scans run every 6 hours."
+      <PageHeader title="Patch Management" guide="09-everyday-tasks#install-operating-system-updates" term="patching" subtitle="Pending OS updates on every endpoint from Windows Update, apt, dnf and softwareupdate. Scans run every 6 hours."
         actions={<div className="flex gap-2"><Button icon={<RefreshCw className="size-4" />} onClick={() => setDialog("scan")}>Scan now…</Button><Button variant="primary" icon={<Download className="size-4" />} onClick={() => setDialog("install")}>Install updates…</Button></div>} />
       <div className="mb-5 grid gap-3 sm:grid-cols-4">
         <Tile label="Up to date" value={`${upToDate} / ${list.length}`} />

@@ -5,7 +5,7 @@ import { useQuery } from "../lib/hooks";
 import { useSession } from "../lib/session";
 import type { Overview as OverviewT } from "../lib/types";
 import { ago } from "../lib/format";
-import { Card, ErrorNote, Explain, Loading, OsIcon, cx } from "../components/ui";
+import { Card, ErrorNote, Explain, Loading, OsIcon, cx, GuideLink } from "../components/ui";
 
 const STEPS: { key: string; title: string; body: string; to: string }[] = [
   { key: "created_user", title: "Add your users", body: "Create accounts for the people in your organization.", to: "/users?new=1" },
@@ -30,7 +30,7 @@ export default function Overview() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">{greet}, {me?.user.display_name.split(" ")[0]}</h1>
+        <h1 className="flex flex-wrap items-baseline gap-x-3 text-[22px] font-semibold tracking-tight">{greet}, {me?.user.display_name.split(" ")[0]}<GuideLink to="README" /></h1>
         <p className="mt-1 text-sm text-ink-2">{data.organization} · {data.domain}</p>
       </div>
       <Explain term="management_server" />

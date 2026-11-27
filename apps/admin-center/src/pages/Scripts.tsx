@@ -17,7 +17,7 @@ export default function Scripts() {
   const nav = useNavigate();
   return (
     <>
-      <PageHeader title="Script Library" term="script_library"
+      <PageHeader title="Script Library" guide="09-everyday-tasks#run-something-on-many-computers" term="script_library"
         subtitle="Save scripts once, then run them on demand against endpoints, security groups or OUs, or attach them to a GPO as startup, sign-in or scheduled scripts."
         actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => nav("/scripts/new")}>New script</Button>} />
       <div className="mb-4">

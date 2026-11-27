@@ -2,7 +2,7 @@
 
 This guide is for anyone who wants to understand how OpenDirectory is built without already knowing Rust, Cargo or Tauri. It explains the tools, walks through the repository folder by folder, shows how the pieces talk to each other while running, and covers the everyday workflow, releases and what comes next.
 
-Want to learn how to *use* OpenDirectory instead (domains, OUs, Group Policy, enrolling computers)? Read the [Beginner's guide](guide/README.md).
+Want to learn how to *use* OpenDirectory instead (domains, OUs, Group Policy, enrolling computers)? Read the [Beginner's guide](../apps/admin-center/guide/README.md).
 
 If you only want to run commands, the short version is in the [README](../README.md#development). For deeper technical detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

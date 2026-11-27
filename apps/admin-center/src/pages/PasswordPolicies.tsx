@@ -35,7 +35,7 @@ export default function PasswordPolicies() {
   useEffect(() => { if (domain.data) setD(domain.data); }, [domain.data]);
   return (
     <>
-      <PageHeader title="Password Policies" term="pso" subtitle="Rules for directory passwords: the Default Domain Password Policy, plus stricter or looser policies for specific security groups."
+      <PageHeader title="Password Policies" guide="02-directory#users-one-account-per-person" term="pso" subtitle="Rules for directory passwords: the Default Domain Password Policy, plus stricter or looser policies for specific security groups."
         actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEdit("new")}>New password policy</Button>} />
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Default Domain Password Policy" subtitle="Applies to everyone not covered by a fine-grained policy">

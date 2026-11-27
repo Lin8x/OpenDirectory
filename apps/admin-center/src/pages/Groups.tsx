@@ -22,7 +22,7 @@ export default function Groups() {
 
   return (
     <>
-      <PageHeader title="Security Groups" term="group" subtitle="Named sets of users. Target groups in Group Policy to decide who can sign in to which endpoints, and who is a local admin."
+      <PageHeader title="Security Groups" guide="02-directory#security-groups-teams-you-can-point-at" term="group" subtitle="Named sets of users. Target groups in Group Policy to decide who can sign in to which endpoints, and who is a local admin."
         actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>New group</Button>} />
       <Card padded={false}>
         <div className="flex items-center gap-2 border-b border-line p-3">

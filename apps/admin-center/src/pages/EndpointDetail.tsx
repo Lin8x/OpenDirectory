@@ -5,9 +5,7 @@ import { useQuery } from "../lib/hooks";
 import { del, get, patch, post } from "../lib/api";
 import type { Endpoint, Job, OrgUnit, RsopEntry, Shell } from "../lib/types";
 import { ago, bytes, osLabel, uptime } from "../lib/format";
-import {
-  Badge, Button, Card, Confirm, CopyButton, ErrorNote, Explain, Field, Loading, OsIcon, Select, StatusDot, Tabs, Textarea, complianceLabel, complianceTone, useToast,
-} from "../components/ui";
+import { Badge, Button, Card, Confirm, CopyButton, ErrorNote, Explain, Field, Loading, OsIcon, Select, StatusDot, Tabs, Textarea, complianceLabel, complianceTone, useToast, GuideLink } from "../components/ui";
 import { OuSelect } from "./Users";
 import { JobRow } from "./Jobs";
 import { RemoteShell } from "../components/RemoteShell";
@@ -40,7 +38,7 @@ export default function EndpointDetail() {
         <div className="flex items-center gap-4">
           <div className="grid size-14 place-items-center rounded-2xl border border-line bg-panel"><OsIcon os={e.os} className="size-7" /></div>
           <div>
-            <h1 className="flex items-center gap-2.5 text-[22px] font-semibold tracking-tight">{e.hostname}<StatusDot online={e.online} /></h1>
+            <h1 className="flex items-center gap-2.5 text-[22px] font-semibold tracking-tight">{e.hostname}<StatusDot online={e.online} /><GuideLink to="04-endpoints-and-agents" className="font-normal" /></h1>
             <p className="text-sm text-ink-2">{i.os_name} {i.os_edition && <span className="text-ink-3">· {i.os_edition}</span>} · {e.online ? <span className="text-good">Online</span> : `Last seen ${ago(e.last_seen_at)}`}</p>
           </div>
         </div>

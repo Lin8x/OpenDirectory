@@ -5,9 +5,7 @@ import { useQuery } from "../lib/hooks";
 import { del, post, put } from "../lib/api";
 import type { CatalogEntry, Endpoint, Group, OrgUnit, OsFamily, Policy, Script, ScriptTrigger, Setting, SettingKind, SupportLevel } from "../lib/types";
 import { osLabel } from "../lib/format";
-import {
-  Badge, Button, Card, Confirm, Dialog, Explain, Field, Input, Loading, OsIcon, Select, Switch, Textarea, cx, useToast,
-} from "../components/ui";
+import { Badge, Button, Card, Confirm, Dialog, Explain, Field, Input, Loading, OsIcon, Select, Switch, Textarea, cx, useToast, GuideLink } from "../components/ui";
 import { OuSelect, ouPath } from "./Users";
 import { useCaRoot } from "./NetworkServices";
 
@@ -64,7 +62,7 @@ export default function PolicyEditor() {
     <div className="space-y-5">
       <Link to="/gpos" className="inline-flex items-center gap-1 text-sm text-ink-3 hover:text-ink"><ArrowLeft className="size-4" />Group Policy</Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[22px] font-semibold tracking-tight">{isNew ? "New Group Policy Object" : d.name || "Untitled GPO"}</h1>
+        <h1 className="flex flex-wrap items-baseline gap-x-3 text-[22px] font-semibold tracking-tight">{isNew ? "New Group Policy Object" : d.name || "Untitled GPO"}<GuideLink to="03-group-policy" /></h1>
         <div className="flex gap-2">
           {!isNew && <Button variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => setConfirm(true)}>Delete</Button>}
           <Button variant="primary" icon={<Save className="size-4" />} loading={saving} disabled={!d.name.trim()} onClick={save}>{isNew ? "Create GPO" : "Save"}</Button>

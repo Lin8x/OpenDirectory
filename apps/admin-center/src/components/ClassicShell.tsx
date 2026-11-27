@@ -134,7 +134,7 @@ export default function ClassicShell({ children }: { children: ReactNode }) {
     File: [{ label: "Switch to the modern interface", run: () => { setUi("modern"); } }, { label: "", run: () => {}, sep: true }, { label: "Sign out", run: signOut }],
     Action: actions(pickedItem),
     View: [{ label: "Refresh", run: reload }, { label: "Modern interface", run: () => setUi("modern") }],
-    Help: [{ label: "Learn the concepts", run: () => go({ kind: "page", to: "/learn" }) }, { label: "About OpenDirectory", run: () => go({ kind: "page", to: "/settings" }) }],
+    Help: [{ label: "Beginner's Guide", run: () => go({ kind: "page", to: "/guide" }) }, { label: "Learn the concepts", run: () => go({ kind: "page", to: "/learn" }) }, { label: "About OpenDirectory", run: () => go({ kind: "page", to: "/settings" }) }],
   };
 
   return (

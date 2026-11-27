@@ -2,9 +2,11 @@ import {
   createContext, useCallback, useContext, useEffect, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from "react";
-import { AlertTriangle, Check, CheckCircle2, Copy, Info, Lightbulb, Loader2, X, XCircle } from "lucide-react";
+import { AlertTriangle, BookMarked, Check, CheckCircle2, Copy, Info, Lightbulb, Loader2, X, XCircle } from "lucide-react";
 import type { ComplianceState, OsFamily } from "../lib/types";
+import { Link as RouterLink } from "react-router-dom";
 import { GLOSSARY } from "../lib/glossary";
+import { guidePath, shortTitle } from "../lib/guide";
 import { useLearnMode } from "../lib/session";
 
 export function cx(...c: (string | false | null | undefined)[]) { return c.filter(Boolean).join(" "); }
@@ -76,11 +78,22 @@ export function Card({ title, actions, children, className, padded = true, subti
   );
 }
 
-export function PageHeader({ title, subtitle, actions, term }: { title: string; subtitle?: ReactNode; actions?: ReactNode; term?: string }) {
+/** A "Guide: <chapter>" link to the bundled Beginner's Guide. `to` is "slug" or "slug#section". */
+export function GuideLink({ to, className }: { to: string; className?: string }) {
+  const [raw, section] = to.split("#");
+  const slug = raw === "README" ? "" : raw;
+  return (
+    <RouterLink to={guidePath(slug, section)} className={cx("inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline", className)}>
+      <BookMarked className="size-3.5" />{slug ? `Guide: ${shortTitle(slug)}` : "Beginner's Guide"}
+    </RouterLink>
+  );
+}
+
+export function PageHeader({ title, subtitle, actions, term, guide }: { title: string; subtitle?: ReactNode; actions?: ReactNode; term?: string; guide?: string }) {
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
+        <h1 className="flex flex-wrap items-baseline gap-x-3 text-[22px] font-semibold tracking-tight">{title}{guide && <GuideLink to={guide} />}</h1>
         {subtitle && <p className="mt-1 text-sm text-ink-2 max-w-3xl">{subtitle}</p>}
       </div>
       <div className="flex items-center gap-2">{actions}</div>

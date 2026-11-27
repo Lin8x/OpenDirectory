@@ -52,7 +52,7 @@ export default function OrgUnits() {
   if (ous.loading && !ous.data) return <Loading />;
   return (
     <>
-      <PageHeader title="Organizational Units" term="ou" subtitle="Folders that organize users, groups and endpoints. Link GPOs to an OU and every endpoint inside it, including child OUs, receives them."
+      <PageHeader title="Organizational Units" guide="02-directory#organizational-units-ous-folders-for-your-stuff" term="ou" subtitle="Folders that organize users, groups and endpoints. Link GPOs to an OU and every endpoint inside it, including child OUs, receives them."
         actions={<Button variant="primary" icon={<FolderPlus className="size-4" />} onClick={() => setEditing("new")}>New OU</Button>} />
       <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
         <Card padded={false} className="h-fit">

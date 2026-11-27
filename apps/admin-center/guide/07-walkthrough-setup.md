@@ -14,7 +14,7 @@ This walkthrough takes you from nothing to a working directory, in about ten min
 
 ## Step 1: Install the Admin Center
 
-1. Go to the [Download section of the README](../../README.md#download).
+1. Go to the [Download section of the README](../../../README.md#download).
 2. Click the button for your operating system:
    - **Windows:** the `.exe` installer.
    - **macOS:** the `.dmg`. Open it and drag OpenDirectory to Applications.
@@ -120,6 +120,6 @@ Then, from that machine or any other, run the setup wizard in the terminal:
 od init --server https://<server-address>:8443 --fingerprint <sha256>
 ```
 
-Or use the Docker image ([docs/DOCKER.md](../DOCKER.md)), which also serves the Admin Center in a web browser. In the desktop Admin Center, choose **Connect to an existing server** and enter the server address and fingerprint shown when the server starts.
+Or use the Docker image ([docs/DOCKER.md](../../../docs/DOCKER.md)), which also serves the Admin Center in a web browser. In the desktop Admin Center, choose **Connect to an existing server** and enter the server address and fingerprint shown when the server starts.
 
 </details>

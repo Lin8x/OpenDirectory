@@ -90,12 +90,12 @@ If the directory is hosted on this computer, the Admin Center may have been clos
 
 ### I forgot my Domain Admin password
 
-On the sign-in screen, click **Forgot password?**. Your computer asks for its own administrator password, then you choose the account and set a new password. On a dedicated server, run `sudo opendirectory-server admin reset-password <username>` on the server itself. The [README](../../README.md#features) has details under *Sign-in and break-glass recovery*.
+On the sign-in screen, click **Forgot password?**. Your computer asks for its own administrator password, then you choose the account and set a new password. On a dedicated server, run `sudo opendirectory-server admin reset-password <username>` on the server itself. The [README](../../../README.md#features) has details under *Sign-in and break-glass recovery*.
 
 ---
 
 ## Where to go next
 
 - The **Learn** page in the Admin Center and the [glossary](glossary.md) explain every term.
-- [docs/ARCHITECTURE.md](../ARCHITECTURE.md) explains how it all works under the hood.
-- [docs/ROADMAP.md](../ROADMAP.md) lists what's coming and what's still experimental.
+- [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) explains how it all works under the hood.
+- [docs/ROADMAP.md](../../../docs/ROADMAP.md) lists what's coming and what's still experimental.

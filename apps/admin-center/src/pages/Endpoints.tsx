@@ -33,7 +33,7 @@ export default function Endpoints() {
 
   return (
     <>
-      <PageHeader title="Endpoints" term="endpoint" subtitle="Every managed computer, its live status, hardware and policy compliance."
+      <PageHeader title="Endpoints" guide="04-endpoints-and-agents" term="endpoint" subtitle="Every managed computer, its live status, hardware and policy compliance."
         actions={<Button variant="primary" icon={<PlusCircle className="size-4" />} onClick={() => nav("/enroll")}>Enroll endpoint</Button>} />
       <Card padded={false}>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">

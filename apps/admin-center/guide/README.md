@@ -1,10 +1,10 @@
 # The OpenDirectory Beginner's Guide
 
-This guide teaches you how OpenDirectory works from the ground up. You don't need any IT background. Every term is explained the first time it appears, and each chapter ends with a short "In Active Directory terms" box, so if you ever read Microsoft documentation or talk to a Windows admin, you'll know what they mean.
+This guide teaches you how OpenDirectory works from the ground up. It's built into the Admin Center: click **Guide** at the bottom of the sidebar, or a **Guide** link at the top of most pages, to open the chapter about what you're looking at. It works offline. You don't need any IT background. Every term is explained the first time it appears, and each chapter ends with a short "In Active Directory terms" box, so if you ever read Microsoft documentation or talk to a Windows admin, you'll know what they mean.
 
 The first half explains the ideas. The second half walks you through doing it, click by click, from installing the app to managing your first computer.
 
-> **Looking for how the code is built?** That's a different document: [docs/GUIDE.md](../GUIDE.md) explains the programming side (Rust, Tauri, the repository layout). This guide is about *using* OpenDirectory.
+> **Looking for how the code is built?** That's a different document: [docs/GUIDE.md](../../../docs/GUIDE.md) explains the programming side (Rust, Tauri, the repository layout). This guide is about *using* OpenDirectory.
 
 ---
 

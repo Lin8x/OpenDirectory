@@ -17,7 +17,7 @@ export default function Settings() {
   const s = me?.server;
   return (
     <>
-      <PageHeader title="Server & connection" subtitle="Details other admins and endpoints need to reach this Management Server, and your Admin Center preferences." />
+      <PageHeader title="Server & connection" guide="05-gateway-and-updates" subtitle="Details other admins and endpoints need to reach this Management Server, and your Admin Center preferences." />
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title={<span className="flex items-center gap-2"><Server className="size-4" />Management Server</span>}>
           <dl className="space-y-3 text-sm">

@@ -27,15 +27,21 @@ OpenDirectory is made of four programs that work together. Picture an office bui
 
 ### Where each program runs
 
-```mermaid
-flowchart LR
-    AC["Admin Center<br/>(your computer)"] -- "you make changes" --> MS["Management Server<br/>stores everything"]
-    MS -- "instructions" --> A1["Agent on a Windows laptop"]
-    MS -- "instructions" --> A2["Agent on a Mac"]
-    MS -- "instructions" --> A3["Agent on a Linux server"]
-    A1 -- "reports back" --> MS
-    A2 -- "reports back" --> MS
-    A3 -- "reports back" --> MS
+```
+        ┌──────────────────────┐
+        │     Admin Center     │   you make changes here
+        └──────────┬───────────┘
+                   ▼
+        ┌──────────────────────┐
+        │  Management Server   │   stores everything
+        └──────────────────────┘
+          ▲        ▲        ▲      agents fetch instructions
+          │        │        │      and report back
+   ┌──────┴───┐ ┌──┴─────┐ ┌┴──────────┐
+   │  Agent   │ │ Agent  │ │   Agent   │
+   │ Windows  │ │ Mac    │ │   Linux   │
+   │ laptop   │ │        │ │   server  │
+   └──────────┘ └────────┘ └───────────┘
 ```
 
 The simplest setup, and the one this guide uses, puts the Admin Center and the Management Server on the **same computer**. When you install the Admin Center and choose **Host the directory on this computer**, the Management Server runs quietly inside it. You don't install anything else.

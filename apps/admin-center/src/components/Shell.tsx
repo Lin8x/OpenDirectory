@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "../lib/hooks";
 import {
   Activity, ArrowRight, Download, BookOpen, Boxes, DatabaseBackup, FlaskConical, FolderTree, Globe, GraduationCap, LayoutDashboard, LogOut, Monitor, Moon, Network, PlusCircle, ScrollText,
-  KeyRound, LifeBuoy, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound, CopyPlus } from "lucide-react";
+  BookMarked, KeyRound, LifeBuoy, PanelsTopLeft, Plug, Trash2, Search, Server, Settings as SettingsIcon, ShieldCheck, Smartphone, Sun, Terminal, Users as UsersIcon, UsersRound, CopyPlus } from "lucide-react";
 import { useLearnMode, useSession } from "../lib/session";
 import { get } from "../lib/api";
 import type { SearchHit } from "../lib/types";
@@ -103,6 +103,9 @@ export default function Shell({ children }: { children: ReactNode }) {
           <NavLink to="/learn" className={({ isActive }) => cx("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px]", isActive ? "bg-accent-soft text-accent font-medium" : "text-ink-2 hover:bg-panel-2")}>
             <BookOpen className="size-4" />Learn
           </NavLink>
+          <NavLink to="/guide" className={({ isActive }) => cx("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px]", isActive ? "bg-accent-soft text-accent font-medium" : "text-ink-2 hover:bg-panel-2")}>
+            <BookMarked className="size-4" />Guide
+          </NavLink>
           <div className="flex h-8 items-center justify-between rounded-md px-2.5 text-[13.5px] text-ink-2">
             <span className="flex items-center gap-2.5"><GraduationCap className="size-4" />Learn mode</span>
             <Switch checked={learn} onChange={setLearn} />
@@ -150,13 +153,14 @@ const QUICK = [
   { label: "Run a script from the library", to: "/scripts", icon: <Terminal className="size-4" /> },
   { label: "View audit log", to: "/audit", icon: <Activity className="size-4" /> },
   { label: "Learn the concepts", to: "/learn", icon: <Boxes className="size-4" /> },
+  { label: "Open the Beginner's Guide", to: "/guide", icon: <BookOpen className="size-4" /> },
 ];
 
 const PAGES = [
   { label: "Overview", to: "/" }, { label: "Users", to: "/users" }, { label: "Security Groups", to: "/groups" },
   { label: "Organizational Units", to: "/ous" }, { label: "Endpoints", to: "/endpoints" }, { label: "Mobile Devices", to: "/mobile" }, { label: "Enrollment", to: "/enroll" },
   { label: "Script Library", to: "/scripts" }, { label: "Patch Management", to: "/patches" }, { label: "Help Desk (chat with users)", to: "/helpdesk" }, { label: "Group Policy", to: "/gpos" }, { label: "Audit Log", to: "/audit" }, { label: "Backup & Restore", to: "/backups" }, { label: "Recycle Bin", to: "/recycle-bin" }, { label: "Password Policies", to: "/password-policies" }, { label: "Network Lab", to: "/lab" }, { label: "Domain Controller (Samba AD DC)", to: "/domain-controller" }, { label: "Replication & Failover (replica servers)", to: "/replication" }, { label: "Network Services (DNS, DHCP, CA, RADIUS)", to: "/network-services" }, { label: "Topology Map", to: "/topology" }, { label: "Windows Services (integrations)", to: "/integrations?tab=windows" }, { label: "Cloud & Alerts (integrations)", to: "/integrations?tab=cloud" },
-  { label: "Learn", to: "/learn" }, { label: "Server & connection settings", to: "/settings" },
+  { label: "Learn", to: "/learn" }, { label: "Beginner's Guide", to: "/guide" }, { label: "Server & connection settings", to: "/settings" },
 ];
 
 function CommandPalette({ onClose }: { onClose: () => void }) {

@@ -28,6 +28,7 @@ import Lab, { LiveTopology } from "./pages/Lab";
 import ScriptEditor from "./pages/ScriptEditor";
 import Audit from "./pages/Audit";
 import Learn from "./pages/Learn";
+import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
 import { UpdatesProvider } from "./lib/updates";
 import { BrandingProvider } from "./lib/branding";
@@ -71,6 +72,8 @@ function Gate() {
             <Route path="/lab" element={<Lab />} />
             <Route path="/topology" element={<LiveTopology />} />
             <Route path="/learn" element={<Learn />} />
+            <Route path="/guide" element={<Guide />} />
+            <Route path="/guide/:slug" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

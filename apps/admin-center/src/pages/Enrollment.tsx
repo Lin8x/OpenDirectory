@@ -104,7 +104,7 @@ export default function Enrollment() {
 
   return (
     <>
-      <PageHeader title="Enrollment" term="enrollment" subtitle="Bring a computer under management in three steps: create a token, run one command on the computer, and watch it check in." />
+      <PageHeader title="Enrollment" guide="04-endpoints-and-agents#enrollment-how-a-computer-joins" term="enrollment" subtitle="Bring a computer under management in three steps: create a token, run one command on the computer, and watch it check in." />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="space-y-5">
           <Card title="1. Enrollment token" actions={<Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setCreating(true)}>New token</Button>}>

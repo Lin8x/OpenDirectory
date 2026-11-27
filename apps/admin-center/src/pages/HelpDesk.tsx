@@ -4,7 +4,7 @@ import { LifeBuoy } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import type { ChatThread } from "../lib/types";
 import { ago } from "../lib/format";
-import { Badge, Card, Loading, cx } from "../components/ui";
+import { Badge, Card, Loading, cx, GuideLink } from "../components/ui";
 import { HelpDeskChat } from "../components/HelpDeskChat";
 
 /** Help desk: every conversation users started from their devices. */
@@ -18,7 +18,7 @@ export default function HelpDesk() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">Help Desk</h1>
+        <h1 className="flex flex-wrap items-baseline gap-x-3 text-[22px] font-semibold tracking-tight">Help Desk<GuideLink to="06-end-user-experience#3-help-desk-chat" /></h1>
         <p className="text-sm text-ink-2">Chats people started from their devices. Turn it on with the <Link to="/gpos" className="text-accent hover:underline">Help desk chat</Link> GPO setting; users then get a "Contact IT" shortcut (or the Help screen in the Android app).</p>
       </div>
       <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
