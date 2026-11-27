@@ -13,6 +13,7 @@ import { ago, osLabel } from "../lib/format";
 import { Avatar, Badge, Button, Card, Dialog, EmptyState, ErrorNote, Field, Input, Loading, OsIcon, PageHeader, StatusDot, Switch, cx, useToast } from "../components/ui";
 import { RemoteViewer } from "../components/RemoteViewer";
 import { RemoteShell } from "../components/RemoteShell";
+import { ManageTab } from "../components/manage/Manage";
 import { HelpDeskChat } from "../components/HelpDeskChat";
 import { MfaCard } from "../components/Mfa";
 import { LapsCard } from "./EndpointDetail";
@@ -115,6 +116,8 @@ function OperatorDevice() {
   if (ep.loading && !ep.data) return <Loading />;
   if (ep.error && !ep.data) return <ErrorNote message={ep.error} onRetry={ep.reload} />;
   const e = ep.data!;
+  const manageTools = ([["services", "manage_services"], ["software", "manage_software"], ["processes", "manage_processes"], ["containers", "manage_containers"]] as const)
+    .filter(([, p]) => can(p)).map(([t]) => t);
   const job = async (type: string, msg: string) => {
     try { await post(`/endpoints/${e.id}/jobs`, { type }); toast("good", msg); } catch (err) { toast("bad", (err as Error).message); }
   };
@@ -139,6 +142,7 @@ function OperatorDevice() {
       {can("remote_desktop") && <RemoteViewer endpoint={e} />}
       {can("read_laps") && <LapsCard id={e.id} />}
       {can("remote_shell") && e.os !== "android" && <RemoteShell endpoint={e} />}
+      {e.os !== "android" && manageTools.length > 0 && <Card title="Manage" padded={false}><div className="p-4"><ManageTab endpoint={e} tools={manageTools} /></div></Card>}
       {can("help_desk") && <Card title="Help desk" padded={false}><HelpDeskChat endpointId={e.id} hostname={e.hostname} /></Card>}
       <Card title="About this device">
         <div className="grid gap-3 text-sm sm:grid-cols-3">

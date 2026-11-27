@@ -9,7 +9,7 @@ import { SoftwarePanel } from "./Software";
 import { ProcessesPanel } from "./Processes";
 import { ContainersPanel } from "./Containers";
 
-type Tool = "services" | "software" | "processes" | "containers";
+export type Tool = "services" | "software" | "processes" | "containers";
 const TOOLS: { id: Tool; label: string; icon: typeof Cog }[] = [
   { id: "services", label: "Services", icon: Cog },
   { id: "software", label: "Apps", icon: AppWindow },
@@ -24,8 +24,11 @@ function newer(v: string, min: string) {
   return true;
 }
 
-export function ManageTab({ endpoint }: { endpoint: Endpoint }) {
-  const [tool, setTool] = useState<Tool>(() => (sessionStorage.getItem("od.manage.tool") as Tool) || "services");
+/** `tools` limits which tools show (delegated operators see only what they hold). */
+export function ManageTab({ endpoint, tools }: { endpoint: Endpoint; tools?: Tool[] }) {
+  const shown = TOOLS.filter((t) => !tools || tools.includes(t.id));
+  const [picked, setTool] = useState<Tool>(() => (sessionStorage.getItem("od.manage.tool") as Tool) || "services");
+  const tool = shown.some((t) => t.id === picked) ? picked : (shown[0]?.id ?? "services");
   const pick = (t: Tool) => { setTool(t); sessionStorage.setItem("od.manage.tool", t); };
   if (!newer(endpoint.agent_version, "0.14.0")) {
     return <Callout tone="warn" title="Update the Endpoint Agent first">{endpoint.hostname} runs agent {endpoint.agent_version || "(unknown)"}. Managing services, apps, processes and containers needs agent 0.14.0 or later. Agents update themselves when agent updates are on.</Callout>;
@@ -33,7 +36,7 @@ export function ManageTab({ endpoint }: { endpoint: Endpoint }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
-        {TOOLS.map((t) => (
+        {shown.map((t) => (
           <button key={t.id} type="button" onClick={() => pick(t.id)}
             className={cx("inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition", tool === t.id ? "border-accent bg-accent-soft text-ink" : "border-line bg-panel text-ink-2 hover:bg-panel-2")}>
             <t.icon className="size-4" />{t.label}
