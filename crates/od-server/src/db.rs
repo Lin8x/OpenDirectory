@@ -146,6 +146,9 @@ pub struct UserSecrets {
     pub password_version: i64,
 }
 
+/// Sealed TOTP secrets: (active, pending enrollment).
+pub type MfaSecrets = (Option<Vec<u8>>, Option<Vec<u8>>);
+
 pub struct Recycled {
     pub id: Uuid,
     pub kind: String,
@@ -164,7 +167,8 @@ pub struct EndpointAuth {
 
 /// Columns added after v0.2. `CREATE TABLE IF NOT EXISTS` doesn't add
 /// columns to existing databases, so each is added here when missing.
-const ADDED_COLUMNS: &[(&str, &str, &str)] = &[("jobs", "script_id", "TEXT"), ("jobs", "batch_id", "TEXT")];
+const ADDED_COLUMNS: &[(&str, &str, &str)] =
+    &[("jobs", "script_id", "TEXT"), ("jobs", "batch_id", "TEXT"), ("users", "mfa_secret", "BLOB"), ("users", "mfa_pending", "BLOB")];
 
 fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(SCHEMA)?;
@@ -491,6 +495,23 @@ impl Db {
             c.execute("DELETE FROM reset_codes WHERE user_id = ?", [id.to_string()])?;
         }
         Ok(ok)
+    }
+
+    /// Sealed TOTP secrets: (active, pending enrollment).
+    pub fn mfa_secrets(&self, id: Uuid) -> Result<MfaSecrets> {
+        Ok(self
+            .lock()
+            .query_row("SELECT mfa_secret, mfa_pending FROM users WHERE id = ?", [id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?
+            .unwrap_or((None, None)))
+    }
+    pub fn set_mfa_pending(&self, id: Uuid, sealed: Option<&[u8]>) -> Result<()> {
+        self.lock().execute("UPDATE users SET mfa_pending = ? WHERE id = ?", params![sealed, id.to_string()])?;
+        Ok(())
+    }
+    pub fn set_mfa_secret(&self, id: Uuid, sealed: Option<&[u8]>) -> Result<()> {
+        self.lock().execute("UPDATE users SET mfa_secret = ?, mfa_pending = NULL WHERE id = ?", params![sealed, id.to_string()])?;
+        Ok(())
     }
 
     pub fn touch_login(&self, id: Uuid) -> Result<()> {

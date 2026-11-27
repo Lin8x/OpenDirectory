@@ -16,9 +16,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Notify};
 use uuid::Uuid;
 
-use crate::auth::{Admin, EndpointCaller};
+use crate::auth::{EndpointCaller, Operator};
 use crate::crypto::{ct_eq, random_token, sha256_hex};
 use crate::error::{ApiError, ApiResult};
+use crate::rbac::Permission;
 use crate::AppState;
 
 type Tx = mpsc::UnboundedSender<Message>;
@@ -33,6 +34,7 @@ struct Session {
     rows: u16,
     /// Set for a TCP tunnel to this port on the endpoint (remote desktop, SSH).
     tunnel_port: Option<u16>,
+    stream: Option<od_core::protocol::StreamOptions>,
     delivered: bool,
     to_admin: Option<Tx>,
     to_agent: Option<Tx>,
@@ -55,6 +57,14 @@ impl Hub {
     pub fn wake(&self, endpoint: Uuid) {
         self.waker(endpoint).notify_one();
     }
+    /// End a session and close both sides.
+    pub fn end(&self, id: Uuid) {
+        if let Some(sess) = self.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&id) {
+            for t in [sess.to_admin, sess.to_agent].into_iter().flatten() {
+                let _ = t.send(Message::Close(None));
+            }
+        }
+    }
     /// Shell sessions the agent should open, handed out once.
     pub fn take_requests(&self, endpoint: Uuid) -> Vec<od_core::protocol::ShellRequest> {
         let mut m = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
@@ -71,6 +81,7 @@ impl Hub {
                     rows: s.rows,
                     tunnel_port: s.tunnel_port,
                     requested_by: s.admin.clone(),
+                    stream: s.stream.clone(),
                 }
             })
             .collect()
@@ -86,6 +97,9 @@ pub struct OpenInput {
     /// Open a TCP tunnel to this port on the endpoint instead of a shell.
     #[serde(default)]
     tunnel_port: Option<u16>,
+    /// Low-latency stream settings (with `tunnel_port` = the stream marker).
+    #[serde(default)]
+    stream: Option<od_core::protocol::StreamOptions>,
 }
 fn cols() -> u16 {
     120
@@ -96,23 +110,44 @@ fn rows() -> u16 {
 
 #[derive(Serialize)]
 pub struct Opened {
-    session_id: Uuid,
+    pub session_id: Uuid,
     /// One-time ticket for the admin WebSocket (browsers can't send headers).
-    ticket: String,
+    pub ticket: String,
 }
 
-pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<OpenInput>) -> ApiResult<Json<Opened>> {
-    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+pub async fn open(State(s): State<AppState>, admin: Operator, Path(id): Path<Uuid>, Json(inp): Json<OpenInput>) -> ApiResult<Json<Opened>> {
+    let e = super::endpoints::visible(&s, &admin, id)?;
+    Ok(Json(start_session(&s, &admin, &e, inp.cols, inp.rows, inp.tunnel_port, inp.stream)?))
+}
+
+/// Check permissions and policy, then queue a shell or tunnel session for
+/// the endpoint's agent to pick up.
+pub(crate) fn start_session(
+    s: &AppState,
+    admin: &Operator,
+    e: &od_core::Endpoint,
+    cols: u16,
+    rows: u16,
+    tunnel_port: Option<u16>,
+    stream: Option<od_core::protocol::StreamOptions>,
+) -> ApiResult<Opened> {
+    let id = e.id;
+    admin.need_endpoint(e, if tunnel_port.is_some() { Permission::RemoteDesktop } else { Permission::RemoteShell })?;
+    // Delegated operators reach only the remote desktop services, not any
+    // port on the endpoint's loopback.
+    if !admin.access.domain_admin && tunnel_port.is_some_and(|p| !DESKTOP_PORTS.contains(&p)) {
+        return Err(ApiError::forbidden("Delegated operators can only open remote desktop (RDP, VNC or stream) sessions"));
+    }
     if e.os == od_core::OsFamily::Android {
         return Err(ApiError::bad_request("Android devices don't support remote shell or remote desktop sessions"));
     }
     // Remote tools can be turned off per endpoint or platform by GPO.
-    for st in super::policies::endpoint_settings(&s, &e)? {
+    for st in super::policies::endpoint_settings(s, e)? {
         if let od_core::policy::Setting::RemoteTools { remote_shell, remote_desktop } = st {
-            if inp.tunnel_port.is_some() && !remote_desktop {
+            if tunnel_port.is_some() && !remote_desktop {
                 return Err(ApiError::forbidden("Remote desktop is turned off for this endpoint by the Remote tools GPO setting"));
             }
-            if inp.tunnel_port.is_none() && !remote_shell {
+            if tunnel_port.is_none() && !remote_shell {
                 return Err(ApiError::forbidden("Remote shell is turned off for this endpoint by the Remote tools GPO setting"));
             }
         }
@@ -127,9 +162,10 @@ pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>,
             admin: admin.name().to_string(),
             ticket_hash: Some(sha256_hex(ticket.as_bytes())),
             created: Instant::now(),
-            cols: inp.cols.clamp(20, 400),
-            rows: inp.rows.clamp(5, 200),
-            tunnel_port: inp.tunnel_port.filter(|p| *p > 0),
+            cols: cols.clamp(20, 400),
+            rows: rows.clamp(5, 200),
+            tunnel_port: tunnel_port.filter(|p| *p > 0),
+            stream: if tunnel_port == Some(od_core::protocol::STREAM_PORT) { Some(stream.unwrap_or_default()) } else { None },
             delivered: false,
             to_admin: None,
             to_agent: None,
@@ -138,16 +174,29 @@ pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>,
         },
     );
     s.hub.wake(id);
-    match inp.tunnel_port {
+    match tunnel_port {
         Some(p) => s.db.audit(admin.name(), "tunnel.open", &e.hostname, &format!("TCP tunnel to port {p} ({})", port_name(p))),
         None => s.db.audit(admin.name(), "shell.open", &e.hostname, "Interactive remote shell"),
     }
-    Ok(Json(Opened { session_id, ticket }))
+    Ok(Opened { session_id, ticket })
+}
+
+/// Check and use up a session's one-time ticket.
+pub(crate) fn take_ticket(s: &AppState, id: Uuid, ticket: &str) -> ApiResult<()> {
+    let mut m = s.hub.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    let sess = m.get_mut(&id).ok_or_else(|| ApiError::not_found("Remote session"))?;
+    let ok = sess.ticket_hash.as_deref().map(|h| ct_eq(h, &sha256_hex(ticket.as_bytes()))).unwrap_or(false);
+    if !ok {
+        return Err(ApiError::unauthorized());
+    }
+    sess.ticket_hash = None; // single use
+    Ok(())
 }
 
 fn port_name(p: u16) -> &'static str {
     match p {
         3389 => "Remote Desktop",
+        od_core::protocol::STREAM_PORT => "low-latency desktop stream",
         5900 => "VNC / Screen Sharing",
         22 => "SSH",
         5985 | 5986 => "WinRM",
@@ -167,15 +216,7 @@ pub async fn admin_ws(
     Query(q): Query<TicketQuery>,
     ws: WebSocketUpgrade,
 ) -> ApiResult<Response> {
-    {
-        let mut m = s.hub.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        let sess = m.get_mut(&id).ok_or_else(|| ApiError::not_found("Shell session"))?;
-        let ok = sess.ticket_hash.as_deref().map(|h| ct_eq(h, &sha256_hex(q.ticket.as_bytes()))).unwrap_or(false);
-        if !ok {
-            return Err(ApiError::unauthorized());
-        }
-        sess.ticket_hash = None; // single use
-    }
+    take_ticket(&s, id, &q.ticket)?;
     Ok(ws.on_upgrade(move |socket| relay(s, id, socket, true)))
 }
 
@@ -194,7 +235,17 @@ pub async fn agent_ws(
 }
 
 async fn relay(s: AppState, id: Uuid, socket: WebSocket, is_admin: bool) {
-    let (mut sink, mut stream) = socket.split();
+    let (sink, stream) = socket.split();
+    relay_io(s, id, sink, stream, is_admin).await
+}
+
+/// Join one side of a session to the hub. The admin side can be a browser
+/// WebSocket, or a TCP connection from guacd for browser RDP.
+pub(crate) async fn relay_io<Si, St, E>(s: AppState, id: Uuid, mut sink: Si, mut stream: St, is_admin: bool)
+where
+    Si: futures_util::Sink<Message> + Unpin + Send + 'static,
+    St: futures_util::Stream<Item = Result<Message, E>> + Unpin,
+{
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     let backlog = {
         let mut m = s.hub.sessions.lock().unwrap_or_else(|e| e.into_inner());
@@ -269,3 +320,7 @@ pub async fn wait(State(s): State<AppState>, EndpointCaller(auth): EndpointCalle
     let woke = tokio::time::timeout(Duration::from_secs(25), n.notified()).await.is_ok();
     Json(Wake { wake: woke })
 }
+
+/// Ports a delegated operator may tunnel to: RDP, VNC and the agent's
+/// low-latency stream host.
+pub const DESKTOP_PORTS: [u16; 3] = [3389, 5900, od_core::protocol::STREAM_PORT];

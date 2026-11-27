@@ -14,6 +14,7 @@ pub mod destinations;
 pub mod error;
 pub mod gateway;
 pub mod netsvc;
+pub mod rbac;
 pub mod recovery;
 pub mod service;
 pub mod tls;

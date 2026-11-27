@@ -1293,3 +1293,209 @@ async fn enrollment_files_carry_the_server_token_and_agent() {
     assert_eq!(st, StatusCode::UNAUTHORIZED);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+async fn login_as(app: &Router, user: &str, pw: &str) -> (StatusCode, Value) {
+    call(app, Method::POST, "/auth/login", None, Some(json!({"username": user, "password": pw}))).await
+}
+
+#[tokio::test]
+async fn delegated_operator_sees_only_their_scope() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+    let (_, gaming) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"Gaming"}))).await;
+    let (_, lan) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"LAN party"}))).await;
+    let (_, child) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"Rigs","parent_id": gaming["id"]}))).await;
+    let (_, office) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"Office"}))).await;
+    let (rig, _) = enroll(&app, auth, "windows", "RIG-01", child["id"].as_str()).await;
+    let (lanpc, _) = enroll(&app, auth, "linux", "LAN-01", lan["id"].as_str()).await;
+    let (desk, _) = enroll(&app, auth, "windows", "DESK-01", office["id"].as_str()).await;
+    let (_, alex) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"alex","password":"password-123456"}))).await;
+    let (_, kid) =
+        call(&app, Method::POST, "/users", auth, Some(json!({"username":"kid","password":"password-123456","ou_id": gaming["id"]}))).await;
+    let (_, boss) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"boss","password":"password-123456"}))).await;
+
+    // No delegation yet: alex can't use the console at all.
+    let (st, _) = login_as(&app, "alex", "password-123456").await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // Expiry in the past is rejected; Domain Admins can't be trustees.
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        "/delegations",
+        auth,
+        Some(json!({
+        "name":"x","trustee_kind":"user","trustee_id": alex["id"],
+        "scope":[{"kind":"ou","id": gaming["id"]}],"permissions":["view_endpoints"],
+        "expires_at":"2001-01-01T00:00:00Z"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    let (st, d) = call(
+        &app,
+        Method::POST,
+        "/delegations",
+        auth,
+        Some(json!({
+        "name":"Gaming PCs","trustee_kind":"user","trustee_id": alex["id"],
+        "scope":[{"kind":"ou","id": gaming["id"], "include_children": true}, {"kind":"endpoint","id": lanpc}],
+        "permissions":["view_endpoints","remote_desktop","view_users","reset_passwords"]})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::CREATED, "{d}");
+
+    let (st, v) = login_as(&app, "alex", "password-123456").await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    let at = format!("Bearer {}", v["token"].as_str().unwrap());
+    let op = Some(at.as_str());
+
+    let (_, me) = call(&app, Method::GET, "/auth/me", op, None).await;
+    assert_eq!(me["domain_admin"], false);
+    assert!(me["permissions"].as_array().unwrap().contains(&json!("remote_desktop")));
+
+    // Endpoints: the child OU (inherited) and the single endpoint, nothing else.
+    let (st, eps) = call(&app, Method::GET, "/endpoints", op, None).await;
+    assert_eq!(st, StatusCode::OK);
+    let mut names: Vec<&str> = eps.as_array().unwrap().iter().map(|e| e["hostname"].as_str().unwrap()).collect();
+    names.sort();
+    assert_eq!(names, ["LAN-01", "RIG-01"]);
+    let (st, _) = call(&app, Method::GET, &format!("/endpoints/{desk}"), op, None).await;
+    assert_eq!(st, StatusCode::NOT_FOUND, "out of scope looks missing");
+    let (st, _) = call(&app, Method::GET, &format!("/endpoints/{rig}"), op, None).await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Permissions within scope.
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{rig}/jobs"), op, Some(json!({"type":"restart_agent"}))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "no endpoint_actions");
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{rig}/shell"), op, Some(json!({}))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "no remote_shell");
+    let (st, v) = call(&app, Method::POST, &format!("/endpoints/{rig}/shell"), op, Some(json!({"tunnel_port": 3389}))).await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{rig}/shell"), op, Some(json!({"tunnel_port": 22}))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "only desktop ports");
+    let (st, _) = call(&app, Method::POST, &format!("/endpoints/{desk}/shell"), op, Some(json!({"tunnel_port": 3389}))).await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (st, _) = call(&app, Method::GET, &format!("/endpoints/{rig}/laps"), op, None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // Directory: only scoped OUs and users; never Domain Admins.
+    let (_, ous) = call(&app, Method::GET, "/ous", op, None).await;
+    let mut ou_names: Vec<&str> = ous.as_array().unwrap().iter().map(|o| o["name"].as_str().unwrap()).collect();
+    ou_names.sort();
+    assert_eq!(ou_names, ["Gaming", "Rigs"]);
+    let (_, users) = call(&app, Method::GET, "/users", op, None).await;
+    let unames: Vec<&str> = users.as_array().unwrap().iter().map(|u| u["username"].as_str().unwrap()).collect();
+    assert_eq!(unames, ["kid"]);
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        &format!("/users/{}/password", kid["id"].as_str().unwrap()),
+        op,
+        Some(json!({"password":"another-pass-1"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let (st, _) = call(
+        &app,
+        Method::POST,
+        &format!("/users/{}/password", boss["id"].as_str().unwrap()),
+        op,
+        Some(json!({"password":"another-pass-1"})),
+    )
+    .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (_, groups) = call(&app, Method::GET, "/groups", op, None).await;
+    assert_eq!(groups.as_array().unwrap().len(), 0);
+
+    // Everything else stays Domain Admins only.
+    for path in ["/policies", "/audit", "/delegations", "/overview", "/enrollment-tokens", "/backups/plans"] {
+        let (st, _) = call(&app, Method::GET, path, op, None).await;
+        assert_eq!(st, StatusCode::FORBIDDEN, "{path}");
+    }
+    let (st, _) = call(&app, Method::POST, "/users", op, Some(json!({"username":"evil","password":"password-123456"}))).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // Turning the delegation off ends access on the next request.
+    let id = d["id"].as_str().unwrap();
+    let mut body = d.clone();
+    body["enabled"] = json!(false);
+    let (st, _) = call(&app, Method::PUT, &format!("/delegations/{id}"), auth, Some(body)).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = call(&app, Method::GET, "/endpoints", op, None).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn totp_two_factor_sign_in_and_policy() {
+    let app = app();
+    let tok = setup(&app).await;
+    let auth = Some(tok.as_str());
+
+    let (st, setup) = call(&app, Method::POST, "/auth/mfa/setup", auth, None).await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(setup["otpauth_uri"].as_str().unwrap().starts_with("otpauth://totp/"));
+    let secret = decode_b32(setup["secret"].as_str().unwrap());
+    let code = |off: i64| {
+        use hmac::Mac;
+        let step = ((chrono::Utc::now().timestamp() / 30) + off) as u64;
+        let mut m = hmac::Hmac::<sha1::Sha1>::new_from_slice(&secret).unwrap();
+        m.update(&step.to_be_bytes());
+        let h = m.finalize().into_bytes();
+        let o = (h[19] & 15) as usize;
+        format!("{:06}", u32::from_be_bytes([h[o] & 0x7f, h[o + 1], h[o + 2], h[o + 3]]) % 1_000_000)
+    };
+    let (st, _) = call(&app, Method::POST, "/auth/mfa/enable", auth, Some(json!({"code":"000000"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let (st, v) = call(&app, Method::POST, "/auth/mfa/enable", auth, Some(json!({"code": code(-1)}))).await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+
+    // Password alone isn't enough now.
+    let (st, v) = login_as(&app, "dan", "s3cure-pass!").await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    assert_eq!(v["code"], "mfa_required");
+    // The code used for enrollment can't be replayed.
+    let (st, _) =
+        call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"dan","password":"s3cure-pass!","otp": code(-1)}))).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    let (st, v) =
+        call(&app, Method::POST, "/auth/login", None, Some(json!({"username":"dan","password":"s3cure-pass!","otp": code(0)}))).await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+
+    // Require MFA for delegated operators: they're held at enrollment.
+    let (st, _) = call(&app, Method::PUT, "/mfa-policy", auth, Some(json!({"require":"delegated"}))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, ou) = call(&app, Method::POST, "/ous", auth, Some(json!({"name":"Lab"}))).await;
+    let (_, sam) = call(&app, Method::POST, "/users", auth, Some(json!({"username":"sam","password":"password-123456"}))).await;
+    call(
+        &app,
+        Method::POST,
+        "/delegations",
+        auth,
+        Some(json!({"name":"Lab","trustee_kind":"user","trustee_id": sam["id"],
+        "scope":[{"kind":"ou","id": ou["id"]}],"permissions":["view_endpoints"]})),
+    )
+    .await;
+    let (_, v) = login_as(&app, "sam", "password-123456").await;
+    let st_tok = format!("Bearer {}", v["token"].as_str().unwrap());
+    let (st, v) = call(&app, Method::GET, "/endpoints", Some(&st_tok), None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    assert_eq!(v["code"], "mfa_enrollment_required");
+    let (_, me) = call(&app, Method::GET, "/auth/me", Some(&st_tok), None).await;
+    assert_eq!(me["mfa_enrollment_required"], true);
+}
+
+fn decode_b32(s: &str) -> Vec<u8> {
+    let (mut out, mut buf, mut bits) = (vec![], 0u32, 0u32);
+    for c in s.bytes() {
+        let v = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".iter().position(|x| *x == c).unwrap() as u32;
+        buf = (buf << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    out
+}

@@ -209,8 +209,8 @@ pub struct RsopEntry {
 
 /// Resultant Set of Policy for one endpoint: every setting that applies,
 /// which GPO it came from, what it lost to, and its last reported state.
-pub async fn rsop(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<RsopEntry>>> {
-    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+pub async fn rsop(State(s): State<AppState>, op: crate::auth::Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<RsopEntry>>> {
+    let e = super::endpoints::visible(&s, &op, id)?;
     let ou_parent: HashMap<Uuid, Option<Uuid>> = s.db.list_ous()?.into_iter().map(|o| (o.id, o.parent_id)).collect();
     let eff = effective_settings(&s.db.list_policies()?, od_core::policy::PolicyScope::endpoint(&e), &ou_parent);
     let cat = policy_catalog();

@@ -8,13 +8,19 @@ use serde_json::json;
 pub struct ApiError {
     pub status: StatusCode,
     pub message: String,
+    /// Machine-readable reason for clients, e.g. `mfa_required`.
+    pub code: Option<&'static str>,
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiError {
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        ApiError { status, message: message.into() }
+        ApiError { status, message: message.into(), code: None }
+    }
+    pub fn with_code(mut self, code: &'static str) -> Self {
+        self.code = Some(code);
+        self
     }
     pub fn bad_request(m: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, m)
@@ -35,7 +41,10 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.status, Json(json!({ "error": self.message }))).into_response()
+        match self.code {
+            Some(c) => (self.status, Json(json!({ "error": self.message, "code": c }))).into_response(),
+            None => (self.status, Json(json!({ "error": self.message }))).into_response(),
+        }
     }
 }
 

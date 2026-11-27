@@ -14,19 +14,26 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::required;
-use crate::auth::Admin;
+use crate::auth::{Admin, Operator};
 use crate::error::{ApiError, ApiResult};
+use crate::rbac::Permission;
 use crate::AppState;
 
 pub async fn list_templates(_admin: Admin) -> Json<Vec<ScriptTemplate>> {
     Json(templates())
 }
 
-pub async fn list(State(s): State<AppState>, _admin: Admin) -> ApiResult<Json<Vec<Script>>> {
+pub async fn list(State(s): State<AppState>, op: Operator) -> ApiResult<Json<Vec<Script>>> {
+    if !op.access.has_any(Permission::RunScripts) {
+        return Err(ApiError::forbidden("Your delegation doesn't include running scripts"));
+    }
     Ok(Json(s.db.list_scripts()?))
 }
 
-pub async fn get(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Script>> {
+pub async fn get(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Script>> {
+    if !op.access.has_any(Permission::RunScripts) {
+        return Err(ApiError::not_found("Script"));
+    }
     Ok(Json(s.db.get_script(id)?.ok_or_else(|| ApiError::not_found("Script"))?))
 }
 
@@ -229,17 +236,25 @@ fn preview(e: &Endpoint) -> TargetPreview {
 
 pub async fn run(
     State(s): State<AppState>,
-    admin: Admin,
+    admin: Operator,
     Path(id): Path<Uuid>,
     Json(inp): Json<RunInput>,
 ) -> ApiResult<(StatusCode, Json<RunResponse>)> {
+    if !admin.access.has_any(Permission::RunScripts) {
+        return Err(ApiError::forbidden("Your delegation doesn't include running scripts"));
+    }
     let sc = s.db.get_script(id)?.ok_or_else(|| ApiError::not_found("Script"))?;
     if inp.targets.is_empty() {
         return Err(ApiError::bad_request("Choose at least one endpoint, group or OU"));
     }
     let env = param_env(&sc.params, &inp.params).map_err(ApiError::bad_request)?;
-    let (targets, skipped): (Vec<Endpoint>, Vec<Endpoint>) =
-        resolve_targets(&s, &inp.targets)?.into_iter().partition(|e| sc.supports(e.os));
+    let resolved = resolve_targets(&s, &inp.targets)?;
+    // A delegated operator may only target endpoints they can run scripts on;
+    // an OU or group target that reaches further is refused outright.
+    if resolved.iter().any(|e| !admin.access.endpoint(e, Permission::RunScripts)) {
+        return Err(ApiError::forbidden("Some of the chosen targets are outside your delegation"));
+    }
+    let (targets, skipped): (Vec<Endpoint>, Vec<Endpoint>) = resolved.into_iter().partition(|e| sc.supports(e.os));
     if inp.dry_run {
         return Ok((
             StatusCode::OK,
@@ -302,8 +317,14 @@ pub async fn script_jobs(
     Ok(Json(s.db.list_script_jobs(id, q.limit.unwrap_or(100).min(1000))?.into_iter().map(super::endpoints::redact).collect()))
 }
 
-pub async fn batch_jobs(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<Job>>> {
-    Ok(Json(s.db.list_batch_jobs(id)?.into_iter().map(super::endpoints::redact).collect()))
+pub async fn batch_jobs(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<Job>>> {
+    let mut jobs = s.db.list_batch_jobs(id)?;
+    if !op.access.domain_admin {
+        let eps: std::collections::HashSet<Uuid> =
+            s.db.list_endpoints()?.into_iter().filter(|e| op.access.sees_endpoint(e)).map(|e| e.id).collect();
+        jobs.retain(|j| eps.contains(&j.endpoint_id));
+    }
+    Ok(Json(jobs.into_iter().map(super::endpoints::redact).collect()))
 }
 
 #[derive(Serialize)]

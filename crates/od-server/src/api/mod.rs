@@ -6,6 +6,7 @@ pub mod agent_updates;
 pub mod backups;
 mod branding;
 mod ca;
+mod delegation;
 pub mod directory;
 mod downloads;
 mod endpoints;
@@ -14,11 +15,13 @@ mod helpdesk;
 pub mod integrations;
 mod lab;
 pub mod maintenance;
+pub mod mfa;
 mod mobile;
 mod netsvc;
 pub mod passwords;
 mod policies;
 pub mod recycle;
+mod remote;
 pub mod replication;
 pub mod samba;
 mod scripts;
@@ -47,6 +50,13 @@ pub fn router(state: AppState) -> Router {
         .route("/users/{id}/resultant-password-policy", get(passwords::user_resultant))
         .route("/users/{id}/reset-code", post(passwords::issue_reset_code))
         .route("/auth/me", get(directory::me))
+        .route("/auth/mfa/setup", post(mfa::setup))
+        .route("/auth/mfa/enable", post(mfa::enable))
+        .route("/auth/mfa/disable", post(mfa::disable))
+        .route("/mfa-policy", get(mfa::get_policy).put(mfa::set_policy))
+        .route("/users/{id}/mfa", delete(mfa::reset_for_user))
+        .route("/delegations", get(delegation::list).post(delegation::create))
+        .route("/delegations/{id}", put(delegation::update).delete(delegation::remove))
         .route("/overview", get(directory::overview))
         .route("/search", get(directory::search))
         .route("/audit", get(directory::audit))
@@ -74,6 +84,9 @@ pub fn router(state: AppState) -> Router {
         .route("/endpoints/{id}/laps", get(endpoints::laps))
         .route("/endpoints/{id}/shell", post(shell::open))
         .route("/shell/{id}/ws", get(shell::admin_ws))
+        .route("/remote/capabilities", get(remote::capabilities))
+        .route("/endpoints/{id}/remote-desktop", post(remote::start))
+        .route("/remote/{id}/guac", get(remote::guac_ws))
         .route("/endpoints/{id}/laps/rotate", post(endpoints::laps_rotate))
         .route("/jobs", get(endpoints::list_jobs))
         .route("/patches/run", post(endpoints::patch_run))

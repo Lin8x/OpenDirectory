@@ -9,17 +9,25 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::directory::double_option;
-use crate::auth::Admin;
+use crate::auth::{Admin, Operator};
 use crate::crypto::enrollment_code;
 use crate::error::{ApiError, ApiResult};
+use crate::rbac::Permission;
 use crate::AppState;
 
-pub async fn list(State(s): State<AppState>, _admin: Admin) -> ApiResult<Json<Vec<Endpoint>>> {
-    Ok(Json(s.db.list_endpoints()?))
+pub async fn list(State(s): State<AppState>, op: Operator) -> ApiResult<Json<Vec<Endpoint>>> {
+    let mut eps = s.db.list_endpoints()?;
+    eps.retain(|e| op.access.sees_endpoint(e));
+    Ok(Json(eps))
 }
 
-pub async fn get(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Endpoint>> {
-    Ok(Json(s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?))
+/// An endpoint the operator can see, or 404.
+pub(crate) fn visible(s: &AppState, op: &Operator, id: Uuid) -> ApiResult<Endpoint> {
+    s.db.get_endpoint(id)?.filter(|e| op.access.sees_endpoint(e)).ok_or_else(|| ApiError::not_found("Endpoint"))
+}
+
+pub async fn get(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Endpoint>> {
+    Ok(Json(visible(&s, &op, id)?))
 }
 
 #[derive(Deserialize)]
@@ -78,28 +86,53 @@ pub fn redact(mut j: Job) -> Job {
 
 pub async fn list_endpoint_jobs(
     State(s): State<AppState>,
-    _admin: Admin,
+    op: Operator,
     Path(id): Path<Uuid>,
     Query(q): Query<JobsQuery>,
 ) -> ApiResult<Json<Vec<Job>>> {
+    visible(&s, &op, id)?;
     Ok(Json(s.db.list_jobs(Some(id), q.limit.unwrap_or(50).min(500))?.into_iter().map(redact).collect()))
 }
 
-pub async fn list_jobs(State(s): State<AppState>, _admin: Admin, Query(q): Query<JobsQuery>) -> ApiResult<Json<Vec<Job>>> {
-    Ok(Json(s.db.list_jobs(None, q.limit.unwrap_or(100).min(1000))?.into_iter().map(redact).collect()))
+pub async fn list_jobs(State(s): State<AppState>, op: Operator, Query(q): Query<JobsQuery>) -> ApiResult<Json<Vec<Job>>> {
+    let mut jobs = s.db.list_jobs(None, q.limit.unwrap_or(100).min(1000))?;
+    if !op.access.domain_admin {
+        let eps: std::collections::HashSet<Uuid> =
+            s.db.list_endpoints()?.into_iter().filter(|e| op.access.sees_endpoint(e)).map(|e| e.id).collect();
+        jobs.retain(|j| eps.contains(&j.endpoint_id));
+    }
+    Ok(Json(jobs.into_iter().map(redact).collect()))
 }
 
-pub async fn get_job(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Job>> {
-    Ok(Json(redact(s.db.get_job(id)?.ok_or_else(|| ApiError::not_found("Job"))?)))
+/// A job on an endpoint the operator can see, or 404.
+fn visible_job(s: &AppState, op: &Operator, id: Uuid) -> ApiResult<Job> {
+    let j = s.db.get_job(id)?.ok_or_else(|| ApiError::not_found("Job"))?;
+    if !op.access.domain_admin {
+        visible(s, op, j.endpoint_id).map_err(|_| ApiError::not_found("Job"))?;
+    }
+    Ok(j)
+}
+
+pub async fn get_job(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Job>> {
+    Ok(Json(redact(visible_job(&s, &op, id)?)))
+}
+
+/// The permission a delegated operator needs to queue this kind of job.
+pub(crate) fn job_permission(kind: &JobKind) -> Permission {
+    match kind {
+        JobKind::Script { .. } => Permission::RunScripts,
+        _ => Permission::EndpointActions,
+    }
 }
 
 pub async fn create_job(
     State(s): State<AppState>,
-    admin: Admin,
+    admin: Operator,
     Path(id): Path<Uuid>,
     Json(kind): Json<JobKind>,
 ) -> ApiResult<(StatusCode, Json<Job>)> {
-    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    let e = visible(&s, &admin, id)?;
+    admin.need_endpoint(&e, job_permission(&kind))?;
     if matches!(kind, JobKind::Unknown) {
         return Err(ApiError::bad_request("Unknown job type"));
     }
@@ -139,7 +172,12 @@ pub async fn create_job(
     Ok((StatusCode::CREATED, Json(job)))
 }
 
-pub async fn cancel_job(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Job>> {
+pub async fn cancel_job(State(s): State<AppState>, admin: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Job>> {
+    let j = visible_job(&s, &admin, id)?;
+    if !admin.access.domain_admin {
+        let e = visible(&s, &admin, j.endpoint_id)?;
+        admin.need_endpoint(&e, job_permission(&j.kind))?;
+    }
     if !s.db.cancel_job(id)? {
         return Err(ApiError::conflict("Only queued jobs can be cancelled"));
     }
@@ -205,8 +243,9 @@ pub struct LapsView {
 }
 
 /// Read the endpoint's LAPS password. Every read is audited.
-pub async fn laps(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<LapsView>> {
-    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+pub async fn laps(State(s): State<AppState>, admin: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<LapsView>> {
+    let e = visible(&s, &admin, id)?;
+    admin.need_endpoint(&e, Permission::ReadLaps)?;
     let (account, cur, prev, rotated_at, pending) = s
         .db
         .get_laps(id)?
@@ -223,8 +262,9 @@ pub async fn laps(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>)
     Ok(Json(view))
 }
 
-pub async fn laps_rotate(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
-    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+pub async fn laps_rotate(State(s): State<AppState>, admin: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
+    let e = visible(&s, &admin, id)?;
+    admin.need_endpoint(&e, Permission::ReadLaps)?;
     if !s.db.request_laps_rotation(id, true)? {
         return Err(ApiError::not_found("LAPS password"));
     }

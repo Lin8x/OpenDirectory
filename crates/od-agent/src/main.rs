@@ -17,6 +17,7 @@ mod policy_scripts;
 mod service;
 mod shell;
 mod state;
+mod stream;
 mod updater;
 mod util;
 
@@ -78,6 +79,16 @@ enum Command {
     /// Entry point for the Windows Service Control Manager.
     #[command(hide = true)]
     Service,
+    /// Desktop stream host, started by the agent in the user's session.
+    #[command(hide = true)]
+    StreamHost {
+        #[arg(long)]
+        connect: String,
+        #[arg(long)]
+        token: String,
+        #[arg(long)]
+        options: String,
+    },
 }
 
 fn init_logging(to_file: bool) {
@@ -183,6 +194,7 @@ async fn async_main(cmd: Command) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&inventory::collect().await)?);
         }
         Command::Service => unreachable!(),
+        Command::StreamHost { connect, token, options } => stream::host_main(connect, token, options).await?,
     }
     Ok(())
 }

@@ -43,6 +43,9 @@ pub fn spawn(req: ShellRequest, client: od_client::Client, rules: crate::enduser
             return;
         }
         let res = match req.tunnel_port {
+            Some(od_core::protocol::STREAM_PORT) => {
+                crate::stream::session(req.session_id, req.stream.clone().unwrap_or_default(), client).await
+            }
             Some(port) => tunnel(req.session_id, port, client).await,
             None => run(req, client).await,
         };

@@ -141,6 +141,51 @@ pub struct ShellRequest {
     /// The admin who opened it, shown in consent prompts.
     #[serde(default)]
     pub requested_by: String,
+    /// With `tunnel_port == Some(STREAM_PORT)`: start the low-latency desktop
+    /// stream host with these options and tunnel to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<StreamOptions>,
+}
+
+/// Marker "port" for the agent's built-in desktop stream host. Nothing
+/// listens on port 1 (tcpmux), so an agent too old to know it just fails to
+/// connect instead of doing anything else.
+pub const STREAM_PORT: u16 = 1;
+
+/// Settings for a low-latency desktop stream (hardware video encoding).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StreamOptions {
+    /// `auto`, `nvenc`, `vaapi`, `qsv`, `amf`, `videotoolbox` or `software`.
+    #[serde(default = "auto")]
+    pub encoder: String,
+    #[serde(default = "fps")]
+    pub fps: u32,
+    /// Target bitrate in kbit/s.
+    #[serde(default = "bitrate")]
+    pub bitrate_kbps: u32,
+    /// Scale the picture to at most this height (0 keeps the native size).
+    #[serde(default)]
+    pub max_height: u32,
+    /// Allow keyboard and mouse input (off gives a view-only session).
+    #[serde(default = "yes")]
+    pub input: bool,
+}
+fn auto() -> String {
+    "auto".into()
+}
+fn fps() -> u32 {
+    60
+}
+fn bitrate() -> u32 {
+    12_000
+}
+fn yes() -> bool {
+    true
+}
+impl Default for StreamOptions {
+    fn default() -> Self {
+        StreamOptions { encoder: auto(), fps: fps(), bitrate_kbps: bitrate(), max_height: 0, input: true }
+    }
 }
 
 /// Certificate auto-enrollment: the agent sends a CSR for its own key.

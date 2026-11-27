@@ -13,9 +13,10 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::{required, validate_password, validate_username};
-use crate::auth::Admin;
+use crate::auth::{Admin, Operator};
 use crate::crypto::{hash_password, random_token, sha256_hex, verify_password};
 use crate::error::{ApiError, ApiResult};
+use crate::rbac::Permission;
 use crate::AppState;
 
 const SESSION_HOURS: i64 = 12;
@@ -302,6 +303,9 @@ fn new_session(s: &AppState, user_id: Uuid) -> ApiResult<SessionResponse> {
 pub struct LoginRequest {
     username: String,
     password: String,
+    /// Six-digit authenticator code, for accounts with MFA.
+    #[serde(default)]
+    otp: Option<String>,
 }
 
 /// Lockout rules for a username: its resultant password policy, or the
@@ -375,9 +379,11 @@ pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> 
         s.db.audit(&user.username, "auth.failed", "", "Account disabled");
         return Err(ApiError::forbidden("This account is disabled"));
     }
-    if user.role != Role::Admin {
-        s.db.audit(&user.username, "auth.failed", "", "Not a Domain Admin");
-        return Err(ApiError::forbidden("Only Domain Admins can sign in to the Admin Center"));
+    if user.role != Role::Admin && crate::rbac::for_user(&s, &user).is_empty() {
+        s.db.audit(&user.username, "auth.failed", "", "No Admin Center access");
+        return Err(ApiError::forbidden(
+            "This account has no Admin Center access. Ask a Domain Admin to delegate endpoints or accounts to you.",
+        ));
     }
     if super::passwords::expired(&s, &user) {
         s.db.audit(&user.username, "auth.failed", "", "Password expired");
@@ -386,19 +392,45 @@ pub async fn login(State(s): State<AppState>, Json(req): Json<LoginRequest>) -> 
             "Your password has expired. Choose a new one with \"Change password\" on the sign-in screen.",
         ));
     }
+    let mfa = super::mfa::enabled(&s, user.id);
+    if mfa {
+        match req.otp.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+            None => {
+                return Err(
+                    ApiError::new(StatusCode::UNAUTHORIZED, "Enter the 6-digit code from your authenticator app").with_code("mfa_required")
+                )
+            }
+            Some(code) => {
+                if !super::mfa::verify(&s, user.id, code)? {
+                    record_failure("Wrong MFA code");
+                    return Err(ApiError::new(StatusCode::UNAUTHORIZED, "That code isn't right, or was already used. Try the next one.")
+                        .with_code("mfa_required"));
+                }
+            }
+        }
+    }
     s.login_failures.lock().unwrap_or_else(|e| e.into_inner()).remove(&name);
-    s.db.audit(&user.username, "auth.login", "", "");
+    s.db.audit(&user.username, "auth.login", "", if mfa { "With MFA" } else { "" });
     Ok(Json(new_session(&s, user.id)?))
 }
 
-pub async fn logout(State(s): State<AppState>, admin: Admin) -> ApiResult<StatusCode> {
+pub async fn logout(State(s): State<AppState>, admin: Operator) -> ApiResult<StatusCode> {
     s.db.delete_session(&admin.token_hash)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn me(State(s): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+pub async fn me(State(s): State<AppState>, admin: Operator) -> ApiResult<Json<Value>> {
+    let delegations: Vec<Value> = crate::rbac::for_user(&s, &admin.user)
+        .iter()
+        .map(|d| json!({ "id": d.id, "name": d.name, "permissions": d.permissions, "expires_at": d.expires_at }))
+        .collect();
     Ok(Json(json!({
         "user": admin.user,
+        "domain_admin": admin.access.domain_admin,
+        "permissions": admin.access.permissions(),
+        "delegations": delegations,
+        "mfa_enabled": super::mfa::enabled(&s, admin.user.id),
+        "mfa_enrollment_required": super::mfa::must_enroll(&s, admin.user.id, admin.access.domain_admin),
         "organization": s.db.meta_get("organization")?,
         "domain": s.db.meta_get("domain")?,
         "server": *s.info,
@@ -528,12 +560,24 @@ pub struct OuInput {
     parent_id: Option<Option<Uuid>>,
 }
 
-pub async fn list_ous(State(s): State<AppState>, _admin: Admin) -> ApiResult<Json<Vec<OrgUnit>>> {
-    Ok(Json(s.db.list_ous()?))
+pub async fn list_ous(State(s): State<AppState>, op: Operator) -> ApiResult<Json<Vec<OrgUnit>>> {
+    let mut ous = s.db.list_ous()?;
+    if !op.access.domain_admin {
+        ous.retain(|o| op.access.ou(o));
+        // Top of the delegated tree shows as a root.
+        let ids: Vec<Uuid> = ous.iter().map(|o| o.id).collect();
+        for o in ous.iter_mut() {
+            if o.parent_id.is_some_and(|p| !ids.contains(&p)) {
+                o.parent_id = None;
+            }
+        }
+    }
+    Ok(Json(ous))
 }
 
-pub async fn get_ou(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<OrgUnit>> {
-    Ok(Json(s.db.get_ou(id)?.ok_or_else(|| ApiError::not_found("OU"))?))
+pub async fn get_ou(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<OrgUnit>> {
+    let ou = s.db.get_ou(id)?.filter(|o| op.access.ou(o)).ok_or_else(|| ApiError::not_found("OU"))?;
+    Ok(Json(ou))
 }
 
 fn check_parent(s: &AppState, id: Option<Uuid>, parent: Option<Uuid>) -> ApiResult<()> {
@@ -620,12 +664,31 @@ pub struct UserInput {
     group_ids: Option<Vec<Uuid>>,
 }
 
-pub async fn list_users(State(s): State<AppState>, _admin: Admin) -> ApiResult<Json<Vec<User>>> {
-    Ok(Json(s.db.list_users()?))
+pub async fn list_users(State(s): State<AppState>, op: Operator) -> ApiResult<Json<Vec<User>>> {
+    let mut users = s.db.list_users()?;
+    if !op.access.domain_admin {
+        users.retain(|u| op.access.sees_user(u));
+        scrub_user_groups(&s, &op, &mut users)?;
+    }
+    Ok(Json(users))
 }
 
-pub async fn get_user(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<User>> {
-    Ok(Json(s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?))
+pub async fn get_user(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<User>> {
+    let u = s.db.get_user(id)?.filter(|u| op.access.sees_user(u)).ok_or_else(|| ApiError::not_found("User"))?;
+    let mut v = vec![u];
+    if !op.access.domain_admin {
+        scrub_user_groups(&s, &op, &mut v)?;
+    }
+    Ok(Json(v.remove(0)))
+}
+
+/// Delegated operators only see memberships of groups in their scope.
+fn scrub_user_groups(s: &AppState, op: &Operator, users: &mut [User]) -> ApiResult<()> {
+    let visible: Vec<Uuid> = s.db.list_groups()?.into_iter().filter(|g| op.access.group(g)).map(|g| g.id).collect();
+    for u in users {
+        u.group_ids.retain(|g| visible.contains(g));
+    }
+    Ok(())
 }
 
 fn check_ou(s: &AppState, ou: Option<Uuid>) -> ApiResult<()> {
@@ -770,11 +833,12 @@ pub struct PasswordInput {
 
 pub async fn reset_password(
     State(s): State<AppState>,
-    admin: Admin,
+    admin: Operator,
     Path(id): Path<Uuid>,
     Json(inp): Json<PasswordInput>,
 ) -> ApiResult<StatusCode> {
     let mut u = s.db.get_user(id)?.ok_or_else(|| ApiError::not_found("User"))?;
+    admin.need_user(&u, Permission::ResetPasswords)?;
     super::passwords::check(&s, Some(id), &inp.password)?;
     super::passwords::set(&s, id, &inp.password)?;
     u.must_change_password = inp.must_change_password;
@@ -868,12 +932,33 @@ pub struct GroupInput {
     member_ids: Option<Vec<Uuid>>,
 }
 
-pub async fn list_groups(State(s): State<AppState>, _admin: Admin) -> ApiResult<Json<Vec<Group>>> {
-    Ok(Json(s.db.list_groups()?))
+pub async fn list_groups(State(s): State<AppState>, op: Operator) -> ApiResult<Json<Vec<Group>>> {
+    let mut groups = s.db.list_groups()?;
+    if !op.access.domain_admin {
+        groups.retain(|g| op.access.group(g));
+        scrub_group_members(&s, &op, &mut groups)?;
+    }
+    Ok(Json(groups))
 }
 
-pub async fn get_group(State(s): State<AppState>, _admin: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Group>> {
-    Ok(Json(s.db.get_group(id)?.ok_or_else(|| ApiError::not_found("Group"))?))
+pub async fn get_group(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Group>> {
+    let g = s.db.get_group(id)?.filter(|g| op.access.group(g)).ok_or_else(|| ApiError::not_found("Group"))?;
+    let mut v = vec![g];
+    if !op.access.domain_admin {
+        scrub_group_members(&s, &op, &mut v)?;
+    }
+    Ok(Json(v.remove(0)))
+}
+
+/// Delegated operators only see members that are in their scope.
+fn scrub_group_members(s: &AppState, op: &Operator, groups: &mut [Group]) -> ApiResult<()> {
+    let users: Vec<Uuid> = s.db.list_users()?.into_iter().filter(|u| op.access.sees_user(u)).map(|u| u.id).collect();
+    let eps: Vec<Uuid> = s.db.list_endpoints()?.into_iter().filter(|e| op.access.sees_endpoint(e)).map(|e| e.id).collect();
+    for g in groups {
+        g.member_ids.retain(|m| users.contains(m));
+        g.endpoint_ids.retain(|m| eps.contains(m));
+    }
+    Ok(())
 }
 
 pub async fn create_group(State(s): State<AppState>, admin: Admin, Json(inp): Json<GroupInput>) -> ApiResult<(StatusCode, Json<Group>)> {

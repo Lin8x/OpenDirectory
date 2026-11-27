@@ -127,3 +127,8 @@ pub fn ensure_file(path: &std::path::Path, contents: &str) -> Result<bool> {
     write_file(path, contents)?;
     Ok(true)
 }
+
+/// Constant-time string comparison for secrets.
+pub fn ct_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}

@@ -3926,6 +3926,7 @@ dependencies = [
  "clap",
  "futures-util",
  "hex",
+ "libc",
  "od-client",
  "od-core",
  "portable-pty",

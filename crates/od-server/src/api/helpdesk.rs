@@ -10,8 +10,9 @@ use od_core::protocol::{ChatMessage, ChatPost};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::auth::{Admin, EndpointCaller};
+use crate::auth::{EndpointCaller, Operator};
 use crate::error::{ApiError, ApiResult};
+use crate::rbac::Permission;
 use crate::AppState;
 
 const MAX_LEN: usize = 4000;
@@ -54,19 +55,22 @@ pub struct Thread {
     unread: i64,
 }
 
-pub async fn threads(State(s): State<AppState>, _a: Admin) -> ApiResult<Json<Vec<Thread>>> {
-    let names: std::collections::HashMap<Uuid, String> = s.db.list_endpoints()?.into_iter().map(|e| (e.id, e.hostname)).collect();
+pub async fn threads(State(s): State<AppState>, op: Operator) -> ApiResult<Json<Vec<Thread>>> {
+    let names: std::collections::HashMap<Uuid, String> =
+        s.db.list_endpoints()?.into_iter().filter(|e| op.access.endpoint(e, Permission::HelpDesk)).map(|e| (e.id, e.hostname)).collect();
     Ok(Json(
         s.db.chat_threads()?
             .into_iter()
+            .filter(|(id, _, _)| names.contains_key(id))
             .map(|(id, last, unread)| Thread { hostname: names.get(&id).cloned().unwrap_or_default(), endpoint_id: id, last, unread })
             .collect(),
     ))
 }
 
 /// The whole conversation with one device. Reading it marks it read.
-pub async fn messages(State(s): State<AppState>, _a: Admin, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<ChatMessage>>> {
-    s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+pub async fn messages(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>) -> ApiResult<Json<Vec<ChatMessage>>> {
+    let e = super::endpoints::visible(&s, &op, id)?;
+    op.need_endpoint(&e, Permission::HelpDesk)?;
     let v = s.db.chat_after(id, 0, 500)?;
     if !s.replication.is_replica() {
         s.db.mark_chat_read(id)?;
@@ -79,8 +83,9 @@ pub struct Reply {
     text: String,
 }
 
-pub async fn reply(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(r): Json<Reply>) -> ApiResult<Json<ChatMessage>> {
-    let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+pub async fn reply(State(s): State<AppState>, admin: Operator, Path(id): Path<Uuid>, Json(r): Json<Reply>) -> ApiResult<Json<ChatMessage>> {
+    let e = super::endpoints::visible(&s, &admin, id)?;
+    admin.need_endpoint(&e, Permission::HelpDesk)?;
     let text = clean(&r.text)?;
     let who = if admin.user.display_name.trim().is_empty() { admin.name().to_string() } else { admin.user.display_name.clone() };
     let m = s.db.add_chat(id, true, &who, &text)?;
