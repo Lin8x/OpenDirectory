@@ -45,7 +45,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         agent = Agent(applicationContext)
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(24), dp(20), dp(24)) }
-        setContentView(ScrollView(this).apply { addView(root) })
+        // Android 15 draws apps edge to edge; keep content clear of the status and navigation bars.
+        setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(root) })
         screen = intent.getStringExtra("screen") ?: "status"
         // Force-stopping an app cancels its jobs; put the check-in back.
         if (agent.store.enrolled) CheckinJob.schedule(applicationContext)
