@@ -355,14 +355,14 @@ jobs:
       - name: Update the Homebrew tap
         if: env.HOMEBREW_TAP_TOKEN != ''
         run: |
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Lin8x/homebrew-opendirectory.git" tap
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Lin8x/homebrew-tap.git" tap
           mkdir -p tap/Casks
           cp store-manifests/homebrew/Casks/*.rb tap/Casks/
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Casks
-          git diff --cached --quiet || git commit -m "opendirectory-admin-center ${TAG#v}"
+          git diff --cached --quiet || git commit -m "OpenDirectory Admin Center ${TAG#v}"
           git push
       - name: Build the APT and DNF repositories
         id: repos

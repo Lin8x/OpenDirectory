@@ -52,14 +52,16 @@ itself and the rest of the release still publishes.
 
      Keep the backup it writes somewhere safe and out of the repository.
 
-3. **Homebrew tap.** Create the public repository `Lin8x/homebrew-opendirectory`
-   (empty is fine), then a fine-grained token with *Contents: read and write* on
-   that repository only, and save it as the `HOMEBREW_TAP_TOKEN` secret:
+3. **Homebrew tap.** The cask lives in [Lin8x/homebrew-tap](https://github.com/Lin8x/homebrew-tap)
+   (`brew install --cask lin8x/tap/opendirectory`). For the release workflow to update it
+   automatically, create a fine-grained token with *Contents: read and write* on that repository
+   only and save it as the `HOMEBREW_TAP_TOKEN` secret. If FluidMessages already has one, reuse it:
 
    ```bash
-   gh repo create Lin8x/homebrew-opendirectory --public --description "Homebrew tap for OpenDirectory"
    gh secret set HOMEBREW_TAP_TOKEN --repo Lin8x/OpenDirectory
    ```
+
+   Until then, the rendered cask in `store-manifests.tar.gz` can be copied into the tap by hand.
 
 4. **Snap Store.** Sign in at https://snapcraft.io with an Ubuntu One account,
    register the name, then export credentials for CI:

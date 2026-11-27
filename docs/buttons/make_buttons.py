@@ -28,7 +28,7 @@ BUTTONS = {
     "flatpak": ("flatpak", "#4A90D9", "Any Flatpak Linux", ".flatpak bundle", False),
     "snap": ("snapcraft", "#4C8B6F", "Ubuntu · Snap", ".snap package", False),
     "terminal": (None, "#24292F", "Install with", "One command", False),
-    "homebrew": ("homebrew", "#B5791B", "Coming soon to", "Homebrew", True),
+    "homebrew": ("homebrew", "#B5791B", "Install with", "Homebrew", False),
     "flathub": ("flathub", "#4A86CF", "Coming soon to", "Flathub", True),
     "snapstore": ("snapcraft", "#4C8B6F", "Coming soon to", "Snap Store", True),
     "aur": ("archlinux", "#1793D1", "Coming soon to", "AUR", True),

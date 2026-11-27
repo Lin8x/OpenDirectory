@@ -10,7 +10,7 @@
 #   flatpak/io.github.lin8x.OpenDirectory.metainfo.xml
 #   aur/opendirectory-admin-center-bin/PKGBUILD         AUR
 #   aur/opendirectory-admin-center-bin/.SRCINFO
-#   homebrew/Casks/opendirectory-admin-center.rb       Homebrew tap
+#   homebrew/Casks/opendirectory.rb                    Homebrew tap (Lin8x/homebrew-tap)
 #   nix/sources.json                                    Nix flake pin
 set -euo pipefail
 
@@ -42,7 +42,7 @@ fill "$here/flatpak/io.github.lin8x.OpenDirectory.yml" "$out/flatpak/io.github.l
 fill "$here/flatpak/io.github.lin8x.OpenDirectory.metainfo.xml" "$out/flatpak/io.github.lin8x.OpenDirectory.metainfo.xml"
 fill "$here/aur/opendirectory-admin-center-bin/PKGBUILD.in" "$out/aur/opendirectory-admin-center-bin/PKGBUILD"
 fill "$here/aur/opendirectory-admin-center-bin/.SRCINFO.in" "$out/aur/opendirectory-admin-center-bin/.SRCINFO"
-fill "$here/homebrew/Casks/opendirectory-admin-center.rb.in" "$out/homebrew/Casks/opendirectory-admin-center.rb"
+fill "$here/homebrew/Casks/opendirectory.rb.in" "$out/homebrew/Casks/opendirectory.rb"
 
 mkdir -p "$out/nix"
 cat >"$out/nix/sources.json" <<JSON

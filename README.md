@@ -125,13 +125,19 @@ irm https://github.com/Lin8x/OpenDirectory/releases/latest/download/install.ps1 
 <p align="center">
 <a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-macos-universal.dmg"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/buttons/dark/dmg.svg"><img src="docs/buttons/light/dmg.svg" width="248" height="64" alt="Download the macOS .dmg disk image"></picture></a>
 <a href="#macos-one-command"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/buttons/dark/terminal.svg"><img src="docs/buttons/light/terminal.svg" width="248" height="64" alt="Install on macOS with one command"></picture></a>
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/buttons/dark/homebrew.svg"><img src="docs/buttons/light/homebrew.svg" width="248" height="64" alt="Coming soon to Homebrew"></picture>
+<a href="#macos-homebrew"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/buttons/dark/homebrew.svg"><img src="docs/buttons/light/homebrew.svg" width="248" height="64" alt="Install with Homebrew"></picture></a>
 </p>
 
 <a id="macos-one-command"></a>Or install with one command in Terminal:
 
 ```bash
 curl -fsSL https://github.com/Lin8x/OpenDirectory/releases/latest/download/install.sh | sh
+```
+
+<a id="macos-homebrew"></a>Or with Homebrew:
+
+```bash
+brew install --cask lin8x/tap/opendirectory
 ```
 
 <sub>One universal app for Apple silicon and Intel Macs.</sub>
@@ -201,12 +207,11 @@ sudo zypper install open-directory-admin-center
 yay -S opendirectory-admin-center-bin
 ```
 
-**Flathub, Snap Store, Homebrew and Nix**
+**Flathub, Snap Store and Nix**
 
 ```bash
 flatpak install flathub io.github.lin8x.OpenDirectory
 sudo snap install opendirectory-admin-center
-brew install --cask lin8x/opendirectory/opendirectory-admin-center
 nix profile install 'github:Lin8x/OpenDirectory?dir=packaging/nix'
 ```
 
