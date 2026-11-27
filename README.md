@@ -9,7 +9,7 @@ The parts of Windows Server and Active Directory you use every day, in one app t
 
 [![Latest release](https://img.shields.io/github/v/release/Lin8x/OpenDirectory?style=flat-square&label=release&color=3a63f3)](https://github.com/Lin8x/OpenDirectory/releases/latest) [![Downloads](https://img.shields.io/github/downloads/Lin8x/OpenDirectory/total?style=flat-square&color=2ea44f)](https://github.com/Lin8x/OpenDirectory/releases) ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-555?style=flat-square) ![Built with Rust and Tauri](https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri-dea584?style=flat-square)
 
-[**Download**](#download) · [Features](#features) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Docs](docs/GUIDE.md) · [Roadmap](docs/ROADMAP.md)
+[**Download**](#download) · [Features](#features) · [Quick start](#quick-start) · [How it works](#how-it-works) · [**Beginner's guide**](docs/guide/README.md) · [Roadmap](docs/ROADMAP.md)
 
 <br>
 
@@ -247,6 +247,8 @@ The **Management Server** and the **od CLI** are built into the Admin Center. Fo
 
 ## Quick start
 
+> **New to directory services?** The [Beginner's guide](docs/guide/README.md) explains domains, OUs, users, groups, Group Policy, agents and enrollment in plain language, then walks you from installing to managing your first computer, with screenshots and a glossary of Active Directory equivalents.
+
 **1. Install the Admin Center** from [Download](#download) and open it.
 
 **2. Create your domain.** Choose **Host the directory on this computer**. The setup wizard creates the domain and the first Domain Admin, then applies a **security baseline**: Custom, Minimal, Home/Homelab, Small Business, Enterprise, Education or High Security. You can layer modifiers on top: security level, patch rings, device ownership, admin model, USB policy, remote access, compliance packs (HIPAA, PCI DSS, SOC 2, CMMC, GDPR, FERPA, CIPA) and rollout. A review screen shows every OU, group and GPO before anything is created. Turn on **Launch at startup** so the directory comes back after a reboot.
@@ -481,4 +483,4 @@ Prefer typing Cargo? `cargo x <task>` does the same thing as `./scripts/<task>.s
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the git hooks.
 
-Read [docs/GUIDE.md](docs/GUIDE.md) for a beginner-friendly tour, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the technical detail.
+Read the [Beginner's guide](docs/guide/README.md) to learn how to use OpenDirectory, [docs/GUIDE.md](docs/GUIDE.md) for a tour of the code, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the technical detail.
