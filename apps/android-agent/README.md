@@ -26,8 +26,16 @@ Needs JDK 17 and the Android SDK (platform 35).
 ./gradlew assembleRelease
 ```
 
-The APK is in `app/build/outputs/apk/release/`. It's signed with the debug key; configure your own signing config to publish it.
+The APK is in `app/build/outputs/apk/release/`. To bundle it into the Management Server, which serves it to phones, run this from the repository root and then rebuild the server:
+
+```bash
+./scripts/build-android.sh
+```
+
+The bundled copy lives in `crates/od-server/assets/`. It's signed with the build machine's debug key, so use the same machine (or your own signing config) for later builds, or phones can't update the app in place.
 
 ## Enroll a device
 
-In the Admin Center, open **Enrollment**, create a token and pick the **Android** tab. Enter the server address, token and TLS fingerprint in the app and tap **Enroll**.
+On the phone, open `https://<your-server>:8443/api/v1/agent/downloads/android-agent.apk` in the browser and install the app. The Management Server serves it, so no app store or internet access is needed. The browser warns about the server's self-signed certificate; that's expected.
+
+Then in the Admin Center, open **Enrollment**, create a token and pick the **Android** tab. Enter the server address, token and TLS fingerprint in the app and tap **Enroll**.

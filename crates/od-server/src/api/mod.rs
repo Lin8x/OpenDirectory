@@ -7,6 +7,7 @@ pub mod backups;
 mod branding;
 mod ca;
 pub mod directory;
+mod downloads;
 mod endpoints;
 mod helpdesk;
 pub mod integrations;
@@ -141,6 +142,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/certificate", post(ca::agent_enroll))
         .route("/agent/wait", get(shell::wait))
         .route("/agent/chat", post(helpdesk::agent_post))
+        .route("/agent/downloads/android-agent.apk", get(downloads::android_apk))
         .route("/agent/device-certificate", post(crate::gateway::agent_certificate))
         .route("/internet-gateway", get(crate::gateway::get).put(crate::gateway::set))
         .route("/helpdesk", get(helpdesk::threads))

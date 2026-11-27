@@ -1143,6 +1143,16 @@ async fn end_user_settings_targeting_and_help_desk() {
     let (_, r) = call(&app, Method::POST, "/agent/checkin", Some(&other_auth), Some(ci("0.13.0", 0))).await;
     assert!(kinds(&r).is_empty(), "{r}");
 
+    // The Android app is served by the server, no sign-in needed.
+    let resp = app
+        .clone()
+        .oneshot(axum::http::Request::get("/api/v1/agent/downloads/android-agent.apk").body(axum::body::Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let apk = http_body_util::BodyExt::collect(resp.into_body()).await.unwrap().to_bytes();
+    assert!(apk.starts_with(b"PK"), "an APK is a zip file");
+
     // Remote shell is refused for the endpoint where it's off; desktop isn't.
     let (st, v) = call(&app, Method::POST, &format!("/endpoints/{lin}/shell"), auth, Some(json!({"cols":80,"rows":24}))).await;
     assert_eq!(st, StatusCode::FORBIDDEN, "{v}");

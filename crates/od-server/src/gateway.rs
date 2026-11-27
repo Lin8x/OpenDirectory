@@ -279,6 +279,10 @@ async fn guard(State(s): State<AppState>, req: Request, next: Next) -> Response 
     };
     let peer = req.extensions().get::<axum::extract::ConnectInfo<SocketAddr>>().map(|c| c.0.ip());
     let cert = req.extensions().get::<PeerCert>().and_then(|p| p.0.clone());
+    // Agent downloads hold no secrets; a new phone fetches the app first.
+    if agent_path.starts_with("downloads/") {
+        return next.run(req).await;
+    }
     if agent_path == "enroll" {
         if let Some(ip) = peer {
             let mut f = s.gateway.failures.lock().unwrap_or_else(|e| e.into_inner());

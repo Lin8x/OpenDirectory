@@ -39,7 +39,7 @@ export default function Enrollment() {
   const cmds = useMemo(() => {
     const t = tok?.token ?? "<TOKEN>";
     const enroll = `enroll --server ${url} --token ${t}${fpArg} --install`;
-    const android = `1. Install the OpenDirectory Agent app (APK from the GitHub release).\n2. Open it and enter:\n   Server:      ${url}\n   Token:       ${t}\n   Fingerprint: ${fp ?? "(none)"}\n3. Tap Enroll. It checks in about every 15 minutes, only on a network, so it barely touches the battery.`;
+    const android = `1. On the phone, open this address in the browser and install the app\n   (it comes from this Management Server; allow installing from the browser when asked):\n   ${url}/api/v1/agent/downloads/android-agent.apk\n2. Open OpenDirectory Agent and enter:\n   Server:      ${url}\n   Token:       ${t}\n   Fingerprint: ${fp ?? "(none)"}\n3. Tap Enroll. It checks in about every 15 minutes, only on a network, so it barely touches the battery.`;
     if (source === "copied") {
       return { android,
         windows: `# In an elevated PowerShell (Run as Administrator), from the folder with opendirectory-agent.exe:\n.\\opendirectory-agent.exe ${enroll}`,
@@ -94,6 +94,7 @@ export default function Enrollment() {
               {source === "copied" && <p>Get <code className="rounded bg-panel-2 px-1 font-mono text-xs">opendirectory-agent</code> for this OS from the GitHub release page on another computer and copy it over with a USB drive or file share. It's a single file with no dependencies.</p>}
               {os === "windows" && <p>Installs the <b>OpenDirectory Endpoint Agent</b> Windows Service (automatic start, runs as SYSTEM, restarts on failure). Works on Windows 10 and 11 Home, Pro and Enterprise, and Windows Server.</p>}
               {os === "macos" && <p>Installs a launchd daemon at <code className="font-mono text-xs">/Library/LaunchDaemons/dev.opendirectory.agent.plist</code> that starts at boot and stays running.</p>}
+              {os === "android" && <p>The browser warns about the server's self-signed certificate; that's expected. The app itself pins the fingerprint above, so it only ever talks to this server.</p>}
               {os === "android" && <p>The app runs no background service: Android's job scheduler wakes it about every 15 minutes when there's a network and the battery isn't low. It reports inventory and security status, shows the managed-device notice and gives the user a Help desk chat.</p>}
               {via === "internet" && os !== "android" && <p>This command enrolls over the Internet Gateway, so the computer doesn't need to be on the office network.</p>}
               {os === "linux" && <p>Installs a systemd service <code className="font-mono text-xs">opendirectory-agent.service</code>, enabled at boot with automatic restart.</p>}
