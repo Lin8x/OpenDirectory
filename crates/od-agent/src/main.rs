@@ -18,6 +18,8 @@ mod util;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::time::Duration;
+
 use tokio::sync::watch;
 
 #[derive(Parser)]
@@ -47,11 +49,18 @@ enum Command {
         /// Also install and start the background service.
         #[arg(long)]
         install: bool,
+        /// Service priority when installing.
+        #[arg(long, value_enum, default_value_t = service::Priority::Low)]
+        priority: service::Priority,
     },
     /// Run in the foreground (what the service runs).
     Run,
-    /// Install and start the background service.
-    Install,
+    /// Install and start the background service (headless: no tray or window).
+    Install {
+        /// Low (default) yields CPU and disk to the user's apps; normal uses the OS default.
+        #[arg(long, value_enum, default_value_t = service::Priority::Low)]
+        priority: service::Priority,
+    },
     /// Stop and remove the background service.
     Uninstall {
         /// Also delete enrollment and local state.
@@ -72,6 +81,11 @@ fn init_logging(to_file: bool) {
     if to_file {
         let dir = state::data_dir();
         let _ = std::fs::create_dir_all(&dir);
+        // Keep one previous log, so the file can't grow without limit.
+        let log = dir.join("agent.log");
+        if std::fs::metadata(&log).map(|m| m.len() > 10 * 1024 * 1024).unwrap_or(false) {
+            let _ = std::fs::rename(&log, dir.join("agent.log.1"));
+        }
         if let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("agent.log")) {
             tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false).with_writer(std::sync::Mutex::new(file)).init();
             return;
@@ -90,26 +104,34 @@ fn main() -> Result<()> {
         anyhow::bail!("The `service` command is only used on Windows; use `run` instead");
     }
     init_logging(false);
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async_main(cli.command))
+    runtime()?.block_on(async_main(cli.command))
+}
+
+/// The agent runs on one thread: it spends nearly all its time waiting on
+/// the network, so a single-threaded runtime keeps memory and idle CPU
+/// wake-ups to a minimum. Slow OS commands run on a small blocking pool.
+pub fn runtime() -> std::io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(8).thread_keep_alive(Duration::from_secs(10)).build()
 }
 
 async fn async_main(cmd: Command) -> Result<()> {
     match cmd {
-        Command::Enroll { server, token, fingerprint, install } => {
+        Command::Enroll { server, token, fingerprint, install, priority } => {
             if let Some(existing) = state::AgentState::load()? {
                 println!("Note: replacing the existing enrollment with {}", existing.server.url);
             }
             let st = agent::enroll(&server, &token, fingerprint).await?;
             println!("Enrolled as endpoint {} with {}", st.endpoint_id, st.server.url);
             if install {
-                service::install()?;
+                service::install(priority)?;
                 println!("{} installed and running.", service::DISPLAY_NAME);
             } else {
                 println!("Next: run `opendirectory-agent install` to keep it running in the background.");
             }
         }
         Command::Run => {
+            service::apply_priority(service::Priority::load());
+            service::refresh_definition();
             let (tx, rx) = watch::channel(false);
             tokio::spawn(async move {
                 let _ = tokio::signal::ctrl_c().await;
@@ -120,11 +142,11 @@ async fn async_main(cmd: Command) -> Result<()> {
                 std::process::exit(1);
             }
         }
-        Command::Install => {
+        Command::Install { priority } => {
             if state::AgentState::load()?.is_none() {
                 anyhow::bail!("Enroll first: opendirectory-agent enroll --server <url> --token <token> --fingerprint <fp>");
             }
-            service::install()?;
+            service::install(priority)?;
             println!("{} installed and running.", service::DISPLAY_NAME);
         }
         Command::Uninstall { purge } => {
@@ -146,7 +168,7 @@ async fn async_main(cmd: Command) -> Result<()> {
                 }
                 None => println!("Enrolled:   no"),
             }
-            println!("Service:    {}", service::status());
+            println!("Service:    {} (headless, {} priority)", service::status(), service::Priority::load().label());
             println!("Version:    {}", agent::VERSION);
         }
         Command::Inventory => {
