@@ -13,7 +13,7 @@ fn item(state: ComplianceState, message: impl Into<String>) -> ComplianceItem {
     ComplianceItem { setting: "certificate_auto_enrollment".into(), state, message: message.into() }
 }
 
-fn write_private(path: &std::path::Path, data: &[u8]) -> anyhow::Result<()> {
+pub(crate) fn write_private(path: &std::path::Path, data: &[u8]) -> anyhow::Result<()> {
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, data)?;
     #[cfg(unix)]

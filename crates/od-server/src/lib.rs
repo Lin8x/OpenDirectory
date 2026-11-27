@@ -12,6 +12,7 @@ pub mod crypto;
 pub mod db;
 pub mod destinations;
 pub mod error;
+pub mod gateway;
 pub mod netsvc;
 pub mod service;
 pub mod tls;
@@ -40,6 +41,8 @@ pub struct AppState {
     /// DNS and other hosted network services.
     pub services: Arc<netsvc::Services>,
     pub replication: Arc<api::replication::Runtime>,
+    /// The Internet Gateway listener for agents outside the LAN.
+    pub gateway: Arc<gateway::Runtime>,
 }
 
 /// Facts about this server shown in the Admin Center and enrollment commands.
@@ -126,6 +129,7 @@ pub fn build_state(data_dir: &std::path::Path, info: ServerInfo) -> Result<AppSt
         hub: Default::default(),
         services: Default::default(),
         replication: Arc::new(api::replication::Runtime::load(data_dir)),
+        gateway: Default::default(),
     })
 }
 
@@ -206,11 +210,17 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     listener.set_nonblocking(true)?;
     let listen_addr = listener.local_addr()?;
 
+    let mut tls_pem = None;
     let (scheme, tls_cfg, fingerprint) = if config.tls {
         let (cfg, fp) = match &config.tls_cert {
             Some((cert, key)) => tls::load_provided(cert, key).await?,
             None => tls::load_or_create(&config.data_dir, &host).await?,
         };
+        let (cert, key) = match &config.tls_cert {
+            Some((c, k)) => (c.clone(), k.clone()),
+            None => (config.data_dir.join("tls-cert.pem"), config.data_dir.join("tls-key.pem")),
+        };
+        tls_pem = Some((std::fs::read_to_string(cert)?, std::fs::read_to_string(key)?));
         ("https", Some(cfg), Some(fp))
     } else {
         ("http", None, None)
@@ -224,6 +234,8 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer> {
     };
     let state = build_state(&config.data_dir, info)?;
     let info = state.info.clone();
+    *state.gateway.tls.lock().unwrap_or_else(|e| e.into_inner()) = tls_pem;
+    gateway::apply(&state).await;
     spawn_housekeeping(state.clone());
     api::integrations::spawn_dispatcher(state.clone());
     api::replication::init(&state);

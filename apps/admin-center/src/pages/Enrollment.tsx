@@ -19,7 +19,9 @@ export default function Enrollment() {
   const ous = useQuery<OrgUnit[]>("/ous");
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [os, setOs] = useState<"windows" | "macos" | "linux">("windows");
+  const [os, setOs] = useState<"windows" | "macos" | "linux" | "android">("windows");
+  const gateway = useQuery<{ enabled: boolean; public_url: string; status: string }>("/internet-gateway");
+  const [via, setVia] = useState<"lan" | "internet">("lan");
   const [source, setSource] = useState<"download" | "copied">("download");
   // Watch for computers that enroll while this page is open.
   const [openedAt] = useState(() => Date.now());
@@ -29,26 +31,28 @@ export default function Enrollment() {
 
   const active = (tokens.data ?? []).filter((t) => (!t.expires_at || new Date(t.expires_at) > new Date()) && (t.max_uses === null || t.uses < t.max_uses));
   const tok = (tokens.data ?? []).find((t) => t.token === selected) ?? active[0];
-  const url = me?.server.endpoint_url ?? "";
+  const gw = gateway.data?.enabled && gateway.data.public_url ? gateway.data.public_url : null;
+  const url = via === "internet" && gw ? gw : me?.server.endpoint_url ?? "";
   const fp = me?.server.tls_fingerprint;
   const fpArg = fp ? ` --fingerprint ${fp}` : "";
 
   const cmds = useMemo(() => {
     const t = tok?.token ?? "<TOKEN>";
     const enroll = `enroll --server ${url} --token ${t}${fpArg} --install`;
+    const android = `1. Install the OpenDirectory Agent app (APK from the GitHub release).\n2. Open it and enter:\n   Server:      ${url}\n   Token:       ${t}\n   Fingerprint: ${fp ?? "(none)"}\n3. Tap Enroll. It checks in about every 15 minutes, only on a network, so it barely touches the battery.`;
     if (source === "copied") {
-      return {
+      return { android,
         windows: `# In an elevated PowerShell (Run as Administrator), from the folder with opendirectory-agent.exe:\n.\\opendirectory-agent.exe ${enroll}`,
         macos: `# In Terminal, from the folder with opendirectory-agent:\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
         linux: `# As root, from the folder with opendirectory-agent:\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
       };
     }
-    return {
+    return { android,
       windows: `# In an elevated PowerShell (Run as Administrator):\nInvoke-WebRequest ${RELEASES}/opendirectory-agent-windows-x64.exe -OutFile opendirectory-agent.exe\n.\\opendirectory-agent.exe ${enroll}`,
       macos: `# In Terminal:\ncurl -fLo opendirectory-agent ${RELEASES}/opendirectory-agent-macos-$([ "$(uname -m)" = arm64 ] && echo arm64 || echo x64)\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
       linux: `# In a terminal:\ncurl -fLo opendirectory-agent ${RELEASES}/opendirectory-agent-linux-x64\nchmod +x opendirectory-agent\nsudo ./opendirectory-agent ${enroll}`,
     };
-  }, [tok, url, fpArg, source]);
+  }, [tok, url, fpArg, fp, source]);
 
   return (
     <>
@@ -73,17 +77,25 @@ export default function Enrollment() {
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <Button size="sm" variant={source === "download" ? "primary" : "ghost"} onClick={() => setSource("download")}>Download from GitHub</Button>
               <Button size="sm" variant={source === "copied" ? "primary" : "ghost"} onClick={() => setSource("copied")}>I copied the file (offline)</Button>
+              {gw && <span className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-ink-3">Connect over</span>
+                <Button size="sm" variant={via === "lan" ? "primary" : "ghost"} onClick={() => setVia("lan")}>Office network</Button>
+                <Button size="sm" variant={via === "internet" ? "primary" : "ghost"} onClick={() => setVia("internet")}>Internet Gateway</Button>
+              </span>}
             </div>
             <Tabs value={os} onChange={setOs} tabs={[
               { id: "windows", label: <span className="flex items-center gap-1.5"><OsIcon os="windows" className="size-3.5" />Windows</span> },
               { id: "macos", label: <span className="flex items-center gap-1.5"><OsIcon os="macos" className="size-3.5" />macOS</span> },
               { id: "linux", label: <span className="flex items-center gap-1.5"><OsIcon os="linux" className="size-3.5" />Linux</span> },
+              { id: "android", label: <span className="flex items-center gap-1.5"><OsIcon os="android" className="size-3.5" />Android</span> },
             ]} />
-            <CodeBlock code={cmds[os]} label={os === "windows" ? "PowerShell (Administrator)" : "Terminal"} />
+            <CodeBlock code={cmds[os]} label={os === "windows" ? "PowerShell (Administrator)" : os === "android" ? "On the phone" : "Terminal"} />
             <div className="mt-3 space-y-2 text-sm text-ink-2">
               {source === "copied" && <p>Get <code className="rounded bg-panel-2 px-1 font-mono text-xs">opendirectory-agent</code> for this OS from the GitHub release page on another computer and copy it over with a USB drive or file share. It's a single file with no dependencies.</p>}
               {os === "windows" && <p>Installs the <b>OpenDirectory Endpoint Agent</b> Windows Service (automatic start, runs as SYSTEM, restarts on failure). Works on Windows 10 and 11 Home, Pro and Enterprise, and Windows Server.</p>}
               {os === "macos" && <p>Installs a launchd daemon at <code className="font-mono text-xs">/Library/LaunchDaemons/dev.opendirectory.agent.plist</code> that starts at boot and stays running.</p>}
+              {os === "android" && <p>The app runs no background service: Android's job scheduler wakes it about every 15 minutes when there's a network and the battery isn't low. It reports inventory and security status, shows the managed-device notice and gives the user a Help desk chat.</p>}
+              {via === "internet" && os !== "android" && <p>This command enrolls over the Internet Gateway, so the computer doesn't need to be on the office network.</p>}
               {os === "linux" && <p>Installs a systemd service <code className="font-mono text-xs">opendirectory-agent.service</code>, enabled at boot with automatic restart.</p>}
             </div>
           </Card>

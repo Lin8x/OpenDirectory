@@ -148,7 +148,14 @@ pub async fn checkin(
             }
         }
     }
-    let (servers, epoch) = super::replication::servers_for_agents(&s);
+    let (mut servers, epoch) = super::replication::servers_for_agents(&s);
+    // The Internet Gateway is the last resort, after every LAN address.
+    if let Some(g) = crate::gateway::public_endpoint(&s) {
+        if servers.is_empty() {
+            servers.push(ServerEndpoint { url: s.info.endpoint_url.clone(), fingerprint: s.info.tls_fingerprint.clone(), primary: true });
+        }
+        servers.push(g);
+    }
     let mut accounts: Vec<ManagedAccount> = accounts.into_values().collect();
     accounts.sort_by(|a, b| a.username.cmp(&b.username));
     Ok(Json(CheckinResponse {

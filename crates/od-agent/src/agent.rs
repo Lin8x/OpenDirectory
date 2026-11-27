@@ -59,6 +59,8 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     }
     let mut last_update_try: Option<Instant> = None;
     let client = state.client()?;
+    let mut device_id = crate::identity::DeviceIdentity::default();
+    device_id.init(&client);
     tracing::info!("Endpoint Agent {VERSION} reporting to {}", state.server.url);
 
     let mut last_inventory: Option<Instant> = None;
@@ -92,6 +94,9 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
     let mut help_desk = helpdesk::HelpDesk::default();
 
     loop {
+        // Device certificate for the Internet Gateway (needed before a
+        // device enrolled over the internet can check in).
+        device_id.maintain(&client).await;
         // Scan for OS updates in the background every few hours.
         if last_patch_scan.map(|t| t.elapsed() > PATCH_SCAN_EVERY).unwrap_or(true) {
             last_patch_scan = Some(Instant::now());

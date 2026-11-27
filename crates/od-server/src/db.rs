@@ -100,6 +100,10 @@ CREATE TABLE IF NOT EXISTS helpdesk_messages (
   from_it INTEGER NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL, at TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS helpdesk_by_endpoint ON helpdesk_messages(endpoint_id, id);
+CREATE TABLE IF NOT EXISTS device_certs (
+  fingerprint TEXT PRIMARY KEY, endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+  not_after TEXT NOT NULL, issued_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT NOT NULL, details TEXT NOT NULL DEFAULT ''
@@ -687,6 +691,40 @@ impl Db {
     }
     pub fn delete_endpoint(&self, id: Uuid) -> Result<bool> {
         Ok(self.lock().execute("DELETE FROM endpoints WHERE id = ?", [id.to_string()])? > 0)
+    }
+
+    // ---------- Internet Gateway device certificates ----------
+    /// Register a newly issued device certificate, keeping only it and the
+    /// one before (so a renewal can't lock a device out mid-way).
+    pub fn add_device_cert(&self, endpoint: Uuid, fingerprint: &str, not_after: DateTime<Utc>) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "DELETE FROM device_certs WHERE endpoint_id = ?1 AND fingerprint NOT IN
+               (SELECT fingerprint FROM device_certs WHERE endpoint_id = ?1 ORDER BY issued_at DESC LIMIT 1)",
+            [endpoint.to_string()],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO device_certs(fingerprint, endpoint_id, not_after, issued_at) VALUES(?, ?, ?, ?)",
+            rusqlite::params![fingerprint, endpoint.to_string(), ts(not_after), ts(Utc::now())],
+        )?;
+        Ok(())
+    }
+    pub fn device_cert_owner(&self, fingerprint: &str) -> Result<Option<Uuid>> {
+        let id: Option<String> = self
+            .lock()
+            .query_row(
+                "SELECT endpoint_id FROM device_certs WHERE fingerprint = ? AND not_after > ?",
+                [fingerprint, &ts(Utc::now())],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(id.map(uid))
+    }
+    pub fn device_cert_count(&self, endpoint: Uuid) -> Result<i64> {
+        Ok(self.lock().query_row("SELECT COUNT(*) FROM device_certs WHERE endpoint_id = ?", [endpoint.to_string()], |r| r.get(0))?)
+    }
+    pub fn device_cert_endpoints(&self) -> Result<i64> {
+        Ok(self.lock().query_row("SELECT COUNT(DISTINCT endpoint_id) FROM device_certs", [], |r| r.get(0))?)
     }
 
     // ---------- help desk ----------

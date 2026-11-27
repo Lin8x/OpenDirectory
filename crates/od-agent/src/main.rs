@@ -6,6 +6,7 @@ mod certs;
 mod desktop;
 mod enduser;
 mod helpdesk;
+mod identity;
 mod inventory;
 mod jobs;
 mod laps;

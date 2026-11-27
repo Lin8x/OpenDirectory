@@ -81,6 +81,15 @@ struct Conn {
     http: reqwest::Client,
     base: String,
     tls: Option<Arc<rustls::ClientConfig>>,
+    target: ServerTarget,
+}
+
+/// A client certificate and key (PEM) presented to servers that ask for
+/// one, such as the Internet Gateway's mutual TLS.
+#[derive(Clone)]
+pub struct Identity {
+    pub cert_pem: String,
+    pub key_pem: String,
 }
 
 /// How long to stay on a fallback server before trying the preferred one again.
@@ -93,6 +102,7 @@ pub struct Client {
     active: Arc<std::sync::atomic::AtomicUsize>,
     switched_at: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
     auth: Option<String>,
+    identity: Arc<std::sync::RwLock<Option<Identity>>>,
 }
 
 /// A WebSocket to the Management Server (remote shell and tunnels).
@@ -101,19 +111,30 @@ pub use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 impl Client {
     pub fn new(target: &ServerTarget) -> Result<Client> {
-        let conn = Self::conn(target)?;
+        let conn = Self::conn(target, None)?;
         Ok(Client {
             conns: Arc::new(std::sync::RwLock::new(vec![conn])),
             active: Default::default(),
             switched_at: Default::default(),
             auth: None,
+            identity: Default::default(),
         })
+    }
+
+    /// Present this client certificate on every connection from now on.
+    pub fn set_identity(&self, id: Option<Identity>) -> Result<()> {
+        let targets: Vec<ServerTarget> = self.conns.read().unwrap_or_else(|e| e.into_inner()).iter().map(|c| c.target.clone()).collect();
+        let conns = targets.iter().map(|t| Self::conn(t, id.as_ref())).collect::<Result<Vec<_>>>()?;
+        *self.identity.write().unwrap_or_else(|e| e.into_inner()) = id;
+        *self.conns.write().unwrap_or_else(|e| e.into_inner()) = conns;
+        Ok(())
     }
 
     /// Use these servers, in order of preference, and fail over between them
     /// when one can't be reached. Targets that can't be used are skipped.
     pub fn set_servers(&self, targets: &[ServerTarget]) {
-        let conns: Vec<Conn> = targets.iter().filter_map(|t| Self::conn(t).ok()).collect();
+        let id = self.identity.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let conns: Vec<Conn> = targets.iter().filter_map(|t| Self::conn(t, id.as_ref()).ok()).collect();
         if conns.is_empty() {
             return;
         }
@@ -133,7 +154,7 @@ impl Client {
         }
     }
 
-    fn conn(target: &ServerTarget) -> Result<Conn> {
+    fn conn(target: &ServerTarget, identity: Option<&Identity>) -> Result<Conn> {
         let base = target.url.trim_end_matches('/').to_string();
         let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
@@ -147,19 +168,30 @@ impl Client {
                 .filter(|f| f.len() == 64)
                 .ok_or_else(|| anyhow!("An https:// server needs its TLS fingerprint (shown in the Admin Center under Settings)"))?;
             let provider = Arc::new(rustls::crypto::ring::default_provider());
-            let cfg = rustls::ClientConfig::builder_with_provider(provider.clone())
+            let b = rustls::ClientConfig::builder_with_provider(provider.clone())
                 .with_safe_default_protocol_versions()
                 .context("TLS versions")?
                 .dangerous()
-                .with_custom_certificate_verifier(Arc::new(PinnedVerifier { fingerprint: fp, provider }))
-                .with_no_client_auth();
+                .with_custom_certificate_verifier(Arc::new(PinnedVerifier { fingerprint: fp, provider }));
+            let cfg = match identity {
+                Some(id) => {
+                    use rustls::pki_types::pem::PemObject;
+                    use rustls::pki_types::PrivateKeyDer;
+                    let chain = CertificateDer::pem_slice_iter(id.cert_pem.as_bytes())
+                        .collect::<Result<Vec<_>, _>>()
+                        .context("client certificate")?;
+                    let key = PrivateKeyDer::from_pem_slice(id.key_pem.as_bytes()).context("client key")?;
+                    b.with_client_auth_cert(chain, key).context("client certificate")?
+                }
+                None => b.with_no_client_auth(),
+            };
             let cfg = Arc::new(cfg);
             builder = builder.use_preconfigured_tls((*cfg).clone());
-            return Ok(Conn { http: builder.build()?, base, tls: Some(cfg) });
+            return Ok(Conn { http: builder.build()?, base, tls: Some(cfg), target: target.clone() });
         } else if !base.starts_with("http://") {
             bail!("Server URL must start with https:// or http://");
         }
-        Ok(Conn { http: builder.build()?, base, tls: None })
+        Ok(Conn { http: builder.build()?, base, tls: None, target: target.clone() })
     }
 
     fn active_conn(&self) -> (usize, Conn) {
