@@ -1,0 +1,36 @@
+# Homebrew cask for the OpenDirectory Admin Center.
+# Template: packaging/render-manifests.sh fills in the version and checksum,
+# and the release workflow pushes the result to the Lin8x/homebrew-opendirectory
+# tap. Install with:
+#   brew install --cask lin8x/opendirectory/opendirectory-admin-center
+cask "opendirectory-admin-center" do
+  version "@VERSION@"
+  sha256 "@DMG_SHA256@"
+
+  url "https://github.com/Lin8x/OpenDirectory/releases/download/v#{version}/OpenDirectory-AdminCenter-macos-universal.dmg"
+  name "OpenDirectory Admin Center"
+  desc "Directory, Group Policy and endpoint management for every OS"
+  homepage "https://github.com/Lin8x/OpenDirectory"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  # The Admin Center updates itself from GitHub Releases.
+  auto_updates true
+
+  app "OpenDirectory Admin Center.app"
+
+  caveats <<~EOS
+    The Admin Center isn't notarized yet. The first time, open it from
+    Applications with right-click > Open and confirm.
+  EOS
+
+  zap trash: [
+    "~/Library/Application Support/dev.opendirectory.admincenter",
+    "~/Library/Caches/dev.opendirectory.admincenter",
+    "~/Library/Preferences/dev.opendirectory.admincenter.plist",
+    "~/Library/WebKit/dev.opendirectory.admincenter",
+  ]
+end

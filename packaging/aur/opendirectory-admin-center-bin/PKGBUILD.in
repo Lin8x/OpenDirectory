@@ -1,0 +1,22 @@
+# Maintainer: OpenDirectory <opendirectory@users.noreply.github.com>
+# Template: packaging/render-manifests.sh fills in the version and checksum.
+# Publish the rendered PKGBUILD and .SRCINFO to
+# ssh://aur@aur.archlinux.org/opendirectory-admin-center-bin.git
+pkgname=opendirectory-admin-center-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Directory, Group Policy and endpoint management for every OS (Admin Center)"
+arch=('x86_64')
+url="https://github.com/Lin8x/OpenDirectory"
+license=('custom')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator')
+provides=('opendirectory-admin-center')
+conflicts=('opendirectory-admin-center')
+source_x86_64=("opendirectory-admin-center-${pkgver}.deb::https://github.com/Lin8x/OpenDirectory/releases/download/v${pkgver}/OpenDirectory-AdminCenter-linux-amd64.deb")
+sha256sums_x86_64=('@DEB_SHA256@')
+
+package() {
+  bsdtar -xf data.tar.* -C "${pkgdir}"
+  mv "${pkgdir}/usr/share/applications/OpenDirectory Admin Center.desktop" \
+    "${pkgdir}/usr/share/applications/opendirectory-admin-center.desktop"
+}

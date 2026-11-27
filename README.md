@@ -6,6 +6,107 @@ It ships as a native desktop app (the **Admin Center**) that works fully offline
 
 > Status: early but working. Linux has been verified end to end. Windows builds and cross-compiles; macOS is built in CI. Both still need real-hardware testing. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## Download
+
+Install the **Admin Center**, the desktop app you manage everything from. Every button downloads the latest release from GitHub, and the app updates itself after that (system packages update through your package manager). Check files against [`SHA256SUMS`](https://github.com/Lin8x/OpenDirectory/releases/latest/download/SHA256SUMS). Installers aren't code-signed yet, so Windows SmartScreen asks you to confirm (**More info** > **Run anyway**), and on macOS you right-click the app and choose **Open** the first time.
+
+### Windows
+
+<p>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-windows-x64-setup.exe"><img alt="Download now (from GitHub): Windows .exe" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.exe-0078D4?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOFYyMkwwIDIwLjZ6TTEwLjkgMTIuNkgyNFYyNGwtMTMuMS0xLjl6Ii8+PC9zdmc+Cg==&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-windows-x64.msi"><img alt="Download now (from GitHub): Windows .msi" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.msi-0078D4?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOFYyMkwwIDIwLjZ6TTEwLjkgMTIuNkgyNFYyNGwtMTMuMS0xLjl6Ii8+PC9zdmc+Cg==&logoColor=white&labelColor=24292f"></a>
+</p>
+
+One-line install (PowerShell, as your usual user):
+
+```powershell
+irm https://github.com/Lin8x/OpenDirectory/releases/latest/download/install.ps1 | iex
+```
+
+Windows 10 and 11, x64. Choose the `.msi` for Group Policy Software Installation, Intune or ConfigMgr, and the `.exe` for a single PC.
+
+### macOS
+
+<p>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-macos-universal.dmg"><img alt="Download now (from GitHub): macOS .dmg" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.dmg-000000?logo=apple&logoColor=white&labelColor=24292f"></a>
+</p>
+
+One-line install:
+
+```bash
+curl -fsSL https://github.com/Lin8x/OpenDirectory/releases/latest/download/install.sh | sh
+```
+
+Homebrew:
+
+```bash
+brew install --cask lin8x/opendirectory/opendirectory-admin-center
+```
+
+Universal build for Apple silicon and Intel Macs.
+
+### Linux
+
+<p>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-amd64.deb"><img alt="Download now (from GitHub): Linux .deb" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.deb-A81D33?logo=debian&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.rpm"><img alt="Download now (from GitHub): Linux .rpm" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.rpm-294172?logo=fedora&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.pkg.tar.zst"><img alt="Download now (from GitHub): Arch Linux .pkg.tar.zst" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.pkg.tar.zst-1793D1?logo=archlinux&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.AppImage"><img alt="Download now (from GitHub): Linux .AppImage" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.AppImage-2F3136?logo=linux&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-x86_64.flatpak"><img alt="Download now (from GitHub): Linux .flatpak" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.flatpak-4A90D9?logo=flathub&logoColor=white&labelColor=24292f"></a>
+<a href="https://github.com/Lin8x/OpenDirectory/releases/latest/download/OpenDirectory-AdminCenter-linux-amd64.snap"><img alt="Download now (from GitHub): Linux .snap" height="36" src="https://img.shields.io/badge/Download_now_(from_GitHub)-.snap-82BEA0?logo=snapcraft&logoColor=white&labelColor=24292f"></a>
+</p>
+
+One-line install. It picks the `.deb`, `.rpm`, Arch package or AppImage for your distribution, and on apt, dnf and zypper systems it adds the OpenDirectory repository so updates arrive with your other updates:
+
+```bash
+curl -fsSL https://github.com/Lin8x/OpenDirectory/releases/latest/download/install.sh | sh
+```
+
+Or use your package manager.
+
+Debian, Ubuntu, Linux Mint, Pop!_OS (APT):
+
+```bash
+curl -fsSL https://lin8x.github.io/OpenDirectory/opendirectory.gpg | sudo tee /usr/share/keyrings/opendirectory.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/opendirectory.gpg] https://lin8x.github.io/OpenDirectory/apt ./" | sudo tee /etc/apt/sources.list.d/opendirectory.list
+sudo apt update && sudo apt install open-directory-admin-center
+```
+
+Fedora, RHEL, Rocky Linux, AlmaLinux (DNF):
+
+```bash
+sudo curl -fsSL -o /etc/yum.repos.d/opendirectory.repo https://lin8x.github.io/OpenDirectory/opendirectory.repo
+sudo dnf install open-directory-admin-center
+```
+
+openSUSE (Zypper):
+
+```bash
+sudo zypper addrepo --refresh https://lin8x.github.io/OpenDirectory/opendirectory.repo
+sudo zypper install open-directory-admin-center
+```
+
+| Distribution | Install |
+| --- | --- |
+| Arch, Manjaro, EndeavourOS | `yay -S opendirectory-admin-center-bin` (AUR), or `sudo pacman -U` the `.pkg.tar.zst` above |
+| Any (Flatpak) | `flatpak install flathub io.github.lin8x.OpenDirectory`, or `flatpak install --user` the `.flatpak` above |
+| Any (Snap) | `sudo snap install opendirectory-admin-center`, or `sudo snap install --dangerous` the `.snap` above |
+| NixOS and Nix | `nix profile install 'github:Lin8x/OpenDirectory?dir=packaging/nix'` |
+
+x86_64 only. Alpine isn't supported natively (the app needs glibc); use the Flatpak there. The Flathub, Snap Store and AUR listings and the APT/DNF repository go live as each one is published; until then, use the buttons above.
+
+### Endpoint Agent, Management Server and CLI
+
+You don't download the Endpoint Agent by hand: **Admin Center > Enrollment** shows the one command to run on each computer. To roll it out to a whole fleet, every release also has agent packages for your deployment tool:
+
+| OS | Package | Unattended install |
+| --- | --- | --- |
+| Windows | `OpenDirectory-Agent-windows-x64.msi` | `msiexec /i OpenDirectory-Agent-windows-x64.msi /qn SERVER=https://dc01.example.com:8443 TOKEN=<token> FINGERPRINT=<sha256>` (Group Policy, Intune, ConfigMgr, RMM) |
+| macOS | `OpenDirectory-Agent-macos-universal.pkg` | Stage `/Library/Application Support/OpenDirectory/enroll.conf` with `SERVER=`, `TOKEN=` and `FINGERPRINT=` lines, then install the package with your MDM |
+| Linux | `opendirectory-agent-linux-amd64.deb`, `-x86_64.rpm`, `-x86_64.pkg.tar.zst` | Stage `/etc/opendirectory/enroll.conf` the same way, then install the package (Ansible, Puppet, Salt, kickstart) |
+
+The **Management Server** and the **od CLI** are in the Admin Center already. For a dedicated server, use the [Docker image](docs/DOCKER.md), the `opendirectory-server` and `opendirectory-cli` Linux packages, or the raw binaries (`opendirectory-server-*`, `od-*`) on the [Releases page](https://github.com/Lin8x/OpenDirectory/releases/latest). Store submission and packaging details are in [packaging/README.md](packaging/README.md).
+
 ## Components
 
 | Component | Binary | What it is |
@@ -182,7 +283,3 @@ Prefer typing Cargo? `cargo x <task>` does the same thing as `./scripts/<task>.s
 See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and the git hooks.
 
 Read [docs/GUIDE.md](docs/GUIDE.md) for a beginner-friendly tour, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the technical detail.
-
-## Downloads
-
-Prebuilt installers for the Admin Center and binaries for the agent, server and CLI are attached to each [GitHub Release](../../releases). Releases are built by `.github/workflows/release.yml` whenever `main` carries a version that has no release yet.

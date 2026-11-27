@@ -1,0 +1,55 @@
+# Snap for the OpenDirectory Admin Center.
+#
+# The release workflow copies the release .deb to packaging/snap/admin-center.deb,
+# sets the version, and builds this with snapcraft. The resulting
+# OpenDirectory-AdminCenter-linux-amd64.snap is attached to the release and,
+# once SNAPCRAFT_STORE_CREDENTIALS is set, published to the Snap Store's stable
+# channel. See packaging/README.md for registering the name.
+name: opendirectory-admin-center
+title: OpenDirectory Admin Center
+base: core22
+version: "0.0.0" # set by the release workflow
+summary: Directory, Group Policy and endpoint management for every OS
+description: |
+  OpenDirectory gives you the parts of Windows Server and Active Directory that
+  matter day to day: users, security groups, organizational units, Group
+  Policy, remote scripts and device inventory. It manages Windows, macOS and
+  Linux endpoints from one console, and can host the Management Server on this
+  computer or connect to one running elsewhere.
+website: https://github.com/Lin8x/OpenDirectory
+source-code: https://github.com/Lin8x/OpenDirectory
+issues: https://github.com/Lin8x/OpenDirectory/issues
+icon: icon.png # copied from apps/admin-center/src-tauri/icons by the workflow
+grade: stable
+confinement: strict
+architectures:
+  - build-on: amd64
+
+layout:
+  /usr/lib/$CRAFT_ARCH_TRIPLET/webkit2gtk-4.1:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET/webkit2gtk-4.1
+
+apps:
+  opendirectory-admin-center:
+    command: usr/bin/opendirectory-admin-center
+    desktop: usr/share/applications/opendirectory-admin-center.desktop
+    extensions: [gnome]
+    plugs:
+      - network
+      - network-bind # hosting the Management Server on this computer
+      - home
+      - removable-media # importing and exporting backups
+      - unity7 # tray icon
+
+parts:
+  admin-center:
+    plugin: dump
+    source: admin-center.deb
+    source-type: deb
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libayatana-appindicator3-1
+    override-prime: |
+      craftctl default
+      mv "usr/share/applications/OpenDirectory Admin Center.desktop" usr/share/applications/opendirectory-admin-center.desktop
+      sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/128x128/apps/opendirectory-admin-center.png|' usr/share/applications/opendirectory-admin-center.desktop
