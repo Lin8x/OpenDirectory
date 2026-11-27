@@ -10,7 +10,14 @@ use od_client::WsMessage;
 use od_core::protocol::ShellRequest;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
-fn shell_command() -> CommandBuilder {
+fn shell_command(exec: Option<&od_core::manage::ContainerExec>, runtime: Option<&str>) -> CommandBuilder {
+    if let (Some(x), Some(rt)) = (exec, runtime) {
+        let argv = crate::manage::containers::exec_command(rt, &x.container, &x.command);
+        let mut c = CommandBuilder::new(&argv[0]);
+        c.args(&argv[1..]);
+        c.env("TERM", "xterm-256color");
+        return c;
+    }
     if cfg!(windows) {
         let mut c = CommandBuilder::new("powershell.exe");
         c.arg("-NoLogo");
@@ -42,6 +49,16 @@ pub fn spawn(req: ShellRequest, client: od_client::Client, rules: crate::enduser
             }
             return;
         }
+        if let Some(x) = &req.exec {
+            if let Err(why) = exec_allowed(x) {
+                if let Ok(ws) = client.websocket(&format!("/agent/shell/{}", req.session_id)).await {
+                    let (mut sink, _) = ws.split();
+                    let _ = sink.send(WsMessage::Binary(format!("\r\n[{why}]\r\n").into_bytes().into())).await;
+                    let _ = sink.send(WsMessage::Close(None)).await;
+                }
+                return;
+            }
+        }
         let res = match req.tunnel_port {
             Some(od_core::protocol::STREAM_PORT) => {
                 crate::stream::session(req.session_id, req.stream.clone().unwrap_or_default(), client).await
@@ -55,13 +72,29 @@ pub fn spawn(req: ShellRequest, client: od_client::Client, rules: crate::enduser
     });
 }
 
+fn exec_allowed(x: &od_core::manage::ContainerExec) -> Result<(), String> {
+    use od_core::manage::Area;
+    if !crate::manage::allowed(Area::Containers) {
+        return Err("Container management is turned off on this device by policy.".into());
+    }
+    od_core::manage::check_name("container", &x.container, ".:-_/@")?;
+    if !crate::manage::containers::EXEC_SHELLS.contains(&x.command.as_str()) {
+        return Err(format!("{} isn't a shell this agent will start in a container", x.command));
+    }
+    Ok(())
+}
+
 async fn run(req: ShellRequest, client: od_client::Client) -> anyhow::Result<()> {
+    let runtime = match &req.exec {
+        Some(_) => Some(crate::manage::containers::runtime().await.ok_or_else(|| anyhow::anyhow!("Docker or Podman isn't running"))?),
+        None => None,
+    };
     let ws = client.websocket(&format!("/agent/shell/{}", req.session_id)).await?;
     let (mut sink, mut stream) = ws.split();
 
     let pty = native_pty_system();
     let pair = pty.openpty(PtySize { rows: req.rows, cols: req.cols, pixel_width: 0, pixel_height: 0 })?;
-    let mut child = pair.slave.spawn_command(shell_command())?;
+    let mut child = pair.slave.spawn_command(shell_command(req.exec.as_ref(), runtime))?;
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader()?;
     let mut writer = pair.master.take_writer()?;

@@ -8,14 +8,20 @@ import { openShell, type ShellConn } from "../lib/shell";
 import type { Endpoint } from "../lib/types";
 import { Button, Callout } from "./ui";
 
-export function RemoteShell({ endpoint }: { endpoint: Endpoint }) {
+export function RemoteShell({ endpoint, container, autoConnect }: { endpoint: Endpoint; container?: { id: string; name: string; command: string }; autoConnect?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const conn = useRef<ShellConn | null>(null);
   const [state, setState] = useState<"idle" | "connecting" | "open" | "closed">("idle");
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => () => { conn.current?.close(); term.current?.dispose(); }, []);
+  useEffect(() => () => { conn.current?.close(); term.current?.dispose(); conn.current = null; term.current = null; }, []);
+  // Deferred so React's development double-mount doesn't open two sessions.
+  useEffect(() => {
+    if (!autoConnect) return;
+    const t = setTimeout(() => void connect(), 0);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const connect = async () => {
     setErr(null); setState("connecting");
@@ -27,9 +33,9 @@ export function RemoteShell({ endpoint }: { endpoint: Endpoint }) {
       term.current = t;
     }
     const t = term.current;
-    t.writeln(`\x1b[90mConnecting to ${endpoint.hostname}${endpoint.online ? "" : " (offline: it connects when the endpoint next checks in)"}…\x1b[0m`);
+    t.writeln(`\x1b[90mConnecting to ${container ? `container ${container.name} on ` : ""}${endpoint.hostname}${endpoint.online ? "" : " (offline: it connects when the endpoint next checks in)"}…\x1b[0m`);
     try {
-      conn.current = await openShell(endpoint.id, t.cols, t.rows, (d) => t.write(d), () => { setState("closed"); t.writeln("\r\n\x1b[90m[session ended]\x1b[0m"); });
+      conn.current = await openShell(endpoint.id, t.cols, t.rows, (d) => t.write(d), () => { setState("closed"); t.writeln("\r\n\x1b[90m[session ended]\x1b[0m"); }, container && { id: container.id, command: container.command });
       setState("open"); t.focus();
     } catch (e) { setErr((e as Error).message); setState("closed"); }
   };
@@ -38,8 +44,8 @@ export function RemoteShell({ endpoint }: { endpoint: Endpoint }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {state === "open" ? <Button icon={<PlugZap className="size-4" />} onClick={() => conn.current?.close()}>Disconnect</Button>
-          : <Button variant="primary" icon={<Plug className="size-4" />} loading={state === "connecting"} onClick={connect}>{state === "closed" ? "Reconnect" : "Open remote shell"}</Button>}
-        <span className="text-xs text-ink-3">{endpoint.os === "windows" ? "PowerShell" : "Login shell"} as {endpoint.os === "windows" ? "SYSTEM" : "root"} · every session is recorded in the audit log</span>
+          : <Button variant="primary" icon={<Plug className="size-4" />} loading={state === "connecting"} onClick={connect}>{state === "closed" ? "Reconnect" : container ? "Open console" : "Open remote shell"}</Button>}
+        <span className="text-xs text-ink-3">{container ? `${container.command || "bash or sh"} inside ${container.name}` : `${endpoint.os === "windows" ? "PowerShell" : "Login shell"} as ${endpoint.os === "windows" ? "SYSTEM" : "root"}`} · every session is recorded in the audit log</span>
       </div>
       {err && <Callout tone="warn">{err}</Callout>}
       <div ref={host} className="h-[460px] overflow-hidden rounded-xl border border-line bg-[#0f1218] p-2" />

@@ -29,7 +29,7 @@ export interface Endpoint {
 }
 export interface EnrollmentToken { token: string; description: string; ou_id: Uuid | null; uses: number; max_uses: number | null; expires_at: string | null; created_at: string; created_by: string }
 export type Shell = "default" | "powershell" | "bash" | "zsh" | "cmd";
-export type JobKind = { type: "script"; shell: Shell; script: string; env?: Record<string, string> } | { type: "refresh_inventory" } | { type: "restart_agent" } | { type: "scan_updates" } | { type: "install_updates"; security_only: boolean; reboot: boolean } | { type: "notify_user"; title: string; message: string };
+export type JobKind = { type: "script"; shell: Shell; script: string; env?: Record<string, string> } | { type: "refresh_inventory" } | { type: "restart_agent" } | { type: "scan_updates" } | { type: "install_updates"; security_only: boolean; reboot: boolean } | { type: "notify_user"; title: string; message: string } | { type: "manage"; action: ManageAction };
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export interface Job {
   id: Uuid; endpoint_id: Uuid; kind: JobKind; status: JobStatus; script_id: Uuid | null; batch_id: Uuid | null; exit_code: number | null; output: string;
@@ -71,7 +71,9 @@ export type Setting =
   | { kind: "consent_notice"; title: string; text: string; require_acknowledgement: boolean }
   | { kind: "remote_session_consent"; mode: "off" | "notify" | "ask"; unattended_access: boolean }
   | { kind: "help_desk"; enabled: boolean; contact: string }
-  | { kind: "remote_tools"; remote_shell: boolean; remote_desktop: boolean };
+  | { kind: "remote_tools"; remote_shell: boolean; remote_desktop: boolean }
+  | { kind: "management_tools"; services: boolean; software: boolean; processes: boolean; containers: boolean }
+  | { kind: "software_deployment"; packages: PackageRule[] };
 export type SettingKind = Setting["kind"];
 
 export interface PolicyTargets { all_endpoints: boolean; ou_ids: Uuid[]; endpoint_ids?: Uuid[]; os_families?: OsFamily[] }
@@ -114,3 +116,28 @@ export type ScriptTrigger = { type: "startup" } | { type: "logon" } | { type: "i
 export interface RunTargets { all_endpoints: boolean; endpoint_ids: Uuid[]; group_ids: Uuid[]; ou_ids: Uuid[] }
 export interface TargetPreview { id: Uuid; hostname: string; os: OsFamily; online: boolean }
 export interface RunResponse { batch_id: Uuid | null; targets: TargetPreview[]; skipped: TargetPreview[]; jobs: Job[] }
+
+// ------------------------------------------------------------ endpoint management
+export type ServiceControl = "start" | "stop" | "restart";
+export type StartupType = "automatic" | "automatic_delayed" | "manual" | "disabled";
+export type PackageOp = "install" | "update" | "remove";
+export type ContainerControl = "start" | "stop" | "restart" | "pause" | "unpause" | "remove" | "update";
+export type ManageAction =
+  | { op: "service"; name: string; control: ServiceControl }
+  | { op: "service_startup"; name: string; startup: StartupType }
+  | { op: "package"; operation: PackageOp; name: string; manager?: string }
+  | { op: "kill_process"; pid: number; tree?: boolean; expect_name?: string }
+  | { op: "container"; id: string; control: ContainerControl }
+  | { op: "pull_image"; image: string }
+  | { op: "remove_image"; id: string }
+  | { op: "prune" };
+export interface PackageRule { name: string; ensure: "present" | "latest" | "absent"; manager: string; os: OsFamily | null }
+export interface ServiceInfo { name: string; display_name: string; description: string; state: string; startup: string; pid: number | null; account: string; configurable: boolean }
+export interface ServiceReport { manager: "scm" | "systemd" | "launchd"; services: ServiceInfo[] }
+export interface SoftwareInfo { name: string; version: string; publisher: string; source: string; package_id: string; manager: string; update: string }
+export interface SoftwareReport { items: SoftwareInfo[]; managers: string[]; notes: string[] }
+export interface ProcessInfo { pid: number; parent: number | null; name: string; user: string; cpu_percent: number; memory_bytes: number; run_secs: number; command: string }
+export interface ProcessReport { processes: ProcessInfo[]; cpu_count: number; cpu_percent: number; memory_total: number; memory_used: number }
+export interface ContainerInfo { id: string; name: string; image: string; state: string; status: string; ports: string; created: string; project: string }
+export interface ImageInfo { id: string; repository: string; tag: string; size: string; created: string }
+export interface ContainerReport { runtime: string; version: string; containers: ContainerInfo[]; images: ImageInfo[]; error: string }

@@ -120,6 +120,27 @@ If you do need a real domain join, for example for Windows Pro machines and soft
 
 ---
 
+## Managing one endpoint: the Manage tab
+
+Every desktop endpoint's page has a **Manage** tab, a bit like Computer Management or Windows Admin Center for that one machine. It has four tools:
+
+- **Services.** Windows services, systemd units on Linux, or launchd jobs on macOS. You can start, stop and restart them, and set the **startup type** (Automatic, Automatic (Delayed Start), Manual or Disabled). On Linux, Manual means the unit is disabled but can still be started, and Disabled means it's masked.
+- **Apps.** Everything installed (Programs and Features, packages, Flatpaks, Snaps, Homebrew, the Applications folder), with available updates. Apps the package manager knows about can be updated or uninstalled, and **Install app** installs a new one with winget, APT, DNF, Zypper, pacman, Flatpak, Snap or Homebrew.
+- **Processes.** A Task Manager view with CPU and memory. **End task** asks the program to exit, then forces it after 3 seconds. **End process tree** also ends the processes it started.
+- **Containers.** A small built-in Portainer for Docker or Podman. It shows containers and images, logs and a **console** (a shell inside the container). You can start, stop, restart, pause, remove, pull images and prune. **Update** pulls the newest image and recreates the container with the same ports, volumes, environment and restart policy (through Docker Compose for Compose services), and puts the old one back if that fails. If you already run Portainer, a Domain Admin can link it so an **Open Portainer** button appears.
+
+The lists are read live from the agent, so the endpoint must be online. Changes run as jobs, so they appear in the job history with their output, and every change is recorded in the audit log. The tools need Endpoint Agent 0.14.0 or later.
+
+Three things control who can use them:
+
+- **Delegation.** A delegated operator needs **Manage services**, **Manage software**, **Manage processes** or **Manage containers** for that endpoint. View endpoints is enough to see the lists, except container logs, which can hold secrets. A console inside a container also needs **Remote shell**.
+- **The Management tools GPO setting** turns each tool on or off for the endpoints a GPO applies to. The agent enforces it too.
+- **Remote session consent.** When it's set to notify or ask, the signed-in user gets a notification about changes IT makes, such as a stopped service or an ended program. A container console follows the same consent rules as a remote shell.
+
+To install, update or uninstall apps on many endpoints at once, add the **Software deployment** setting to a GPO. Each row names a package, what to do (install if missing, install and keep updated, or uninstall), the package manager and the platform.
+
+---
+
 ## Retiring an endpoint
 
 When a computer is sold, broken or replaced, open its page and click **Retire**. It's removed from the directory, its credential stops working, and (if you use the Internet Gateway) its device certificate is revoked. Settings and accounts already applied stay on the computer, so wipe or reinstall it if it's leaving your organization. To manage it again later, enroll it with a new token.
@@ -138,3 +159,5 @@ When a computer is sold, broken or replaced, open its page and click **Retire**.
 > | Endpoint credential | The computer account's machine password |
 > | TLS fingerprint pinning | Kerberos trust with the domain controller |
 > | Retire | Deleting or disabling the computer object |
+> | Manage tab | Computer Management (services.msc, Task Manager), Windows Admin Center |
+> | Software deployment GPO setting | Software Installation (GPO) / Configuration Manager application deployment |

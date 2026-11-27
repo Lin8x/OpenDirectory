@@ -80,9 +80,16 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
         let (c, w) = (client.clone(), wake.clone());
         tokio::spawn(async move {
             loop {
-                match c.get::<serde_json::Value>("/agent/wait").await {
-                    Ok(v) if v["wake"] == true => w.notify_one(),
-                    Ok(_) => {}
+                match c.get::<WaitResponse>("/agent/wait").await {
+                    Ok(v) => {
+                        // Management queries are answered right away, without a check-in.
+                        for q in v.queries {
+                            crate::manage::spawn_query(q, c.clone());
+                        }
+                        if v.wake {
+                            w.notify_one();
+                        }
+                    }
                     Err(_) => tokio::time::sleep(Duration::from_secs(30)).await,
                 }
             }
@@ -208,6 +215,7 @@ pub async fn run(mut shutdown: watch::Receiver<bool>) -> Result<bool> {
                 // End-user experience: managed-device notice, help desk, and
                 // the rules remote sessions must follow.
                 let session_rules = enduser::SessionRules::from_settings(&resp.settings);
+                crate::manage::set_settings(&resp.settings);
                 let (item, acks_changed) = notice.maintain(&resp.settings, &mut state.notice_acks).await;
                 notice_item = item;
                 if acks_changed {

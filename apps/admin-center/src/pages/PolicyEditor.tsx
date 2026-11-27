@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ArrowLeft, Globe, Plus, Save, Trash2, X } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { del, post, put } from "../lib/api";
-import type { CatalogEntry, Endpoint, Group, OrgUnit, OsFamily, Policy, Script, ScriptTrigger, Setting, SettingKind, SupportLevel } from "../lib/types";
+import type { CatalogEntry, Endpoint, Group, OrgUnit, OsFamily, PackageRule, Policy, Script, ScriptTrigger, Setting, SettingKind, SupportLevel } from "../lib/types";
 import { osLabel } from "../lib/format";
 import { Badge, Button, Card, Confirm, Dialog, Explain, Field, Input, Loading, OsIcon, Select, Switch, Textarea, cx, useToast, GuideLink } from "../components/ui";
 import { OuSelect, ouPath } from "./Users";
@@ -48,7 +48,7 @@ export default function PolicyEditor() {
   if (!d || catalog.loading) return <Loading />;
 
   const setSetting = (i: number, s: Setting) => setD({ ...d, settings: d.settings.map((x, j) => (j === i ? s : x)) });
-  const used = new Set<SettingKind>(d.settings.filter((s) => s.kind !== "local_accounts" && s.kind !== "install_packages" && s.kind !== "run_script").map((s) => s.kind));
+  const used = new Set<SettingKind>(d.settings.filter((s) => s.kind !== "local_accounts" && s.kind !== "install_packages" && s.kind !== "software_deployment" && s.kind !== "run_script").map((s) => s.kind));
 
   const save = async () => {
     setSaving(true);
@@ -256,6 +256,10 @@ function SettingForm({ s, onChange, groups, scripts, entry }: { s: Setting; onCh
       const v = s as Extract<Setting, { kind: "install_packages" }>;
       return <PackageList value={v.packages} onChange={(p) => onChange({ ...v, packages: p })} />;
     }
+    case "software_deployment": {
+      const v = s as Extract<Setting, { kind: "software_deployment" }>;
+      return <DeploymentForm value={v.packages} onChange={(p) => onChange({ ...v, packages: p })} />;
+    }
     case "run_script": {
       const v = s as Extract<Setting, { kind: "run_script" }>;
       return <ScriptSettingForm v={v} onChange={onChange} scripts={scripts} />;
@@ -311,7 +315,7 @@ function ScriptSettingForm({ v, onChange, scripts }: { v: Extract<Setting, { kin
 /** Fallback editor for settings without a dedicated form: one input per field. */
 const LABELS: Record<string, string> = {
   enabled: "On", required: "Required", allowed: "Allowed", threshold: "Wrong passwords before lockout", duration_minutes: "Lockout duration (minutes)",
-  days: "Days (0 = never)", require_acknowledgement: "Users must acknowledge", unattended_access: "Allow when nobody is signed in", contact: "Other ways to reach IT (optional)", remote_shell: "Remote shell", remote_desktop: "Remote desktop", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
+  days: "Days (0 = never)", require_acknowledgement: "Users must acknowledge", unattended_access: "Allow when nobody is signed in", contact: "Other ways to reach IT (optional)", remote_shell: "Remote shell", remote_desktop: "Remote desktop", services: "Services", software: "Apps (software)", processes: "Processes", containers: "Containers", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
 };
 
 function GenericSettingForm({ s, onChange, entry }: { s: Setting; onChange: (s: Setting) => void; entry?: CatalogEntry }) {
@@ -358,6 +362,40 @@ function TrustedRootForm({ v, onChange }: { v: Extract<Setting, { kind: "trusted
       <Field label="Name"><Input value={v.name} onChange={(e) => onChange({ ...v, name: e.target.value })} /></Field>
       <Field label="Certificate (PEM)"><Textarea rows={5} className="font-mono text-[11px]" value={v.pem} placeholder="-----BEGIN CERTIFICATE-----" onChange={(e) => onChange({ ...v, pem: e.target.value })} /></Field>
       {ca.data?.initialized && <Button size="sm" onClick={() => onChange({ ...v, name: ca.data!.common_name ?? v.name, pem: ca.data!.root_pem ?? "" })}>Use this domain's certificate authority</Button>}
+    </div>
+  );
+}
+
+const ENSURE: { id: PackageRule["ensure"]; label: string }[] = [
+  { id: "present", label: "Install (if missing)" },
+  { id: "latest", label: "Install and keep updated" },
+  { id: "absent", label: "Uninstall" },
+];
+const MANAGERS = ["", "winget", "brew", "brew_cask", "apt", "dnf", "zypper", "pacman", "flatpak", "snap"];
+
+/** Software Installation: one row per app, each optionally for one platform. */
+function DeploymentForm({ value, onChange }: { value: PackageRule[]; onChange: (v: PackageRule[]) => void }) {
+  const set = (i: number, r: Partial<PackageRule>) => onChange(value.map((x, j) => (j === i ? { ...x, ...r } : x)));
+  return (
+    <div className="space-y-2">
+      {value.length > 0 && (
+        <div className="grid grid-cols-[1fr_190px_140px_120px_28px] gap-2 text-[11px] font-medium uppercase tracking-wide text-ink-3">
+          <span>Package id</span><span>Action</span><span>Package manager</span><span>Platform</span><span />
+        </div>
+      )}
+      {value.map((r, i) => (
+        <div key={i} className="grid grid-cols-[1fr_190px_140px_120px_28px] items-center gap-2">
+          <Input className="font-mono text-xs" value={r.name} placeholder="Mozilla.Firefox" onChange={(e) => set(i, { name: e.target.value })} />
+          <Select value={r.ensure} onChange={(e) => set(i, { ensure: e.target.value as PackageRule["ensure"] })}>{ENSURE.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>
+          <Select value={r.manager} onChange={(e) => set(i, { manager: e.target.value })}>{MANAGERS.map((m) => <option key={m} value={m}>{m || "OS default"}</option>)}</Select>
+          <Select value={r.os ?? ""} onChange={(e) => set(i, { os: (e.target.value || null) as PackageRule["os"] })}>
+            <option value="">All</option><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option>
+          </Select>
+          <button onClick={() => onChange(value.filter((_, j) => j !== i))} className="text-ink-3 hover:text-bad" aria-label="Remove"><X className="size-4" /></button>
+        </div>
+      ))}
+      <Button size="sm" onClick={() => onChange([...value, { name: "", ensure: "present", manager: "", os: null }])}>Add app</Button>
+      <p className="text-xs text-ink-3">Package ids differ per OS (Mozilla.Firefox in winget, firefox in Homebrew Cask, org.mozilla.firefox in Flatpak), so pick a platform for each row. Endpoints apply it at check-in and report the result under Policy & compliance.</p>
     </div>
   );
 }

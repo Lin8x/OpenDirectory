@@ -97,6 +97,16 @@ pub struct AgentJob {
     pub kind: JobKind,
 }
 
+/// The answer to the agent's wake-up long poll (`GET /agent/wait`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WaitResponse {
+    /// Check in now: a job or shell is waiting.
+    pub wake: bool,
+    /// Management queries to answer (`POST /agent/queries/{id}`).
+    #[serde(default)]
+    pub queries: Vec<crate::manage::QueryRequest>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckinResponse {
     pub checkin_interval_secs: u64,
@@ -141,6 +151,9 @@ pub struct ShellRequest {
     /// The admin who opened it, shown in consent prompts.
     #[serde(default)]
     pub requested_by: String,
+    /// Open a shell inside this container instead of on the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec: Option<crate::manage::ContainerExec>,
     /// With `tunnel_port == Some(STREAM_PORT)`: start the low-latency desktop
     /// stream host with these options and tunnel to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

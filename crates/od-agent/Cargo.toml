@@ -28,7 +28,7 @@ rand.workspace = true
 rcgen = "0.13"
 portable-pty = "0.9"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
-sysinfo = { version = "0.33", default-features = false, features = ["system", "disk", "network"] }
+sysinfo = { version = "0.33", default-features = false, features = ["system", "disk", "network", "user"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7"

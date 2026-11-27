@@ -111,9 +111,28 @@ pub enum Setting {
     },
     /// Turn the Admin Center's remote tools on or off for these endpoints.
     RemoteTools { remote_shell: bool, remote_desktop: bool },
+    /// Turn the endpoint management tools on or off: services, software,
+    /// processes and containers (including exec into containers).
+    ManagementTools {
+        #[serde(default = "on")]
+        services: bool,
+        #[serde(default = "on")]
+        software: bool,
+        #[serde(default = "on")]
+        processes: bool,
+        #[serde(default = "on")]
+        containers: bool,
+    },
+    /// Software Installation: deploy, keep updated or uninstall apps with
+    /// the OS package manager.
+    SoftwareDeployment { packages: Vec<crate::manage::PackageRule> },
     /// A setting from a newer version. Agents skip it and report it as unsupported.
     #[serde(other)]
     Unknown,
+}
+
+fn on() -> bool {
+    true
 }
 
 /// How [`Setting::RemoteSessionConsent`] treats a new remote session.
@@ -172,6 +191,8 @@ impl Setting {
             Setting::RemoteSessionConsent { .. } => "remote_session_consent",
             Setting::HelpDesk { .. } => "help_desk",
             Setting::RemoteTools { .. } => "remote_tools",
+            Setting::ManagementTools { .. } => "management_tools",
+            Setting::SoftwareDeployment { .. } => "software_deployment",
         }
     }
 
@@ -182,6 +203,7 @@ impl Setting {
             self,
             Setting::LocalAccounts { .. }
                 | Setting::InstallPackages { .. }
+                | Setting::SoftwareDeployment { .. }
                 | Setting::RunScript { .. }
                 | Setting::TrustedRootCertificate { .. }
         )
@@ -283,6 +305,30 @@ impl Setting {
                 (false, true) => "Remote desktop allowed, remote shell off".into(),
                 (false, false) => "Remote shell and remote desktop off".into(),
             },
+            Setting::ManagementTools { services, software, processes, containers } => {
+                let all = [(*services, "services"), (*software, "software"), (*processes, "processes"), (*containers, "containers")];
+                let off: Vec<&str> = all.iter().filter(|(v, _)| !v).map(|(_, n)| *n).collect();
+                if off.is_empty() {
+                    "All management tools allowed".into()
+                } else {
+                    format!("Management tools off: {}", off.join(", "))
+                }
+            }
+            Setting::SoftwareDeployment { packages } => {
+                let part = |e: &str, verb: &str| {
+                    let v: Vec<&str> = packages.iter().filter(|p| p.ensure == e).map(|p| p.name.as_str()).collect();
+                    (!v.is_empty()).then(|| format!("{verb} {}", v.join(", ")))
+                };
+                let v: Vec<String> = [part("present", "Install"), part("latest", "Keep updated"), part("absent", "Uninstall")]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                if v.is_empty() {
+                    "No software deployed".into()
+                } else {
+                    v.join("; ")
+                }
+            }
         }
     }
 }
@@ -760,6 +806,34 @@ fn catalog_end_user() -> Vec<CatalogEntry> {
             choices: vec![],
             default: Setting::RemoteTools { remote_shell: true, remote_desktop: true },
         },
+        CatalogEntry {
+            kind: "management_tools",
+            title: "Management tools",
+            category: "End-user experience",
+            summary: "Turns the endpoint management tools on or off: services, installed software, processes, and containers (including exec into a container). The agent enforces it too.",
+            ad_equivalent: "Computer Management / Services console remote access, Windows Admin Center",
+            support: vec![
+                ps(Windows, Enforced, "Endpoint Agent refuses disabled tools"),
+                ps(Macos, Enforced, "Endpoint Agent refuses disabled tools"),
+                ps(Linux, Enforced, "Endpoint Agent refuses disabled tools"),
+            ],
+            choices: vec![],
+            default: Setting::ManagementTools { services: true, software: true, processes: true, containers: true },
+        },
+        CatalogEntry {
+            kind: "software_deployment",
+            title: "Software deployment",
+            category: "Software",
+            summary: "Deploys apps (installs them if missing), keeps them on the latest version, or uninstalls them, with the OS package manager. Each app can target one platform, since package ids differ per OS.",
+            ad_equivalent: "Software Installation (GPO) / Configuration Manager application deployment",
+            support: vec![
+                ps(Windows, Enforced, "winget"),
+                ps(Macos, Enforced, "Homebrew formulae and casks"),
+                ps(Linux, Enforced, "apt, dnf, zypper, pacman, Flatpak or Snap"),
+            ],
+            choices: vec![],
+            default: Setting::SoftwareDeployment { packages: vec![] },
+        },
     ]
 }
 
@@ -864,6 +938,8 @@ const SETTING_SINCE: &[(&str, &str)] = &[
     ("remote_session_consent", "0.13.0"),
     ("help_desk", "0.13.0"),
     ("remote_tools", "0.13.0"),
+    ("management_tools", crate::manage::MIN_AGENT),
+    ("software_deployment", crate::manage::MIN_AGENT),
 ];
 const V02_SETTINGS: &[&str] = &[
     "automatic_updates",

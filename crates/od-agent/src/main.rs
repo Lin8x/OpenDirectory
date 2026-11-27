@@ -10,6 +10,7 @@ mod identity;
 mod inventory;
 mod jobs;
 mod laps;
+mod manage;
 mod patches;
 mod policy;
 mod policy_ext;

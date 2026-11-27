@@ -9,8 +9,13 @@ const enc = new TextEncoder();
 const b64 = (s: string) => { const b = enc.encode(s); let x = ""; for (const c of b) x += String.fromCharCode(c); return btoa(x); };
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-export async function openShell(endpointId: string, cols: number, rows: number, onData: (d: Uint8Array) => void, onClose: () => void): Promise<ShellConn> {
-  const { session_id, ticket } = await post<{ session_id: string; ticket: string }>(`/endpoints/${endpointId}/shell`, { cols, rows });
+/** A shell inside a container on the endpoint (docker/podman exec -it). */
+export interface ExecTarget { id: string; command: string }
+
+export async function openShell(endpointId: string, cols: number, rows: number, onData: (d: Uint8Array) => void, onClose: () => void, exec?: ExecTarget): Promise<ShellConn> {
+  const { session_id, ticket } = exec
+    ? await post<{ session_id: string; ticket: string }>(`/endpoints/${endpointId}/manage/containers/${encodeURIComponent(exec.id)}/exec`, { cols, rows, command: exec.command })
+    : await post<{ session_id: string; ticket: string }>(`/endpoints/${endpointId}/shell`, { cols, rows });
   if (isDesktop) {
     const { listen } = await import("@tauri-apps/api/event");
     const un1 = await listen<{ id: string; data: string }>("shell://data", (e) => { if (e.payload.id === session_id) onData(unb64(e.payload.data)); });

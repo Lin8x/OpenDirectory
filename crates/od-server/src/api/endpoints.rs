@@ -121,6 +121,7 @@ pub async fn get_job(State(s): State<AppState>, op: Operator, Path(id): Path<Uui
 pub(crate) fn job_permission(kind: &JobKind) -> Permission {
     match kind {
         JobKind::Script { .. } => Permission::RunScripts,
+        JobKind::Manage { action } => action.area().map(super::manage::area_permission).unwrap_or(Permission::EndpointActions),
         _ => Permission::EndpointActions,
     }
 }
@@ -135,6 +136,10 @@ pub async fn create_job(
     admin.need_endpoint(&e, job_permission(&kind))?;
     if matches!(kind, JobKind::Unknown) {
         return Err(ApiError::bad_request("Unknown job type"));
+    }
+    if matches!(kind, JobKind::Manage { .. }) {
+        // These go through the checks in manage.rs (GPO switch, agent version).
+        return Err(ApiError::bad_request("Queue management actions with POST /endpoints/{id}/manage/actions"));
     }
     if let JobKind::Script { script, .. } = &kind {
         if script.trim().is_empty() {

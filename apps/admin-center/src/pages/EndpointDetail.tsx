@@ -11,6 +11,7 @@ import { JobRow } from "./Jobs";
 import { RemoteShell } from "../components/RemoteShell";
 import { RemoteDesktop } from "../components/RemoteDesktop";
 import { HelpDeskChat } from "../components/HelpDeskChat";
+import { ManageTab } from "../components/manage/Manage";
 import { Dialog, Input } from "../components/ui";
 
 export default function EndpointDetail() {
@@ -19,7 +20,7 @@ export default function EndpointDetail() {
   const toast = useToast();
   const ep = useQuery<Endpoint>(`/endpoints/${id}`, { poll: 8000 });
   const ous = useQuery<OrgUnit[]>("/ous");
-  const [tab, setTab] = useState<"overview" | "policy" | "scripts" | "shell" | "helpdesk">("overview");
+  const [tab, setTab] = useState<"overview" | "policy" | "manage" | "scripts" | "shell" | "helpdesk">("overview");
   const [confirm, setConfirm] = useState(false);
   const [notify, setNotify] = useState<{ title: string; message: string } | null>(null);
 
@@ -52,7 +53,7 @@ export default function EndpointDetail() {
 
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "overview", label: "Overview" }, { id: "policy", label: "Policy & compliance" },
-        ...(e.os === "android" ? [] : [{ id: "scripts" as const, label: "Remote scripts" }, { id: "shell" as const, label: "Remote shell & desktop" }]),
+        ...(e.os === "android" ? [] : [{ id: "manage" as const, label: "Manage" }, { id: "scripts" as const, label: "Remote scripts" }, { id: "shell" as const, label: "Remote shell & desktop" }]),
         { id: "helpdesk", label: "Help desk" },
       ]} />
       {tab === "helpdesk" && <div className="rounded-xl border border-line bg-panel"><HelpDeskChat endpointId={e.id} hostname={e.hostname} /></div>}
@@ -118,6 +119,7 @@ export default function EndpointDetail() {
         </div>
       )}
       {tab === "policy" && <PolicyTab e={e} />}
+      {tab === "manage" && <ManageTab endpoint={e} />}
       {tab === "scripts" && <ScriptsTab e={e} />}
       {tab === "shell" && <div className="space-y-5"><RemoteShell endpoint={e} /><RemoteDesktop endpoint={e} /></div>}
 

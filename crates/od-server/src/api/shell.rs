@@ -35,6 +35,8 @@ struct Session {
     /// Set for a TCP tunnel to this port on the endpoint (remote desktop, SSH).
     tunnel_port: Option<u16>,
     stream: Option<od_core::protocol::StreamOptions>,
+    /// Exec into this container instead of a host shell (endpoint management).
+    exec: Option<od_core::manage::ContainerExec>,
     delivered: bool,
     to_admin: Option<Tx>,
     to_agent: Option<Tx>,
@@ -82,6 +84,7 @@ impl Hub {
                     tunnel_port: s.tunnel_port,
                     requested_by: s.admin.clone(),
                     stream: s.stream.clone(),
+                    exec: s.exec.clone(),
                 }
             })
             .collect()
@@ -166,6 +169,7 @@ pub(crate) fn start_session(
             rows: rows.clamp(5, 200),
             tunnel_port: tunnel_port.filter(|p| *p > 0),
             stream: if tunnel_port == Some(od_core::protocol::STREAM_PORT) { Some(stream.unwrap_or_default()) } else { None },
+            exec: None,
             delivered: false,
             to_admin: None,
             to_agent: None,
@@ -178,6 +182,48 @@ pub(crate) fn start_session(
         Some(p) => s.db.audit(admin.name(), "tunnel.open", &e.hostname, &format!("TCP tunnel to port {p} ({})", port_name(p))),
         None => s.db.audit(admin.name(), "shell.open", &e.hostname, "Interactive remote shell"),
     }
+    Ok(Opened { session_id, ticket })
+}
+
+/// A terminal inside a container (`docker exec -it`). The caller has checked
+/// Manage containers; this checks Remote shell and the Remote tools setting.
+pub(crate) fn start_exec(
+    s: &AppState,
+    admin: &Operator,
+    e: &od_core::Endpoint,
+    cols: u16,
+    rows: u16,
+    exec: od_core::manage::ContainerExec,
+) -> ApiResult<Opened> {
+    admin.need_endpoint(e, Permission::RemoteShell)?;
+    for st in super::policies::endpoint_settings(s, e)? {
+        if let od_core::policy::Setting::RemoteTools { remote_shell: false, .. } = st {
+            return Err(ApiError::forbidden("Remote shell is turned off for this endpoint by the Remote tools GPO setting"));
+        }
+    }
+    let ticket = random_token(24);
+    let session_id = Uuid::new_v4();
+    s.hub.sessions.lock().unwrap_or_else(|e| e.into_inner()).insert(
+        session_id,
+        Session {
+            endpoint: e.id,
+            host: e.hostname.clone(),
+            admin: admin.name().to_string(),
+            ticket_hash: Some(sha256_hex(ticket.as_bytes())),
+            created: Instant::now(),
+            cols: cols.clamp(20, 400),
+            rows: rows.clamp(5, 200),
+            tunnel_port: None,
+            stream: None,
+            exec: Some(exec),
+            delivered: false,
+            to_admin: None,
+            to_agent: None,
+            admin_backlog: vec![],
+            agent_backlog: vec![],
+        },
+    );
+    s.hub.wake(e.id);
     Ok(Opened { session_id, ticket })
 }
 
@@ -309,16 +355,25 @@ where
     writer.abort();
 }
 
-#[derive(Serialize)]
-pub struct Wake {
-    wake: bool,
-}
-
-/// Long poll: returns as soon as there's work for this endpoint, or after 25 s.
-pub async fn wait(State(s): State<AppState>, EndpointCaller(auth): EndpointCaller) -> Json<Wake> {
+/// Long poll: returns as soon as there's work for this endpoint, or after
+/// 25 s. Management queries ride along so they're answered without a check-in.
+pub async fn wait(State(s): State<AppState>, EndpointCaller(auth): EndpointCaller) -> Json<od_core::protocol::WaitResponse> {
     let n = s.hub.waker(auth.id);
-    let woke = tokio::time::timeout(Duration::from_secs(25), n.notified()).await.is_ok();
-    Json(Wake { wake: woke })
+    let q = super::manage::waker(auth.id);
+    let mut queries = super::manage::take_queries(auth.id);
+    let mut wake = false;
+    if queries.is_empty() {
+        wake = tokio::time::timeout(Duration::from_secs(25), async {
+            tokio::select! {
+                _ = n.notified() => true,
+                _ = q.notified() => false,
+            }
+        })
+        .await
+        .unwrap_or(false);
+        queries = super::manage::take_queries(auth.id);
+    }
+    Json(od_core::protocol::WaitResponse { wake, queries })
 }
 
 /// Ports a delegated operator may tunnel to: RDP, VNC and the agent's

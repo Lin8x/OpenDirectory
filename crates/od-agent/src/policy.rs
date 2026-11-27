@@ -15,6 +15,7 @@ fn item(s: &Setting, state: ComplianceState, message: impl Into<String>) -> Comp
 pub async fn apply_all(settings: &[Setting]) -> Vec<ComplianceItem> {
     let mut out = Vec::new();
     let mut packages: Vec<String> = Vec::new();
+    let mut deploy: Vec<od_core::manage::PackageRule> = Vec::new();
     for s in settings {
         match s {
             Setting::InstallPackages { packages: p } => packages.extend(p.iter().cloned()),
@@ -25,7 +26,8 @@ pub async fn apply_all(settings: &[Setting]) -> Vec<ComplianceItem> {
             | Setting::ConsentNotice { .. }
             | Setting::HelpDesk { .. } => {}
             // Enforced by the agent itself when a session is requested.
-            Setting::RemoteSessionConsent { .. } | Setting::RemoteTools { .. } => {
+            Setting::SoftwareDeployment { packages: p } => deploy.extend(p.iter().cloned()),
+            Setting::RemoteSessionConsent { .. } | Setting::RemoteTools { .. } | Setting::ManagementTools { .. } => {
                 out.push(item(s, ComplianceState::Compliant, "Enforced by the Endpoint Agent"))
             }
             other => {
@@ -36,6 +38,9 @@ pub async fn apply_all(settings: &[Setting]) -> Vec<ComplianceItem> {
                 });
             }
         }
+    }
+    if !deploy.is_empty() {
+        out.push(crate::manage::software::deploy(&deploy).await);
     }
     if !packages.is_empty() {
         packages.sort();

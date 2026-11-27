@@ -15,6 +15,7 @@ mod helpdesk;
 pub mod integrations;
 mod lab;
 pub mod maintenance;
+mod manage;
 pub mod mfa;
 mod mobile;
 mod netsvc;
@@ -83,6 +84,14 @@ pub fn router(state: AppState) -> Router {
         .route("/endpoints/{id}/rsop", get(policies::rsop))
         .route("/endpoints/{id}/laps", get(endpoints::laps))
         .route("/endpoints/{id}/shell", post(shell::open))
+        .route("/endpoints/{id}/manage/services", get(manage::services))
+        .route("/endpoints/{id}/manage/software", get(manage::software))
+        .route("/endpoints/{id}/manage/processes", get(manage::processes))
+        .route("/endpoints/{id}/manage/containers", get(manage::containers))
+        .route("/endpoints/{id}/manage/containers/{cid}/logs", get(manage::container_logs))
+        .route("/endpoints/{id}/manage/containers/{cid}/exec", post(manage::exec))
+        .route("/endpoints/{id}/manage/actions", post(manage::act))
+        .route("/portainer", get(manage::get_portainer).put(manage::set_portainer))
         .route("/shell/{id}/ws", get(shell::admin_ws))
         .route("/remote/capabilities", get(remote::capabilities))
         .route("/endpoints/{id}/remote-desktop", post(remote::start))
@@ -160,6 +169,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agent/laps", post(agent::laps_escrow))
         .route("/agent/certificate", post(ca::agent_enroll))
         .route("/agent/wait", get(shell::wait))
+        .route("/agent/queries/{id}", post(manage::agent_result))
         .route("/agent/chat", post(helpdesk::agent_post))
         .route("/agent/downloads/android-agent.apk", get(downloads::android_apk))
         .route("/agent/device-certificate", post(crate::gateway::agent_certificate))

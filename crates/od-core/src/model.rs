@@ -243,6 +243,10 @@ pub enum JobKind {
         title: String,
         message: String,
     },
+    /// Manage a service, package, process or container (see [`crate::manage`]).
+    Manage {
+        action: crate::manage::ManageAction,
+    },
     /// A job type from a newer version.
     #[serde(other)]
     Unknown,
@@ -254,6 +258,7 @@ impl JobKind {
         match self {
             JobKind::ScanUpdates | JobKind::InstallUpdates { .. } => "0.5.0",
             JobKind::NotifyUser { .. } => "0.13.0",
+            JobKind::Manage { .. } => crate::manage::MIN_AGENT,
             _ => "0.0.0",
         }
     }
@@ -276,6 +281,7 @@ impl JobKind {
             JobKind::InstallUpdates { security_only: true, .. } => "Install security updates".into(),
             JobKind::InstallUpdates { .. } => "Install updates".into(),
             JobKind::NotifyUser { title, .. } => format!("Message the user: {title}"),
+            JobKind::Manage { action } => action.summary(),
             JobKind::Unknown => "Unknown job type".into(),
         }
     }

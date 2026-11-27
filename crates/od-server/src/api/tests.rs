@@ -1499,3 +1499,6 @@ fn decode_b32(s: &str) -> Vec<u8> {
     }
     out
 }
+
+#[path = "manage_tests.rs"]
+mod manage_tests;

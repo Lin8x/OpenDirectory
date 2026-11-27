@@ -34,6 +34,7 @@ pub async fn run(job: &AgentJob) -> JobResult {
                 }
             }
         },
+        JobKind::Manage { action } => crate::manage::act(action, "").await,
         JobKind::Unknown => {
             JobResult { exit_code: None, output: "This job type needs a newer Endpoint Agent; update the agent".into(), success: false }
         }

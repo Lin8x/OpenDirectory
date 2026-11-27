@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronRight, Terminal, X } from "lucide-react";
 import { useQuery } from "../lib/hooks";
 import { post } from "../lib/api";
-import type { Endpoint, Job, OsFamily } from "../lib/types";
+import type { Endpoint, Job, ManageAction, OsFamily } from "../lib/types";
 import { ago, dateTime, osLabel } from "../lib/format";
 import { ListToolbar, NoMatches, useListView } from "../components/DataView";
 import { Badge, Button, Card, CopyButton, EmptyState, Explain, Loading, OsIcon, PageHeader, Select, useToast } from "../components/ui";
@@ -14,6 +14,8 @@ export function jobTitle(j: Job) {
   if (j.kind.type === "script") return j.kind.script.split("\n")[0]!.slice(0, 80) || "Script";
   if (j.kind.type === "scan_updates") return "Scan for updates";
   if (j.kind.type === "install_updates") return j.kind.security_only ? "Install security updates" : "Install updates";
+  if (j.kind.type === "manage") return manageSummary(j.kind.action);
+  if (j.kind.type === "notify_user") return `Message the user: ${j.kind.title}`;
   return j.kind.type === "refresh_inventory" ? "Refresh inventory" : "Restart agent";
 }
 
@@ -51,7 +53,7 @@ export function JobRow({ job, endpoint, onChanged, defaultOpen = false }: { job:
 
 const STATUS_LABEL: Record<Job["status"], string> = { queued: "Queued", running: "Running", succeeded: "Succeeded", failed: "Failed", cancelled: "Cancelled" };
 const KIND_LABEL: Record<Job["kind"]["type"], string> = {
-  script: "Script", scan_updates: "Update scan", install_updates: "Update install", refresh_inventory: "Inventory refresh", restart_agent: "Agent restart", notify_user: "User notification",
+  script: "Script", scan_updates: "Update scan", install_updates: "Update install", refresh_inventory: "Inventory refresh", restart_agent: "Agent restart", notify_user: "User notification", manage: "Management action",
 };
 
 /** Filterable, sortable list of script and job runs. Shared by Remote Scripts and the Script Library. */
@@ -114,4 +116,18 @@ export default function Jobs() {
       <div className="mt-5"><Explain>Scripts run with full system rights (SYSTEM on Windows, root on macOS and Linux) and time out after 30 minutes. Output is capped at 1 MB.</Explain></div>
     </>
   );
+}
+
+/** Same wording as the server's ManageAction::summary. */
+export function manageSummary(a: ManageAction): string {
+  switch (a.op) {
+    case "service": return `${a.control[0]!.toUpperCase()}${a.control.slice(1)} service ${a.name}`;
+    case "service_startup": return `Set ${a.name} startup type to ${a.startup.replace("_", " ")}`;
+    case "package": return `${{ install: "Install", update: "Update", remove: "Uninstall" }[a.operation]} ${a.name}${a.manager ? ` (${a.manager})` : ""}`;
+    case "kill_process": return `End process ${a.expect_name ? `${a.expect_name} (PID ${a.pid})` : `PID ${a.pid}`}`;
+    case "container": return `${a.control === "update" ? "Update (pull and recreate)" : a.control[0]!.toUpperCase() + a.control.slice(1)} container ${a.id.slice(0, 24)}`;
+    case "pull_image": return `Pull image ${a.image}`;
+    case "remove_image": return `Remove image ${a.id.slice(0, 24)}`;
+    case "prune": return "Prune unused containers and images";
+  }
 }

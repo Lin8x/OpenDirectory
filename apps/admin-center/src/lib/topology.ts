@@ -133,7 +133,7 @@ function effective(policies: Policy[], ous: OrgUnit[], ouId: string | null) {
     while (cur && guard++ < 64) { if (p.targets.ou_ids.includes(cur)) return true; cur = parent.get(cur) ?? null; }
     return false;
   };
-  const acc = new Set(["local_accounts", "install_packages", "run_script"]);
+  const acc = new Set(["local_accounts", "install_packages", "software_deployment", "run_script"]);
   const out: { kind: string; describe: string; from: string }[] = []; const seen = new Set<string>();
   for (const p of policies.filter(applies).sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name))) {
     for (const s of p.settings as Setting[]) {
