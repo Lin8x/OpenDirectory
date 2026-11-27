@@ -103,6 +103,9 @@ pub struct Opened {
 
 pub async fn open(State(s): State<AppState>, admin: Admin, Path(id): Path<Uuid>, Json(inp): Json<OpenInput>) -> ApiResult<Json<Opened>> {
     let e = s.db.get_endpoint(id)?.ok_or_else(|| ApiError::not_found("Endpoint"))?;
+    if e.os == od_core::OsFamily::Android {
+        return Err(ApiError::bad_request("Android devices don't support remote shell or remote desktop sessions"));
+    }
     // Remote tools can be turned off per endpoint or platform by GPO.
     for st in super::policies::endpoint_settings(&s, &e)? {
         if let od_core::policy::Setting::RemoteTools { remote_shell, remote_desktop } = st {
