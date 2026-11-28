@@ -34,6 +34,7 @@ object Notices {
         )
         val n = Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
+            .setColor(0xFF007AFF.toInt())
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
@@ -74,5 +75,5 @@ object Notices {
 
     fun message(ctx: Context, title: String, text: String) = post(ctx, MESSAGE_ID, title, text, "status")
 
-    fun reply(ctx: Context, author: String, text: String) = post(ctx, REPLY_ID, "Message from IT: $author", text, "helpdesk")
+    fun reply(ctx: Context, author: String, text: String) = post(ctx, REPLY_ID, "$author from IT", text, "helpdesk")
 }

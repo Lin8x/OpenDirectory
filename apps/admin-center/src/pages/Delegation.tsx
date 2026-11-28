@@ -171,7 +171,7 @@ function Editor({ initial, users, groups, ous, eps, onClose, onSaved }: {
           <div className="grid gap-3 sm:grid-cols-3">
             {GROUPS.map((g) => (
               <div key={g.label} className="rounded-lg border border-line p-3">
-                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-3">{g.label}</div>
+                <div className="mb-1.5 text-xs font-semibold text-ink-3">{g.label}</div>
                 {g.perms.map((p) => (
                   <label key={p} className="flex items-center gap-2 py-0.5 text-sm"><input type="checkbox" checked={perms.includes(p)} onChange={() => toggle(p)} />{PERMISSION_LABELS[p]}</label>
                 ))}

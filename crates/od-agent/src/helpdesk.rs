@@ -81,7 +81,8 @@ impl HelpDesk {
             if contact.is_some() && !first_sync {
                 for m in replies.iter().rev().take(1) {
                     let more = if replies.len() > 1 { format!(" (+{} more)", replies.len() - 1) } else { String::new() };
-                    crate::desktop::notify(&format!("Message from IT: {}{more}", m.author), &m.text).await;
+                    // Communication notifications lead with the sender's name (Apple HIG).
+                    crate::desktop::notify(&format!("{} from IT{more}", m.author), &m.text).await;
                 }
             }
         }
@@ -270,18 +271,20 @@ const PAGE: &str = r#"<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Contact IT</title>
 <style>
-:root{color-scheme:light dark;--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mute:#677085;--me:#2f6fed;--line:#e2e5ec}
-@media(prefers-color-scheme:dark){:root{--bg:#14171d;--card:#1c2029;--ink:#e7eaf0;--mute:#9aa3b5;--me:#3d7bf5;--line:#2b303b}}
-*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;height:100vh}
-header{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--card)}h1{margin:0;font-size:18px}header p{margin:4px 0 0;color:var(--mute);font-size:13px}
-main{flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:10px}
-.m{max-width:75%;padding:9px 13px;border-radius:14px;background:var(--card);border:1px solid var(--line);white-space:pre-wrap;word-wrap:break-word}
-.me{align-self:flex-end;background:var(--me);color:#fff;border-color:transparent}.meta{font-size:11px;opacity:.7;margin-top:3px}
-.empty{color:var(--mute);text-align:center;margin-top:40px}
-form{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);background:var(--card)}
-textarea{flex:1;resize:none;height:44px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
-button{padding:0 18px;border:0;border-radius:10px;background:var(--me);color:#fff;font:inherit;font-weight:600;cursor:pointer}button:disabled{opacity:.5}
-#err{color:#d14343;font-size:13px;padding:0 20px 8px;background:var(--card)}
+:root{color-scheme:light dark;--bg:#fff;--bar:rgba(246,246,248,.82);--in:#e9e9eb;--ink:#1d1d1f;--mute:#86868b;--me:#007aff;--line:rgba(0,0,0,.1);--field:#fff;--bad:#d70015}
+@media(prefers-color-scheme:dark){:root{--bg:#1c1c1e;--bar:rgba(40,40,44,.82);--in:#3a3a3c;--ink:#f5f5f7;--mute:#98989d;--me:#0a84ff;--line:rgba(255,255,255,.12);--field:#2c2c2e;--bad:#ff453a}}
+*{box-sizing:border-box}body{margin:0;font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Inter,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;height:100vh}
+header{position:sticky;top:0;padding:14px 20px 12px;text-align:center;border-bottom:.5px solid var(--line);background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px)}
+h1{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em}header p{margin:3px auto 0;max-width:560px;color:var(--mute);font-size:11px}
+main{flex:1;overflow:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:3px}
+.m{max-width:72%;padding:7px 12px;border-radius:18px;background:var(--in);font-size:14px;line-height:1.35;white-space:pre-wrap;word-wrap:break-word;margin-bottom:6px}
+.me{align-self:flex-end;background:var(--me);color:#fff}.meta{font-size:10.5px;opacity:.6;margin-top:2px}
+.empty{color:var(--mute);text-align:center;margin:auto;max-width:300px;font-size:13px}
+form{display:flex;align-items:flex-end;gap:8px;padding:10px 14px 14px;border-top:.5px solid var(--line);background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px)}
+textarea{flex:1;resize:none;height:36px;padding:8px 14px;border-radius:18px;border:.5px solid var(--line);background:var(--field);color:var(--ink);font:inherit;font-size:14px;outline:none}
+textarea:focus{box-shadow:0 0 0 3.5px color-mix(in srgb,var(--me) 35%,transparent)}
+button{height:36px;padding:0 16px;border:0;border-radius:18px;background:var(--me);color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:default}button:hover{filter:brightness(1.08)}button:disabled{opacity:.4}
+#err{color:var(--bad);font-size:12px;padding:0 20px 6px;background:var(--bar)}#err:empty{display:none}
 </style></head><body>
 <header><h1>Contact IT</h1><p>Messages go to your organization's IT team. They can see this device's name, not your files.<span id="contact"></span></p></header>
 <main id="list"><div class="empty">No messages yet. Describe your problem below and IT will reply here.</div></main>

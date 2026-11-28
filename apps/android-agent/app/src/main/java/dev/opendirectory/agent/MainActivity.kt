@@ -5,7 +5,10 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -75,28 +78,54 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------ helpers
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun text(s: CharSequence, size: Float = 15f, bold: Boolean = false, muted: Boolean = false) = TextView(this).apply {
+    // Apple HIG palette: system blue and red, grouped backgrounds, secondary label.
+    private val dark get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    private val accent get() = if (dark) 0xFF0A84FF.toInt() else 0xFF007AFF.toInt()
+    private val red get() = if (dark) 0xFFFF453A.toInt() else 0xFFFF3B30.toInt()
+    private val card get() = if (dark) 0xFF1C1C1E.toInt() else Color.WHITE
+    private val fill get() = if (dark) 0x3D767680 else 0x1F767680
+    private val label get() = if (dark) Color.WHITE else 0xFF000000.toInt()
+    private val secondary get() = if (dark) 0x99EBEBF5.toInt() else 0x993C3C43.toInt()
+
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
+
+    private fun text(s: CharSequence, size: Float = 17f, bold: Boolean = false, muted: Boolean = false) = TextView(this).apply {
         text = s
         textSize = size
-        if (bold) typeface = Typeface.DEFAULT_BOLD
-        if (muted) alpha = 0.7f
+        setTextColor(if (muted) secondary else label)
+        if (bold) {
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = -0.01f
+        }
         setPadding(0, dp(4), 0, dp(4))
         setTextIsSelectable(true)
         root.addView(this)
     }
 
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+    /** A large rounded button: filled with the accent color, or plain red text for a destructive action. */
+    private fun button(label: String, destructive: Boolean = false, onClick: () -> Unit) = Button(this).apply {
         text = label
         isAllCaps = false
+        textSize = 17f
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        stateListAnimator = null
+        background = rounded(if (destructive) fill else accent, 12)
+        setTextColor(if (destructive) red else Color.WHITE)
+        minHeight = dp(50)
         setOnClickListener { onClick() }
-        root.addView(this, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) })
+        root.addView(this, LinearLayout.LayoutParams(MATCH_PARENT, dp(50)).apply { topMargin = dp(10) })
     }
 
     private fun input(hint: String, mono: Boolean = false) = EditText(this).apply {
         this.hint = hint
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         if (mono) typeface = Typeface.MONOSPACE
-        root.addView(this, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        textSize = 17f
+        setTextColor(label)
+        setHintTextColor(secondary)
+        background = rounded(card, 10)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        root.addView(this, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) })
     }
 
     private fun gap(h: Int = 16) = root.addView(View(this), LinearLayout.LayoutParams(MATCH_PARENT, dp(h)))
@@ -119,14 +148,28 @@ class MainActivity : Activity() {
     private fun render() {
         root.removeAllViews()
         if (!agent.store.enrolled) return enrollScreen()
-        val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        root.addView(nav)
+        // Segmented control: a gray track with the selected segment raised.
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = rounded(fill, 9)
+            setPadding(dp(2), dp(2), dp(2), dp(2))
+        }
+        root.addView(nav, LinearLayout.LayoutParams(MATCH_PARENT, dp(36)))
         fun tab(id: String, label: String) = nav.addView(Button(this).apply {
             text = label
             isAllCaps = false
             isEnabled = screen != id
+            textSize = 13f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            stateListAnimator = null
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(0, 0, 0, 0)
+            setTextColor(this@MainActivity.label)
+            background = if (screen == id) rounded(if (dark) 0xFF636366.toInt() else Color.WHITE, 7).apply { setStroke(1, 0x14000000) } else null
+            elevation = if (screen == id) dp(1).toFloat() else 0f
             setOnClickListener { screen = id; render() }
-        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        }, LinearLayout.LayoutParams(0, MATCH_PARENT, 1f))
         tab("status", "Status")
         if (agent.setting("consent_notice") != null) tab("notice", "Notice")
         if (agent.helpDesk() != null) tab("helpdesk", "Help desk")
@@ -139,7 +182,7 @@ class MainActivity : Activity() {
     }
 
     private fun enrollScreen() {
-        text("OpenDirectory Agent", 24f, bold = true)
+        text("OpenDirectory Agent", 34f, bold = true)
         text("Connect this device to your organization's Management Server. Your IT team gives you these three values (Admin Center > Enrollment > Android).", muted = true)
         gap()
         val server = input("Server, e.g. https://10.0.0.4:8443")
@@ -168,7 +211,7 @@ class MainActivity : Activity() {
 
     private fun statusScreen() {
         val s = agent.store
-        text("This device is managed", 22f, bold = true)
+        text("This device is managed", 28f, bold = true)
         text("Server: ${s.targets.getOrNull(s.lastGood)?.url ?: s.targets.firstOrNull()?.url.orEmpty()}", muted = true)
         text("Endpoint ID: ${s.endpointId}", 12f, muted = true)
         val last = if (s.lastCheckin > 0) DateFormat.getDateTimeInstance().format(Date(s.lastCheckin)) else "never"
@@ -179,7 +222,7 @@ class MainActivity : Activity() {
         text("Checks in about every 15 minutes, only when there's a network and the battery isn't low. Nothing runs in the background between check-ins.", 13f, muted = true)
         button("Check in now") { refresh(quiet = false) }
         gap()
-        button("Leave management") {
+        button("Leave management", destructive = true) {
             AlertDialog.Builder(this)
                 .setTitle("Leave management?")
                 .setMessage("This device stops reporting to your organization. Tell IT so they can retire it in the Admin Center.")
@@ -191,7 +234,7 @@ class MainActivity : Activity() {
 
     private fun noticeScreen() {
         val n = agent.setting("consent_notice") ?: return statusScreen()
-        text(n.optString("title"), 22f, bold = true)
+        text(n.optString("title"), 28f, bold = true)
         text(n.optString("text"))
         gap()
         val s = agent.store
@@ -207,7 +250,7 @@ class MainActivity : Activity() {
     }
 
     private fun helpDeskScreen() {
-        text("Contact IT", 22f, bold = true)
+        text("Contact IT", 28f, bold = true)
         val contact = agent.helpDesk()?.optString("contact").orEmpty()
         text("Messages go to your IT team. Replies show up here and as a notification." + if (contact.isNotEmpty()) " Other ways to reach IT: $contact" else "", 13f, muted = true)
         gap(8)
@@ -217,7 +260,18 @@ class MainActivity : Activity() {
             val m = chat.getJSONObject(i)
             val it = m.optBoolean("from_it")
             val who = if (it) "${m.optString("author")} (IT)" else "You"
-            text("$who: ${m.optString("text")}", 15f).apply { gravity = if (it) Gravity.START else Gravity.END }
+            // Message bubbles: gray from IT on the left, accent-colored from you on the right.
+            text("$who: ${m.optString("text")}", 16f).apply {
+                setTextColor(if (it) label else Color.WHITE)
+                background = rounded(if (it) (if (dark) 0xFF3A3A3C.toInt() else 0xFFE9E9EB.toInt()) else accent, 18)
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                (parent as LinearLayout).removeView(this)
+                root.addView(this, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                    gravity = if (it) Gravity.START else Gravity.END
+                    topMargin = dp(6)
+                    if (it) rightMargin = dp(48) else leftMargin = dp(48)
+                })
+            }
         }
         gap(8)
         val box = input("Type a message…").apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE; maxLines = 5 }

@@ -152,7 +152,7 @@ export function SetupWizard() {
       <JoinDialog open={join} onClose={() => setJoin(false)} onJoined={() => window.location.reload()} />
       <div className="grid overflow-hidden rounded-2xl border border-line bg-panel shadow-xl md:grid-cols-[230px_1fr]">
         <div className="border-b border-line bg-panel-2 p-6 md:border-b-0 md:border-r">
-          <div className="text-xs font-semibold uppercase tracking-wider text-ink-3">Set up your domain</div>
+          <div className="text-xs font-semibold text-ink-3">Set up your domain</div>
           <ol className="mt-4 space-y-3">
             {STEPS.map((s, i) => (
               <li key={s} className="flex items-center gap-2.5 text-sm">

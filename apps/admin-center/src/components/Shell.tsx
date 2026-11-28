@@ -79,51 +79,51 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-line bg-panel">
+      <aside className="material-sidebar relative z-10 flex w-[244px] shrink-0 flex-col border-r border-[var(--hairline)]">
         <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
           <BrandMark sub={me?.domain} />
         </div>
-        <button onClick={() => setPalette(true)} className="mx-3 mb-2 flex h-8 items-center gap-2 rounded-md border border-line bg-panel-2 px-2.5 text-[13px] text-ink-3 hover:text-ink">
-          <Search className="size-3.5" /><span className="flex-1 text-left">Search</span><kbd className="rounded border border-line bg-panel px-1 text-[10px]">Ctrl K</kbd>
+        <button onClick={() => setPalette(true)} className="mx-3 mb-1 flex h-[28px] items-center gap-1.5 rounded-lg bg-fill px-2 text-[13px] text-ink-3 transition hover:text-ink-2">
+          <Search className="size-[15px]" /><span className="flex-1 text-left">Search</span><kbd className="font-sans text-[11px] tracking-wide text-ink-3">{IS_MAC ? "⌘K" : "Ctrl K"}</kbd>
         </button>
-        <nav className="flex-1 overflow-y-auto px-2 pb-3">
+        <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
           {NAV.map((g) => (
-            <div key={g.section} className="mt-3 first:mt-1">
-              {g.section && <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{g.section}</div>}
+            <div key={g.section} className="mt-3.5 first:mt-1.5">
+              {g.section && <div className="px-2 pb-0.5 text-[11px] font-semibold text-ink-3">{g.section}</div>}
               {g.items.map((i) => (
                 <NavLink key={i.to} to={i.to} end={i.to === "/"}
-                  className={({ isActive }) => cx("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] transition",
-                    isActive && (!i.to.includes("?") || loc.search === i.to.slice(i.to.indexOf("?")) || (!loc.search && i.to.endsWith("=windows"))) ? "bg-accent-soft font-medium text-accent" : "text-ink-2 hover:bg-panel-2 hover:text-ink")}>
-                  {i.icon}{i.label}
+                  className={({ isActive }) => cx(SIDEBAR_ITEM,
+                    isActive && (!i.to.includes("?") || loc.search === i.to.slice(i.to.indexOf("?")) || (!loc.search && i.to.endsWith("=windows"))) ? SIDEBAR_ON : SIDEBAR_OFF)}>
+                  <span className="text-accent">{i.icon}</span>{i.label}
                 </NavLink>
               ))}
             </div>
           ))}
         </nav>
-        <div className="space-y-1 border-t border-line p-2">
-          <NavLink to="/learn" className={({ isActive }) => cx("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px]", isActive ? "bg-accent-soft text-accent font-medium" : "text-ink-2 hover:bg-panel-2")}>
-            <BookOpen className="size-4" />Learn
+        <div className="space-y-0.5 border-t border-[var(--hairline)] px-2.5 py-2">
+          <NavLink to="/learn" className={({ isActive }) => cx(SIDEBAR_ITEM, isActive ? SIDEBAR_ON : SIDEBAR_OFF)}>
+            <BookOpen className="size-4 text-accent" />Learn
           </NavLink>
-          <NavLink to="/guide" className={({ isActive }) => cx("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px]", isActive ? "bg-accent-soft text-accent font-medium" : "text-ink-2 hover:bg-panel-2")}>
-            <BookMarked className="size-4" />Guide
+          <NavLink to="/guide" className={({ isActive }) => cx(SIDEBAR_ITEM, isActive ? SIDEBAR_ON : SIDEBAR_OFF)}>
+            <BookMarked className="size-4 text-accent" />Guide
           </NavLink>
-          <div className="flex h-8 items-center justify-between rounded-md px-2.5 text-[13.5px] text-ink-2">
-            <span className="flex items-center gap-2.5"><GraduationCap className="size-4" />Learn mode</span>
+          <div className="flex h-[30px] items-center justify-between rounded-md px-2 text-[13px] text-ink">
+            <span className="flex items-center gap-2"><GraduationCap className="size-4 text-accent" />Learn mode</span>
             <Switch checked={learn} onChange={setLearn} />
           </div>
-          <div className="relative">
-            <button onClick={() => setMenu((m) => !m)} className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-panel-2">
-              <Avatar name={me?.user.display_name ?? "?"} className="size-7" />
+          <div className="relative pt-1">
+            <button onClick={() => setMenu((m) => !m)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition hover:bg-fill">
+              <Avatar name={me?.user.display_name ?? "?"} className="size-7 text-[11px]" />
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="truncate text-[13px] font-medium">{me?.user.display_name}</div>
-                <div className="truncate text-xs text-ink-3">Domain Admin</div>
+                <div className="truncate text-[13px] font-semibold">{me?.user.display_name}</div>
+                <div className="truncate text-[11px] text-ink-3">Domain Admin</div>
               </div>
             </button>
             {menu && (
-              <div className="anim-pop absolute bottom-11 left-0 right-0 z-30 rounded-lg border border-line bg-panel p-1 shadow-xl" onMouseLeave={() => setMenu(false)}>
+              <div className="anim-pop material elev-3 absolute bottom-12 left-0 right-0 z-30 rounded-[10px] p-[5px]" onMouseLeave={() => setMenu(false)}>
                 <MenuItem icon={dark ? <Sun className="size-4" /> : <Moon className="size-4" />} onClick={() => { setTheme(dark ? "light" : "dark"); setMenu(false); }}>{dark ? "Light theme" : "Dark theme"}</MenuItem>
-                <NavLink to="/settings" onClick={() => setMenu(false)} className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink-2 hover:bg-panel-2"><SettingsIcon className="size-4" />Server &amp; connection</NavLink>
-                <button onClick={() => { setMenu(false); setUi("classic"); }} className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink-2 hover:bg-panel-2"><PanelsTopLeft className="size-4" />Classic interface</button>
+                <NavLink to="/settings" onClick={() => setMenu(false)} className={MENU_ITEM}><SettingsIcon className="size-4" />Server &amp; connection</NavLink>
+                <button onClick={() => { setMenu(false); setUi("classic"); }} className={MENU_ITEM}><PanelsTopLeft className="size-4" />Classic interface</button>
                 <MenuItem icon={<LogOut className="size-4" />} onClick={() => void signOut()}>Sign out</MenuItem>
               </div>
             )}
@@ -132,15 +132,23 @@ export default function Shell({ children }: { children: ReactNode }) {
       </aside>
       <main className="min-w-0 flex-1 overflow-y-auto">
         <ReplicaBanner />
-        <div className="mx-auto max-w-[1280px] px-8 py-7">{children}</div>
+        <div className="mx-auto max-w-[1280px] px-9 py-8">{children}</div>
       </main>
       {palette && <CommandPalette onClose={() => setPalette(false)} />}
     </div>
   );
 }
 
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// macOS source-list rows: 28pt tall, accent-tinted symbols, gray selection.
+const SIDEBAR_ITEM = "flex h-[28px] items-center gap-2 rounded-md px-2 text-[13px] transition-colors";
+const SIDEBAR_ON = "bg-ink/[0.09] font-medium text-ink dark:bg-white/[0.12]";
+const SIDEBAR_OFF = "text-ink hover:bg-ink/[0.045] dark:hover:bg-white/[0.06]";
+// macOS menu rows: accent highlight with white text on hover.
+const MENU_ITEM = "flex h-[26px] w-full items-center gap-2 rounded-[5px] px-2 text-left text-[13px] text-ink hover:bg-accent hover:text-accent-ink";
+
 function MenuItem({ icon, children, onClick }: { icon: ReactNode; children: ReactNode; onClick: () => void }) {
-  return <button onClick={onClick} className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] text-ink-2 hover:bg-panel-2">{icon}{children}</button>;
+  return <button onClick={onClick} className={MENU_ITEM}>{icon}{children}</button>;
 }
 
 const HIT_ICON: Record<SearchHit["type"], ReactNode> = {
@@ -188,10 +196,10 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const go = (to: string) => { nav(to); onClose(); };
   return (
-    <div className="anim-fade fixed inset-0 z-50 bg-black/40 pt-[12vh] backdrop-blur-[2px]" onMouseDown={onClose}>
-      <div className="anim-pop mx-auto w-full max-w-xl overflow-hidden rounded-xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2.5 border-b border-line px-4">
-          <Search className="size-4 text-ink-3" />
+    <div className="anim-fade fixed inset-0 z-50 bg-black/10 pt-[14vh] dark:bg-black/30" onMouseDown={onClose}>
+      <div className="anim-pop material elev-3 mx-auto w-full max-w-[640px] overflow-hidden rounded-2xl" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-[var(--hairline)] px-4">
+          <Search className="size-5 text-ink-3" />
           <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }} placeholder="Search or jump to… users, endpoints (hostname, serial, IP), groups, GPOs, pages"
             onKeyDown={(e) => {
               if (e.key === "Escape") onClose();
@@ -200,16 +208,16 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
               if (e.key === "Enter" && items[sel]) go(items[sel].to);
             }}
-            className="h-12 flex-1 bg-transparent text-[15px] outline-none placeholder:text-ink-3" />
+            className="h-[54px] flex-1 bg-transparent text-[20px] font-light tracking-[-0.01em] outline-none placeholder:text-ink-3" />
         </div>
-        <div className="max-h-80 overflow-y-auto p-1.5">
-          {!q.trim() && <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Quick actions</div>}
+        <div className="max-h-80 overflow-y-auto p-2">
+          {!q.trim() && <div className="px-2.5 pb-1 pt-1 text-[11px] font-semibold text-ink-3">Quick actions</div>}
           {items.length === 0 && <div className="px-3 py-6 text-center text-sm text-ink-3">No matches</div>}
           {items.map((it, i) => (
             <button key={i} onMouseEnter={() => setSel(i)} onClick={() => go(it.to)}
-              className={cx("flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm", i === sel ? "bg-accent-soft text-ink" : "text-ink-2")}>
-              <span className="text-ink-3">{it.icon}</span><span className="flex-1 truncate">{it.label}</span>
-              {it.sub && <span className="truncate text-xs text-ink-3">{it.sub}</span>}
+              className={cx("flex w-full items-center gap-3 rounded-lg px-2.5 py-[7px] text-left text-[13px]", i === sel ? "bg-accent text-accent-ink" : "text-ink")}>
+              <span className={i === sel ? "text-accent-ink" : "text-accent"}>{it.icon}</span><span className="flex-1 truncate">{it.label}</span>
+              {it.sub && <span className={cx("truncate text-xs", i === sel ? "text-accent-ink/80" : "text-ink-3")}>{it.sub}</span>}
             </button>
           ))}
         </div>
@@ -234,7 +242,7 @@ export function ReplicaBanner() {
   const s = st.data;
   if (!s || (s.role !== "replica" && !s.superseded)) return null;
   return (
-    <div className="border-b border-warn/40 bg-warn-soft px-8 py-2 text-sm">
+    <div className="border-b border-warn/25 bg-warn-soft px-9 py-2 text-[13px]">
       {s.superseded
         ? <>Another server was promoted to primary. Changes made here no longer reach endpoints. <Link className="underline" to="/replication">Fix this</Link></>
         : <>You're on a read-only replica server. Make changes on the primary{s.primary ? ` (${s.primary.url})` : ""}. <Link className="underline" to="/replication">Replication & Failover</Link></>}

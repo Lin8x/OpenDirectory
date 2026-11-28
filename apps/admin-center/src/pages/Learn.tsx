@@ -45,7 +45,7 @@ function Concepts() {
       </Card>
       <Card title="Coming from Active Directory?" className="mb-5" padded={false}>
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-3"><th className="px-4 py-2 font-medium">In Windows Server</th><th className="px-4 py-2 font-medium">In OpenDirectory</th></tr></thead>
+          <thead><tr className="border-b border-line text-left text-xs text-ink-3"><th className="px-4 py-2 font-medium">In Windows Server</th><th className="px-4 py-2 font-medium">In OpenDirectory</th></tr></thead>
           <tbody className="divide-y divide-line">{AD_MAP.map(([a, b]) => <tr key={a}><td className="px-4 py-2.5 text-ink-2">{a}</td><td className="px-4 py-2.5 font-medium">{b}</td></tr>)}</tbody>
         </table>
       </Card>
@@ -92,7 +92,7 @@ function KnowledgeBase() {
             if (!items.length) return null;
             return (
               <div key={c} className="mb-1">
-                <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-3">{c}</div>
+                <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-ink-3">{c}</div>
                 {items.map((e) => (
                   <button key={e.key} onClick={() => setParams({ tab: "kb", topic: e.key })} className={cx("w-full rounded-md px-2 py-1.5 text-left text-sm", e.key === cur.key ? "bg-accent-soft font-medium text-accent" : "hover:bg-panel-2")}>{e.title}</button>
                 ))}
@@ -128,7 +128,7 @@ function Resources({ wikipedia, video, links }: { wikipedia?: KbLink; video?: Kb
   if (!wikipedia && !video && links.length === 0) return null;
   return (
     <div className="mt-5 border-t border-line pt-4">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-3">Learn more</div>
+      <div className="mb-3 text-xs font-semibold text-ink-3">Learn more</div>
       {(video || wikipedia) && <div className="grid gap-3 md:grid-cols-2">{video && <VideoCard v={video} />}{wikipedia && <WikiCard l={wikipedia} />}</div>}
       {links.length > 0 && <div className="mt-3 space-y-1.5">{links.map((l) => <ExtLink key={l.url} l={l} />)}</div>}
     </div>
@@ -180,7 +180,7 @@ function Topic({ e }: { e: KbEntry }) {
           <h3 className="font-semibold">{e.microsoft.name}</h3>
           {para(e.microsoft.text)}
           <div className="mt-5 border-t border-line pt-4">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-3">Learn more</div>
+            <div className="mb-3 text-xs font-semibold text-ink-3">Learn more</div>
             <div className="grid gap-3 md:grid-cols-2">
               <LearnCard l={e.microsoft.learn} />
               <VideoCard v={e.microsoft.video} label="YouTube · Windows Server how-to" />

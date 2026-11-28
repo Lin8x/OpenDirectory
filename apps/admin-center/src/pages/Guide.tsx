@@ -51,7 +51,7 @@ export default function Guide() {
           <nav className="space-y-4 text-[13.5px]">
             {PARTS.map(([part, label]) => (
               <div key={part}>
-                <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{label}</div>
+                <div className="mb-1 px-2 text-[11px] font-semibold text-ink-3">{label}</div>
                 {CHAPTERS.filter((c) => c.part === part).map((c) => (
                   <NavLink key={c.slug} to={guidePath(c.slug)} end className={({ isActive }) => cx("block rounded-md px-2 py-1.5 leading-snug", isActive ? "bg-accent-soft font-medium text-accent" : "text-ink-2 hover:bg-panel-2")}>{c.title}</NavLink>
                 ))}

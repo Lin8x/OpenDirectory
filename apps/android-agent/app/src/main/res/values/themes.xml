@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="android:Theme.Material.Light.DarkActionBar" />
+    <!-- Apple HIG look: grouped background, system blue, light bars. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light">
+        <item name="android:colorAccent">#007AFF</item>
+        <item name="android:colorPrimary">#F2F2F7</item>
+        <item name="android:colorPrimaryDark">#F2F2F7</item>
+        <item name="android:windowBackground">#F2F2F7</item>
+        <item name="android:statusBarColor">#F2F2F7</item>
+        <item name="android:navigationBarColor">#F2F2F7</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:actionBarStyle">@style/AppActionBar</item>
+    </style>
+    <style name="AppActionBar" parent="android:Widget.Material.Light.ActionBar.Solid">
+        <item name="android:background">#F2F2F7</item>
+        <item name="android:elevation">0dp</item>
+    </style>
 </resources>

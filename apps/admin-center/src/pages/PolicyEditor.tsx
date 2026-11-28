@@ -379,7 +379,7 @@ function DeploymentForm({ value, onChange }: { value: PackageRule[]; onChange: (
   return (
     <div className="space-y-2">
       {value.length > 0 && (
-        <div className="grid grid-cols-[1fr_190px_140px_120px_28px] gap-2 text-[11px] font-medium uppercase tracking-wide text-ink-3">
+        <div className="grid grid-cols-[1fr_190px_140px_120px_28px] gap-2 text-[11px] font-medium text-ink-3">
           <span>Package id</span><span>Action</span><span>Package manager</span><span>Platform</span><span />
         </div>
       )}

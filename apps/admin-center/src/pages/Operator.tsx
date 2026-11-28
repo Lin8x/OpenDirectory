@@ -49,28 +49,28 @@ function OperatorShell({ children }: { children: ReactNode }) {
   ];
   return (
     <div className="flex h-full">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-line bg-panel">
+      <aside className="material-sidebar relative z-10 flex w-[232px] shrink-0 flex-col border-r border-[var(--hairline)]">
         <div className="flex items-center gap-2.5 px-4 pb-3 pt-4"><BrandMark sub={me?.domain} /></div>
-        <nav className="flex-1 space-y-0.5 px-2">
+        <nav className="flex-1 space-y-0.5 px-2.5">
           {items.map((i) => (
-            <NavLink key={i.to} to={i.to} end={i.to === "/"} className={({ isActive }) => cx("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px]", isActive ? "bg-accent-soft font-medium text-accent" : "text-ink-2 hover:bg-panel-2 hover:text-ink")}>
-              {i.icon}{i.label}
+            <NavLink key={i.to} to={i.to} end={i.to === "/"} className={({ isActive }) => cx("flex h-[28px] items-center gap-2 rounded-md px-2 text-[13px] text-ink transition-colors", isActive ? "bg-ink/[0.09] font-medium dark:bg-white/[0.12]" : "hover:bg-ink/[0.045] dark:hover:bg-white/[0.06]")}>
+              <span className="text-accent">{i.icon}</span>{i.label}
             </NavLink>
           ))}
         </nav>
-        <div className="space-y-1 border-t border-line p-2">
-          <button onClick={() => setTheme(dark ? "light" : "dark")} className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] text-ink-2 hover:bg-panel-2">{dark ? <Sun className="size-4" /> : <Moon className="size-4" />}{dark ? "Light theme" : "Dark theme"}</button>
+        <div className="space-y-1 border-t border-[var(--hairline)] px-2.5 py-2">
+          <button onClick={() => setTheme(dark ? "light" : "dark")} className="flex h-[28px] w-full items-center gap-2 rounded-md px-2 text-[13px] text-ink hover:bg-fill">{dark ? <Sun className="size-4" /> : <Moon className="size-4" />}{dark ? "Light theme" : "Dark theme"}</button>
           <div className="flex items-center gap-2.5 px-2 py-1.5">
             <Avatar name={me?.user.display_name || me?.user.username || "?"} className="size-7" />
             <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-[13px] font-medium">{me?.user.display_name || me?.user.username}</div>
-              <div className="truncate text-xs text-ink-3">Delegated operator</div>
+              <div className="truncate text-[13px] font-semibold">{me?.user.display_name || me?.user.username}</div>
+              <div className="truncate text-[11px] text-ink-3">Delegated operator</div>
             </div>
-            <button title="Sign out" className="rounded p-1 text-ink-3 hover:bg-panel-2 hover:text-ink" onClick={() => void signOut()}><LogOut className="size-4" /></button>
+            <button title="Sign out" className="rounded-md p-1 text-ink-3 hover:bg-fill hover:text-ink" onClick={() => void signOut()}><LogOut className="size-4" /></button>
           </div>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-[1280px] px-8 py-7">{children}</div></main>
+      <main className="min-w-0 flex-1 overflow-y-auto"><div className="mx-auto max-w-[1280px] px-9 py-8">{children}</div></main>
     </div>
   );
 }

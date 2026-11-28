@@ -84,7 +84,7 @@ export default function EndpointDetail() {
               <Spec label="Uptime" value={uptime(i.uptime_secs)} />
               <Spec label="Agent version" value={e.agent_version} />
             </div>
-            <h4 className="mb-2 mt-6 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-3"><HardDrive className="size-3.5" />Storage</h4>
+            <h4 className="mb-2 mt-6 flex items-center gap-1.5 text-xs font-semibold text-ink-3"><HardDrive className="size-3.5" />Storage</h4>
             <div className="space-y-2.5">
               {i.disks.map((d) => {
                 const used = d.total_bytes - d.free_bytes; const pct = d.total_bytes ? used / d.total_bytes : 0;

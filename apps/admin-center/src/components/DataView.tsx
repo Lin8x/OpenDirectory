@@ -198,8 +198,8 @@ function usePopover() {
 }
 
 const chip = (on: boolean) => cx(
-  "inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[13px] font-medium whitespace-nowrap transition",
-  on ? "border-accent/40 bg-accent-soft text-accent" : "border-line bg-panel text-ink-2 hover:bg-panel-2 hover:text-ink",
+  "inline-flex h-[26px] items-center gap-1 rounded-full px-3 text-[12.5px] font-medium whitespace-nowrap transition",
+  on ? "bg-accent text-accent-ink" : "bg-fill text-ink-2 hover:text-ink",
 );
 
 function EnumFilter<T>({ f, view }: { f: Extract<FilterDef<T>, { kind: "enum" }>; view: ListView<T> }) {
@@ -216,19 +216,19 @@ function EnumFilter<T>({ f, view }: { f: Extract<FilterDef<T>, { kind: "enum" }>
   return (
     <div className="relative" ref={p.ref}>
       <button type="button" className={chip(sel.length > 0)} onClick={() => p.setOpen(!p.open)} aria-expanded={p.open}>
-        {f.label}{sel.length === 1 ? <>: <span className="max-w-36 truncate">{label(sel[0]!)}</span></> : sel.length > 1 ? <span className="rounded-full bg-accent px-1.5 text-[11px] text-accent-ink">{sel.length}</span> : null}
+        {f.label}{sel.length === 1 ? <>: <span className="max-w-36 truncate">{label(sel[0]!)}</span></> : sel.length > 1 ? <span className="rounded-full bg-white/25 px-1.5 text-[11px] text-current">{sel.length}</span> : null}
         <ChevronDown className="size-3.5 opacity-70" />
       </button>
       {p.open && (
-        <div className="anim-pop absolute left-0 top-8 z-30 w-64 rounded-lg border border-line bg-panel p-1 shadow-xl">
+        <div className="anim-pop material elev-3 absolute left-0 top-8 z-30 w-64 rounded-[10px] p-1">
           <div className="max-h-72 overflow-y-auto">
             {options.length === 0 && <div className="px-2.5 py-2 text-xs text-ink-3">No values yet.</div>}
             {options.map((o) => {
               const on = sel.includes(o.value);
               return (
                 <button key={o.value} type="button" onClick={() => toggle(o.value)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-panel-2">
-                  <span className={cx("grid size-4 shrink-0 place-items-center rounded border", on ? "border-accent bg-accent text-accent-ink" : "border-line")}>{on && <Check className="size-3" />}</span>
+                  className="flex w-full items-center gap-2 rounded-[5px] px-2 py-1 text-left text-[13px] hover:bg-fill">
+                  <span className={cx("grid size-4 shrink-0 place-items-center rounded border", on ? "border-accent bg-accent text-accent-ink" : "border-ink-3/50 bg-panel")}>{on && <Check className="size-3" />}</span>
                   {o.icon}<span className="min-w-0 flex-1 truncate">{o.label}</span>
                   <span className="text-xs text-ink-3">{counts.get(o.value) ?? 0}</span>
                 </button>
@@ -256,10 +256,10 @@ function DateFilter<T>({ f, view }: { f: Extract<FilterDef<T>, { kind: "date" }>
         {f.label}{summary && <>: <span className="max-w-44 truncate">{summary}</span></>}<ChevronDown className="size-3.5 opacity-70" />
       </button>
       {p.open && (
-        <div className="anim-pop absolute left-0 top-8 z-30 w-64 rounded-lg border border-line bg-panel p-1 shadow-xl">
+        <div className="anim-pop material elev-3 absolute left-0 top-8 z-30 w-64 rounded-[10px] p-1">
           {DATE_PRESETS.map((d) => (
             <button key={d.id} type="button" onClick={() => { set(v?.preset === d.id ? undefined : { preset: d.id }); p.setOpen(false); }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-panel-2">
+              className="flex w-full items-center gap-2 rounded-[5px] px-2 py-1 text-left text-[13px] hover:bg-fill">
               <span className="grid size-4 place-items-center">{v?.preset === d.id && <Check className="size-3.5 text-accent" />}</span>{d.label}
             </button>
           ))}
@@ -290,7 +290,7 @@ function SortPicker<T>({ view }: { view: ListView<T> }) {
       <select value={s?.key ?? ""} aria-label="Sort by" onChange={(e) => {
         const k = e.target.value;
         if (!k) view.setSort(null); else { const t = view.sorts[k]!.type; view.setSort({ key: k, dir: t === "date" || t === "number" ? "desc" : "asc" }); }
-      }} className="h-7 rounded-md border border-line bg-panel pl-2 pr-6 text-[13px] text-ink-2 outline-none focus:border-accent">
+      }} className="bezel h-[26px] rounded-md bg-panel pl-2.5 pr-6 text-[12.5px] text-ink outline-none dark:bg-[#3a3a3d]">
         {!s && <option value="">Sort by…</option>}
         {keys.map((k) => <option key={k} value={k}>Sort: {view.sorts[k]!.label}</option>)}
       </select>
@@ -310,20 +310,20 @@ function SortPicker<T>({ view }: { view: ListView<T> }) {
 export function ListToolbar<T>({ view, placeholder = "Search", extra, sortPicker, noun = ["item", "items"], className, compact, searchWidth }:
   { view: ListView<T>; placeholder?: string; extra?: ReactNode; sortPicker?: boolean; noun?: [string, string]; className?: string; compact?: boolean; searchWidth?: string }) {
   return (
-    <div className={cx("flex flex-wrap items-center gap-2", compact ? "pb-2" : "border-b border-line p-3", className)}>
+    <div className={cx("flex flex-wrap items-center gap-2", compact ? "pb-2" : "border-b border-line/70 p-3", className)}>
       {view.hasSearch && (
         <div className={cx("relative", searchWidth ?? (compact ? "w-56" : "w-72"))}>
-          <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-ink-3" />
+          <Search className="pointer-events-none absolute left-2.5 top-[7px] size-4 text-ink-3" />
           <input value={view.q} onChange={(e) => view.setQ(e.target.value)} placeholder={placeholder} aria-label="Search"
-            className="h-8 w-full rounded-md border border-line bg-panel pl-8 pr-7 text-sm text-ink placeholder:text-ink-3 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20" />
-          {view.q && <button type="button" onClick={() => view.setQ("")} aria-label="Clear search" className="absolute right-1.5 top-1.5 rounded p-0.5 text-ink-3 hover:text-ink"><X className="size-3.5" /></button>}
+            className="h-[30px] w-full rounded-lg border-0 bg-fill pl-8 pr-7 text-[13px] text-ink placeholder:text-ink-3 outline-none transition-shadow focus:ring-[3.5px] focus:ring-accent/35" />
+          {view.q && <button type="button" onClick={() => view.setQ("")} aria-label="Clear search" className="absolute right-1.5 top-[7px] grid size-4 place-items-center rounded-full bg-ink-3/60 text-panel hover:bg-ink-3"><X className="size-2.5" strokeWidth={3} /></button>}
         </div>
       )}
       {view.filters.length > 0 && <Filter className="size-3.5 text-ink-3" aria-hidden />}
       {view.filters.map((f) => f.kind === "enum" ? <EnumFilter key={f.key} f={f} view={view} />
         : f.kind === "date" ? <DateFilter key={f.key} f={f} view={view} />
         : <button key={f.key} type="button" className={chip(view.values[f.key] === true)} onClick={() => view.setFilter(f.key, view.values[f.key] === true ? undefined : true)}>{f.label}</button>)}
-      {view.activeCount > 0 && <button type="button" onClick={view.clear} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[13px] text-ink-3 hover:bg-panel-2 hover:text-ink"><X className="size-3.5" />Clear all</button>}
+      {view.activeCount > 0 && <button type="button" onClick={view.clear} className="inline-flex h-[26px] items-center gap-1 rounded-full px-2.5 text-[12.5px] font-medium text-accent hover:bg-accent-soft"><X className="size-3.5" />Clear all</button>}
       {extra}
       <div className="ml-auto flex items-center gap-3">
         {sortPicker && <SortPicker view={view} />}
@@ -342,7 +342,7 @@ export const isHeadCell = (h: unknown): h is HeadCell =>
 
 export function SortHeader({ label, active, dir, onClick }: { label: ReactNode; active: boolean; dir?: SortDir; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={cx("group inline-flex items-center gap-1 uppercase tracking-wide transition hover:text-ink", active && "text-ink")}>
+    <button type="button" onClick={onClick} className={cx("group inline-flex items-center gap-1 transition hover:text-ink", active && "text-ink")}>
       {label}
       {active ? (dir === "asc" ? <ArrowUp className="size-3.5 text-accent" /> : <ArrowDown className="size-3.5 text-accent" />)
         : <ArrowUpDown className="size-3 opacity-0 transition group-hover:opacity-60" />}
