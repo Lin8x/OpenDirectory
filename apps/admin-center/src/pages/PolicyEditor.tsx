@@ -315,7 +315,7 @@ function ScriptSettingForm({ v, onChange, scripts }: { v: Extract<Setting, { kin
 /** Fallback editor for settings without a dedicated form: one input per field. */
 const LABELS: Record<string, string> = {
   enabled: "On", required: "Required", allowed: "Allowed", threshold: "Wrong passwords before lockout", duration_minutes: "Lockout duration (minutes)",
-  days: "Days (0 = never)", require_acknowledgement: "Users must acknowledge", unattended_access: "Allow when nobody is signed in", contact: "Other ways to reach IT (optional)", remote_shell: "Remote shell", remote_desktop: "Remote desktop", services: "Services", software: "Apps (software)", processes: "Processes", containers: "Containers", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
+  days: "Days (0 = never)", require_acknowledgement: "Users must acknowledge", unattended_access: "Allow when nobody is signed in", contact: "Other ways to reach IT (optional)", remote_shell: "Remote shell", remote_desktop: "Remote desktop", background_sessions: "Background mode (hidden sessions)", services: "Services", software: "Apps (software)", processes: "Processes", containers: "Containers", count: "Passwords remembered", server: "Time server", quality_days: "Quality update delay (days)", feature_days: "Feature update delay (days)", mode: "Mode",
 };
 
 function GenericSettingForm({ s, onChange, entry }: { s: Setting; onChange: (s: Setting) => void; entry?: CatalogEntry }) {

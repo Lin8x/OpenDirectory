@@ -71,7 +71,7 @@ export type Setting =
   | { kind: "consent_notice"; title: string; text: string; require_acknowledgement: boolean }
   | { kind: "remote_session_consent"; mode: "off" | "notify" | "ask"; unattended_access: boolean }
   | { kind: "help_desk"; enabled: boolean; contact: string }
-  | { kind: "remote_tools"; remote_shell: boolean; remote_desktop: boolean }
+  | { kind: "remote_tools"; remote_shell: boolean; remote_desktop: boolean; background_sessions?: boolean }
   | { kind: "management_tools"; services: boolean; software: boolean; processes: boolean; containers: boolean }
   | { kind: "software_deployment"; packages: PackageRule[] };
 export type SettingKind = Setting["kind"];

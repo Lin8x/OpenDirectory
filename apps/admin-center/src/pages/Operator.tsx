@@ -99,7 +99,7 @@ function MyDevices() {
                   <div className="truncate text-xs text-ink-3">{e.inventory.os_name || osLabel[e.os]} · {e.online ? "Online" : `Seen ${ago(e.last_seen_at)}`}</div>
                 </div>
               </div>
-              {can("remote_desktop") && e.os !== "android" && <div className="mt-3 flex items-center gap-1.5 text-sm text-accent"><MonitorPlay className="size-4" />Connect</div>}
+              {(can("remote_desktop") || can("background_session")) && e.os !== "android" && <div className="mt-3 flex items-center gap-1.5 text-sm text-accent"><MonitorPlay className="size-4" />Connect</div>}
             </Link>
           ))}
         </div>
@@ -139,7 +139,7 @@ function OperatorDevice() {
           </div>
         )}
       </div>
-      {can("remote_desktop") && <RemoteViewer endpoint={e} />}
+      {(can("remote_desktop") || can("background_session")) && <RemoteViewer endpoint={e} attended={can("remote_desktop")} background={can("background_session")} />}
       {can("read_laps") && <LapsCard id={e.id} />}
       {can("remote_shell") && e.os !== "android" && <RemoteShell endpoint={e} />}
       {e.os !== "android" && manageTools.length > 0 && <Card title="Manage" padded={false}><div className="p-4"><ManageTab endpoint={e} tools={manageTools} /></div></Card>}
@@ -221,6 +221,7 @@ function Account() {
 export const PERMISSION_LABELS: Record<string, string> = {
   view_endpoints: "View endpoints",
   remote_desktop: "Remote desktop",
+  background_session: "Background mode",
   remote_shell: "Remote shell",
   endpoint_actions: "Endpoint actions",
   run_scripts: "Run scripts",

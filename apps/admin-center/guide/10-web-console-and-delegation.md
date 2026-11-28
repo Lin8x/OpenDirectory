@@ -62,6 +62,7 @@ Turning a delegation off, deleting it or letting it expire ends access at once. 
 | --- | --- |
 | View endpoints | See the device, its details and its job history |
 | Remote desktop | Open a remote desktop session (stream, RDP or VNC) |
+| Background mode | Open a hidden desktop session of its own (see below). It doesn't include seeing the user's screen, so the **Background-only technician** template can fix things without ever watching anyone work |
 | Remote shell | Open a command line on the device |
 | Endpoint actions | Refresh inventory, restart the agent, updates, messages |
 | Run scripts | Run scripts on the device |
@@ -91,5 +92,26 @@ The agent captures the screen and compresses it into video on the computer's gra
 - **Game mode** locks the mouse to the stream so games that turn the camera with the mouse work. Press **Esc** to get your mouse back. **Full screen** also captures keys like Esc and the Windows key in Chrome and Edge.
 - **Install FFmpeg on the endpoint first.** On Windows: `winget install --id Gyan.FFmpeg -e --scope machine`. On Linux, install the `ffmpeg` package. On a Mac, `brew install ffmpeg`.
 - **Limits today:** no sound yet. On Windows and Linux the main screen is streamed, and you control it with keyboard and mouse. On a Mac, the stream is view only for now. Use **VNC** to control a Mac.
+
+### Background mode
+
+Sometimes you need a desktop on a computer without interrupting the person using it: to test an app, change a setting in a program, or install something that only has a graphical installer. **Background mode** opens a separate, hidden desktop session on the endpoint. The person at the computer keeps working and sees nothing: their screen, keyboard and mouse are never touched, and they aren't asked or notified.
+
+Open the device and pick **Background mode** above the connection options, then **Start background session**.
+
+| Endpoint | How it works | What it needs |
+| --- | --- | --- |
+| **Linux** | The agent starts a *virtual display* (an X server with no monitor) and a desktop session on it, and streams that with the low-latency stream. Keyboard and mouse go to the hidden display only. | FFmpeg, and Xvfb (`apt install xvfb`, `dnf install xorg-x11-server-Xvfb`). Xvnc or KDE's KWin also work. A desktop such as KDE Plasma, Xfce, MATE, Cinnamon, LXQt or Openbox. |
+| **Windows Server** | Uses browser RDP, which signs in to a separate Remote Desktop Services session. | Remote Desktop on, the server's `guacd` helper, and an account that isn't the one signed in at the console. |
+| **Windows 10 / 11** | Not available. These editions allow one interactive session at a time, so a second sign-in would disconnect the user. | |
+| **macOS** | Not available. macOS has no supported way for a management agent to start a second, hidden desktop session. | |
+
+On Linux you choose:
+
+- **Run as**: *the signed-in user* (their installed apps, settings and files), *another local account*, or *root*. Running as root also needs the **Remote shell** permission, because it's just as powerful. Some apps that allow only one copy per user, such as some web browsers, may refuse to open a second copy while the user has them open.
+- **Desktop**: *Automatic* uses the first desktop installed. *Terminal only* opens just a terminal.
+- **Resolution** of the hidden display.
+
+The session, and every app in it, ends when you disconnect. The audit log records **background.open** (who, which device, which account) and **background.close** (how long). An organization can turn background mode off per device or platform with the **Remote tools** GPO setting, and the agent refuses it too.
 
 > **In Active Directory terms:** the web console is like Windows Admin Center. Delegation of Control is the same idea as AD's *Delegation of Control Wizard*, with OU-scoped permissions, plus time-limited access like Privileged Access Management. Never including Domain Admins in a delegated scope matches AdminSDHolder. Browser RDP works like Remote Desktop Web Access, through a gateway.

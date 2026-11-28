@@ -110,7 +110,14 @@ pub enum Setting {
         contact: String,
     },
     /// Turn the Admin Center's remote tools on or off for these endpoints.
-    RemoteTools { remote_shell: bool, remote_desktop: bool },
+    RemoteTools {
+        remote_shell: bool,
+        remote_desktop: bool,
+        /// Background mode: hidden desktop sessions the signed-in user
+        /// doesn't see (and isn't asked about).
+        #[serde(default = "on")]
+        background_sessions: bool,
+    },
     /// Turn the endpoint management tools on or off: services, software,
     /// processes and containers (including exec into containers).
     ManagementTools {
@@ -299,12 +306,19 @@ impl Setting {
                 }
             }
             Setting::HelpDesk { enabled, .. } => onoff(*enabled, "Help desk chat on", "Help desk chat off"),
-            Setting::RemoteTools { remote_shell, remote_desktop } => match (remote_shell, remote_desktop) {
-                (true, true) => "Remote shell and remote desktop allowed".into(),
-                (true, false) => "Remote shell allowed, remote desktop off".into(),
-                (false, true) => "Remote desktop allowed, remote shell off".into(),
-                (false, false) => "Remote shell and remote desktop off".into(),
-            },
+            Setting::RemoteTools { remote_shell, remote_desktop, background_sessions } => {
+                let base = match (remote_shell, remote_desktop) {
+                    (true, true) => "Remote shell and remote desktop allowed",
+                    (true, false) => "Remote shell allowed, remote desktop off",
+                    (false, true) => "Remote desktop allowed, remote shell off",
+                    (false, false) => "Remote shell and remote desktop off",
+                };
+                if *remote_desktop && !background_sessions {
+                    format!("{base} (background mode off)")
+                } else {
+                    base.into()
+                }
+            }
             Setting::ManagementTools { services, software, processes, containers } => {
                 let all = [(*services, "services"), (*software, "software"), (*processes, "processes"), (*containers, "containers")];
                 let off: Vec<&str> = all.iter().filter(|(v, _)| !v).map(|(_, n)| *n).collect();
@@ -796,7 +810,7 @@ fn catalog_end_user() -> Vec<CatalogEntry> {
             kind: "remote_tools",
             title: "Remote tools",
             category: "End-user experience",
-            summary: "Turns the Admin Center's remote shell and remote desktop on or off for these endpoints. The agent enforces it too, so a device that has them off refuses sessions.",
+            summary: "Turns the Admin Center's remote shell and remote desktop on or off for these endpoints, and background mode (hidden desktop sessions the signed-in user doesn't see or get asked about). The agent enforces it too, so a device that has them off refuses sessions.",
             ad_equivalent: "Remote Assistance / Remote Desktop: Allow users to connect remotely",
             support: vec![
                 ps(Windows, Enforced, "Endpoint Agent refuses disabled session types"),
@@ -804,7 +818,7 @@ fn catalog_end_user() -> Vec<CatalogEntry> {
                 ps(Linux, Enforced, "Endpoint Agent refuses disabled session types"),
             ],
             choices: vec![],
-            default: Setting::RemoteTools { remote_shell: true, remote_desktop: true },
+            default: Setting::RemoteTools { remote_shell: true, remote_desktop: true, background_sessions: true },
         },
         CatalogEntry {
             kind: "management_tools",

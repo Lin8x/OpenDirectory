@@ -6,8 +6,13 @@
 //  - VNC: macOS Screen Sharing or any VNC server, straight to noVNC.
 // Every option goes through the agent's outbound tunnel; the endpoint opens
 // no inbound port.
+//
+// Background mode opens a separate, hidden desktop session instead of the
+// signed-in user's screen: a virtual display the agent starts (Linux, over
+// the stream) or a separate Remote Desktop Services session (Windows Server,
+// over RDP). The user keeps working and sees nothing.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Gamepad2, Keyboard, Maximize, MonitorPlay, Plug, X } from "lucide-react";
+import { EyeOff, Gamepad2, Keyboard, Maximize, MonitorPlay, Plug, X } from "lucide-react";
 import { apiBase, isDesktop, post } from "../lib/api";
 import { useQuery } from "../lib/hooks";
 import type { Endpoint } from "../lib/types";
@@ -26,40 +31,70 @@ const PRESETS = {
 } as const;
 type Preset = keyof typeof PRESETS;
 
+type Mode = "attended" | "background";
+const DESKTOPS = [
+  ["auto", "Automatic (first one installed)"], ["plasma", "KDE Plasma"], ["xfce", "Xfce"], ["mate", "MATE"],
+  ["cinnamon", "Cinnamon"], ["lxqt", "LXQt"], ["openbox", "Openbox"], ["xterm", "Terminal only (xterm)"],
+] as const;
+const RESOLUTIONS = [[1280, 720], [1600, 900], [1920, 1080], [2560, 1440], [3840, 2160]] as const;
+
+/** Where background mode works, and how. */
+function backgroundSupport(e: Endpoint): { ok: boolean; proto?: Protocol; note: string } {
+  if (e.os === "linux") return { ok: true, proto: "stream", note: "The agent starts a virtual display with its own desktop session. Needs Xvfb (or Xvnc, or KDE's KWin) and FFmpeg on the endpoint." };
+  if (e.os === "windows") {
+    const what = `${e.inventory.os_name} ${e.inventory.os_edition}`.toLowerCase();
+    const multi = what.includes("server") || what.includes("multi-session") || what.includes("virtual desktops");
+    return multi
+      ? { ok: true, proto: "rdp", note: "Opens a separate Remote Desktop Services session. Sign in with an account that isn't the one at the console." }
+      : { ok: false, note: "Windows 10 and 11 allow one interactive session, so a second sign-in would disconnect the user. Background mode on Windows needs Windows Server (or Enterprise multi-session)." };
+  }
+  return { ok: false, note: "macOS has no supported way for a management agent to start a second, hidden desktop session." };
+}
+
 const wsUrl = (path: string) => `${apiBase().replace(/^http/, "ws")}${path}`;
 
-export function RemoteViewer({ endpoint, canInput = true }: { endpoint: Endpoint; canInput?: boolean }) {
+export function RemoteViewer({ endpoint, canInput = true, attended = true, background = true }: { endpoint: Endpoint; canInput?: boolean; attended?: boolean; background?: boolean }) {
   const caps = useQuery<Caps>("/remote/capabilities");
+  const bgSupport = backgroundSupport(endpoint);
+  const [mode, setMode] = useState<Mode>(attended ? "attended" : "background");
   const [proto, setProto] = useState<Protocol>("stream");
+  const [runAs, setRunAs] = useState("console_user");
+  const [account, setAccount] = useState("");
+  const [desktopEnv, setDesktopEnv] = useState("auto");
+  const [res, setRes] = useState("1920x1080");
   const [preset, setPreset] = useState<Preset>("balanced");
   const [encoder, setEncoder] = useState("auto");
   const [viewOnly, setViewOnly] = useState(!canInput);
   const [rdpUser, setRdpUser] = useState("");
   const [rdpPass, setRdpPass] = useState("");
   const [rdpDomain, setRdpDomain] = useState("");
-  const [session, setSession] = useState<{ proto: Protocol; started: Started } | null>(null);
+  const [session, setSession] = useState<{ proto: Protocol; started: Started; background: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (isDesktop) return null; // The desktop app uses tunnels (RemoteDesktop card).
   if (endpoint.os === "android") return null;
 
+  const bg = mode === "background";
+  const effProto: Protocol = bg ? (bgSupport.proto ?? "stream") : proto;
   const start = async () => {
     setErr(null); setBusy(true);
     try {
       const p = PRESETS[preset];
+      const [width, height] = res.split("x").map(Number);
       const started = await post<Started>(`/endpoints/${endpoint.id}/remote-desktop`, {
-        protocol: proto,
-        ...(proto === "stream" ? { stream: { encoder, fps: p.fps, bitrate_kbps: p.bitrate_kbps, max_height: p.max_height, input: !viewOnly } } : {}),
-        ...(proto === "rdp" ? { rdp: { username: rdpUser, password: rdpPass, domain: rdpDomain } } : {}),
+        protocol: effProto,
+        ...(effProto === "stream" ? { stream: { encoder, fps: p.fps, bitrate_kbps: p.bitrate_kbps, max_height: bg ? 0 : p.max_height, input: !viewOnly } } : {}),
+        ...(effProto === "rdp" ? { rdp: { username: rdpUser, password: rdpPass, domain: rdpDomain } } : {}),
+        ...(bg ? { background: { run_as: runAs === "account" ? account.trim() : runAs, desktop: desktopEnv, width, height } } : {}),
       });
       setRdpPass("");
-      setSession({ proto, started });
+      setSession({ proto: effProto, started, background: bg });
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
 
   if (session) {
-    return <Viewer endpoint={endpoint} proto={session.proto} started={session.started} viewOnly={viewOnly} onClose={(why) => { setSession(null); if (why) setErr(why); }} />;
+    return <Viewer endpoint={endpoint} proto={session.proto} started={session.started} background={session.background} viewOnly={viewOnly} onClose={(why) => { setSession(null); if (why) setErr(why); }} />;
   }
 
   const c = caps.data;
@@ -67,6 +102,46 @@ export function RemoteViewer({ endpoint, canInput = true }: { endpoint: Endpoint
     <Card title={<span className="flex items-center gap-2"><MonitorPlay className="size-4" />Remote desktop in the browser</span>}
       subtitle="See and control the screen from this browser. Nothing is opened to the network; it travels through the agent's own connection.">
       <div className="space-y-4">
+        {background && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([
+              ["attended", "The user's screen", "See and control what the signed-in user sees", attended],
+              ["background", "Background mode", bgSupport.ok ? "A separate, hidden desktop session. The user keeps working and sees nothing" : bgSupport.note, bgSupport.ok],
+            ] as const).map(([id, label, sub, ok]) => (
+              <button key={id} type="button" disabled={!ok} onClick={() => setMode(id)}
+                className={cx("rounded-lg border p-3 text-left transition", mode === id ? "border-accent bg-accent-soft" : "border-line hover:bg-panel-2", !ok && "cursor-not-allowed opacity-50")}>
+                <div className="flex items-center gap-1.5 text-sm font-medium">{id === "background" && <EyeOff className="size-3.5" />}{label}</div>
+                <div className="mt-0.5 text-xs text-ink-3">{!attended && id === "attended" ? "Your delegation doesn't include the user's screen" : sub}</div>
+              </button>
+            ))}
+          </div>
+        )}
+        {bg && bgSupport.ok && (
+          <Callout tone="info">{bgSupport.note} The session ends, and the apps in it are closed, when you disconnect. It's recorded in the audit log.</Callout>
+        )}
+        {bg && bgSupport.proto === "stream" && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Run as" hint={runAs === "console_user" ? "Their apps, settings and files. Apps that allow one copy per user (some browsers) may refuse a second one." : runAs === "system" ? "Needs the Remote shell permission too." : undefined}>
+              <Select value={runAs} onChange={(e) => setRunAs(e.target.value)}>
+                <option value="console_user">The signed-in user</option>
+                <option value="account">Another local account…</option>
+                <option value="system">root</option>
+              </Select>
+            </Field>
+            {runAs === "account" && <Field label="Account name"><Input value={account} onChange={(e) => setAccount(e.target.value)} autoComplete="off" placeholder="e.g. itadmin" /></Field>}
+            <Field label="Desktop">
+              <Select value={desktopEnv} onChange={(e) => setDesktopEnv(e.target.value)}>
+                {DESKTOPS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </Select>
+            </Field>
+            <Field label="Resolution">
+              <Select value={res} onChange={(e) => setRes(e.target.value)}>
+                {RESOLUTIONS.map(([w, h]) => <option key={w} value={`${w}x${h}`}>{w} × {h}</option>)}
+              </Select>
+            </Field>
+          </div>
+        )}
+        {!bg && (
         <div className="grid gap-2 sm:grid-cols-3">
           {([
             ["stream", "Low-latency stream", "GPU-encoded video for games, video and creative apps (needs FFmpeg on the endpoint)"],
@@ -83,8 +158,9 @@ export function RemoteViewer({ endpoint, canInput = true }: { endpoint: Endpoint
             );
           })}
         </div>
+        )}
 
-        {proto === "stream" && (
+        {effProto === "stream" && (!bg || bgSupport.ok) && (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Quality">
               <Select value={preset} onChange={(e) => setPreset(e.target.value as Preset)}>
@@ -104,7 +180,7 @@ export function RemoteViewer({ endpoint, canInput = true }: { endpoint: Endpoint
             </Field>
           </div>
         )}
-        {proto === "rdp" && (
+        {effProto === "rdp" && (!bg || bgSupport.ok) && (
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Username"><Input value={rdpUser} onChange={(e) => setRdpUser(e.target.value)} autoComplete="off" placeholder="e.g. the LAPS account" /></Field>
             <Field label="Password"><Input type="password" value={rdpPass} onChange={(e) => setRdpPass(e.target.value)} autoComplete="off" /></Field>
@@ -114,8 +190,8 @@ export function RemoteViewer({ endpoint, canInput = true }: { endpoint: Endpoint
         {canInput && <Switch checked={viewOnly} onChange={setViewOnly} label="View only (don't send keyboard or mouse)" />}
         {err && <Callout tone="warn">{err}</Callout>}
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="primary" icon={<Plug className="size-4" />} loading={busy} onClick={start}>Connect</Button>
-          <span className="text-xs text-ink-3">{endpoint.online ? "If the endpoint asks its user for consent, the session starts once they accept." : "The endpoint is offline; the session starts when it next checks in."}</span>
+          <Button variant="primary" icon={bg ? <EyeOff className="size-4" /> : <Plug className="size-4" />} loading={busy} disabled={bg && (!bgSupport.ok || (runAs === "account" && !account.trim()))} onClick={start}>{bg ? "Start background session" : "Connect"}</Button>
+          <span className="text-xs text-ink-3">{!endpoint.online ? "The endpoint is offline; the session starts when it next checks in." : bg ? "The signed-in user isn't asked or notified." : "If the endpoint asks its user for consent, the session starts once they accept."}</span>
         </div>
       </div>
     </Card>
@@ -124,7 +200,7 @@ export function RemoteViewer({ endpoint, canInput = true }: { endpoint: Endpoint
 
 // ------------------------------------------------------------------ viewer frame
 
-function Viewer({ endpoint, proto, started, viewOnly, onClose }: { endpoint: Endpoint; proto: Protocol; started: Started; viewOnly: boolean; onClose: (why?: string) => void }) {
+function Viewer({ endpoint, proto, started, background, viewOnly, onClose }: { endpoint: Endpoint; proto: Protocol; started: Started; background: boolean; viewOnly: boolean; onClose: (why?: string) => void }) {
   const frame = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("Waiting for the endpoint…");
   const [info, setInfo] = useState<string | null>(null);
@@ -145,6 +221,7 @@ function Viewer({ endpoint, proto, started, viewOnly, onClose }: { endpoint: End
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-[#11151c] px-3 py-2 text-sm text-white/80">
         <MonitorPlay className="size-4" /><b className="text-white">{endpoint.hostname}</b>
         <Badge tone="accent">{proto === "stream" ? "Stream" : proto.toUpperCase()}</Badge>
+        {background && <Badge tone="warn">Background</Badge>}
         <span className="truncate text-xs text-white/60">{status}{info ? ` · ${info}` : ""}</span>
         <div className="ml-auto flex items-center gap-1.5">
           {proto === "stream" && !viewOnly && (
@@ -267,7 +344,7 @@ function StreamPlayer({ started, viewOnly, game, onGameEnd, setStatus, setInfo, 
         if (type === 2) onFrame(body);
         else if (type === 1) {
           const h = JSON.parse(new TextDecoder().decode(body));
-          encoderLabel = `${h.encoder} · ${h.capture}`;
+          encoderLabel = h.background ? `${h.background} · ${h.encoder}` : `${h.encoder} · ${h.capture}`;
           setStatus(h.input ? "Connected" : `Connected, view only${h.input_note ? ` (${h.input_note})` : ""}`);
         } else if (type === 3) {
           const s = JSON.parse(new TextDecoder().decode(body));

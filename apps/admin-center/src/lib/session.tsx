@@ -7,7 +7,7 @@ export type Phase = "loading" | "connect" | "unreachable" | "setup" | "login" | 
 
 /** Delegable permissions (see Delegation of Control). */
 export type Permission =
-  | "view_endpoints" | "remote_desktop" | "remote_shell" | "endpoint_actions" | "run_scripts" | "read_laps" | "help_desk"
+  | "view_endpoints" | "remote_desktop" | "background_session" | "remote_shell" | "endpoint_actions" | "run_scripts" | "read_laps" | "help_desk"
   | "view_users" | "reset_passwords" | "manage_services" | "manage_software" | "manage_processes" | "manage_containers";
 
 export interface Me {

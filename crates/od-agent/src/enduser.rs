@@ -21,11 +21,13 @@ pub struct SessionRules {
     pub unattended: bool,
     pub shell: bool,
     pub desktop: bool,
+    /// Background mode (hidden desktop sessions).
+    pub background: bool,
 }
 
 impl Default for SessionRules {
     fn default() -> Self {
-        SessionRules { consent: SessionConsent::Off, unattended: true, shell: true, desktop: true }
+        SessionRules { consent: SessionConsent::Off, unattended: true, shell: true, desktop: true, background: true }
     }
 }
 
@@ -38,14 +40,28 @@ impl SessionRules {
                     r.consent = SessionConsent::parse(mode);
                     r.unattended = *unattended_access;
                 }
-                Setting::RemoteTools { remote_shell, remote_desktop } => {
+                Setting::RemoteTools { remote_shell, remote_desktop, background_sessions } => {
                     r.shell = *remote_shell;
                     r.desktop = *remote_desktop;
+                    r.background = *background_sessions;
                 }
                 _ => {}
             }
         }
         r
+    }
+
+    /// Background mode runs in its own hidden session, so the signed-in user
+    /// isn't prompted or notified (like other RMMs' background mode). It
+    /// needs remote desktop and background sessions allowed by policy.
+    pub fn check_background(&self) -> Result<(), String> {
+        if !self.desktop {
+            return Err("Remote desktop is turned off on this device by policy.".into());
+        }
+        if !self.background {
+            return Err("Background mode is turned off on this device by policy (Remote tools GPO setting).".into());
+        }
+        Ok(())
     }
 
     /// Decide whether a remote session may start. `Err` carries the reason

@@ -89,6 +89,13 @@ enum Command {
         token: String,
         #[arg(long)]
         options: String,
+        /// Capture and control this X display (background mode).
+        #[arg(long)]
+        display: Option<String>,
+        #[arg(long)]
+        xauthority: Option<String>,
+        #[arg(long)]
+        session_label: Option<String>,
     },
 }
 
@@ -195,7 +202,9 @@ async fn async_main(cmd: Command) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&inventory::collect().await)?);
         }
         Command::Service => unreachable!(),
-        Command::StreamHost { connect, token, options } => stream::host_main(connect, token, options).await?,
+        Command::StreamHost { connect, token, options, display, xauthority, session_label } => {
+            stream::host_main(connect, token, options, display, xauthority, session_label).await?
+        }
     }
     Ok(())
 }

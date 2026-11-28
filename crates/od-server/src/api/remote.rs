@@ -12,6 +12,11 @@
 //!   (NVENC, VAAPI, Quick Sync, AMF or VideoToolbox, with a software
 //!   fallback); the browser decodes it with WebCodecs. Lowest latency, for
 //!   games and creative apps.
+//!
+//! **Background mode** opens a separate, hidden desktop session instead of
+//! the signed-in user's: the stream of a virtual display the agent starts
+//! (Linux), or a separate Remote Desktop Services session (Windows Server).
+//! It's its own delegable permission and is audited as `background.open`.
 
 use std::time::Duration;
 
@@ -80,6 +85,10 @@ pub struct StartInput {
     /// never stored or logged.
     #[serde(default)]
     rdp: Option<RdpLogin>,
+    /// Background mode. With `stream`, the agent's hidden virtual display
+    /// session; with `rdp`, marks a separate RDS session (Windows Server).
+    #[serde(default)]
+    background: Option<od_core::protocol::BackgroundOptions>,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -112,6 +121,18 @@ pub struct Started {
 
 pub async fn start(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>, Json(inp): Json<StartInput>) -> ApiResult<Json<Started>> {
     let e = super::endpoints::visible(&s, &op, id)?;
+    let rdp_background = inp.background.is_some() && matches!(inp.protocol, Protocol::Rdp);
+    if inp.background.is_some() {
+        match inp.protocol {
+            Protocol::Vnc => {
+                return Err(ApiError::bad_request(
+                    "Background mode works with the Stream protocol (Linux) or RDP (Windows Server), not VNC",
+                ))
+            }
+            Protocol::Rdp => check_rdp_background(&e, inp.rdp.as_ref())?,
+            Protocol::Stream => {}
+        }
+    }
     let (port, stream) = match inp.protocol {
         Protocol::Vnc => (5900, None),
         Protocol::Rdp => {
@@ -122,9 +143,13 @@ pub async fn start(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>
             }
             (3389, None)
         }
-        Protocol::Stream => (STREAM_PORT, Some(inp.stream.unwrap_or_default())),
+        Protocol::Stream => {
+            let mut o = inp.stream.unwrap_or_default();
+            o.background = inp.background.clone();
+            (STREAM_PORT, Some(o))
+        }
     };
-    let opened = start_session(&s, &op, &e, 80, 24, Some(port), stream)?;
+    let opened = start_session(&s, &op, &e, 80, 24, Some(port), stream, rdp_background)?;
     if matches!(inp.protocol, Protocol::Rdp) {
         RDP_LOGINS
             .lock()
@@ -137,6 +162,43 @@ pub async fn start(State(s): State<AppState>, op: Operator, Path(id): Path<Uuid>
         _ => format!("/api/v1/shell/{}/ws?ticket={}", opened.session_id, opened.ticket),
     };
     Ok(Json(Started { opened, ws_path }))
+}
+
+/// A Remote Desktop sign-in is its own session only where Windows allows
+/// more than one interactive session (Windows Server, or Enterprise
+/// multi-session), and only for an account that isn't the one at the
+/// console (RDS reconnects a user to their existing session by default).
+fn check_rdp_background(e: &od_core::Endpoint, login: Option<&RdpLogin>) -> ApiResult<()> {
+    if e.os != od_core::OsFamily::Windows {
+        return Err(ApiError::bad_request(
+            "Background mode over RDP is for Windows endpoints. On Linux, use Background mode with the Stream protocol.",
+        ));
+    }
+    let inv = &e.inventory;
+    let what = format!("{} {}", inv.os_name, inv.os_edition).to_lowercase();
+    let multi = what.contains("server") || what.contains("multi-session") || what.contains("virtual desktops");
+    if !multi {
+        return Err(ApiError::bad_request(format!(
+            "{} allows one interactive session at a time, so a Remote Desktop sign-in would disconnect the signed-in user. \
+Background mode on Windows needs Windows Server (or Enterprise multi-session).",
+            if inv.os_name.is_empty() { "This Windows edition" } else { inv.os_name.as_str() }
+        )));
+    }
+    let user = login.map(|l| l.username.trim().rsplit(['\\', '/']).next().unwrap_or_default().to_lowercase()).unwrap_or_default();
+    if user.is_empty() {
+        return Err(ApiError::bad_request("Enter the account to sign in to the background session with"));
+    }
+    let user = user.split('@').next().unwrap_or_default().to_string();
+    if inv
+        .logged_in_users
+        .iter()
+        .any(|u| u.rsplit(['\\', '/']).next().unwrap_or_default().split('@').next().unwrap_or_default().eq_ignore_ascii_case(&user))
+    {
+        return Err(ApiError::bad_request(format!(
+            "{user} is signed in on this endpoint, and Remote Desktop would take over that session. Use a different account for background mode."
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]

@@ -18,7 +18,7 @@ interface Delegation {
 }
 
 const GROUPS: { label: string; perms: Permission[] }[] = [
-  { label: "Endpoints", perms: ["view_endpoints", "remote_desktop", "remote_shell", "endpoint_actions", "run_scripts", "read_laps", "help_desk"] },
+  { label: "Endpoints", perms: ["view_endpoints", "remote_desktop", "background_session", "remote_shell", "endpoint_actions", "run_scripts", "read_laps", "help_desk"] },
   { label: "Endpoint management", perms: ["manage_services", "manage_software", "manage_processes", "manage_containers"] },
   { label: "Accounts", perms: ["view_users", "reset_passwords"] },
 ];
@@ -26,6 +26,7 @@ const GROUPS: { label: string; perms: Permission[] }[] = [
 /** Common tasks, like the AD Delegation of Control Wizard. */
 const TEMPLATES: { label: string; perms: Permission[] }[] = [
   { label: "Remote desktop user", perms: ["view_endpoints", "remote_desktop"] },
+  { label: "Background-only technician", perms: ["view_endpoints", "background_session"] },
   { label: "Help desk operator", perms: ["view_endpoints", "remote_desktop", "help_desk", "view_users", "reset_passwords"] },
   { label: "Endpoint operator", perms: ["view_endpoints", "remote_desktop", "remote_shell", "endpoint_actions", "run_scripts", "read_laps", "manage_services", "manage_software", "manage_processes"] },
   { label: "Read-only", perms: ["view_endpoints", "view_users"] },

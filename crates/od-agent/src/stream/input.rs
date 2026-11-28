@@ -218,6 +218,166 @@ mod linux {
     }
 }
 
+// ------------------------------------------------------------ Linux (XTEST)
+
+/// Input for a background session's virtual display, injected with the X
+/// Test extension into that display only (uinput would reach the console).
+#[cfg(target_os = "linux")]
+pub struct XTest {
+    xlib: x11_dl::xlib::Xlib,
+    xtst: x11_dl::xtest::Xf86vmode,
+    dpy: *mut x11_dl::xlib::Display,
+    screen: i32,
+    w: i32,
+    h: i32,
+    held: std::collections::HashSet<(bool, u32)>,
+}
+
+#[cfg(target_os = "linux")]
+impl XTest {
+    /// Connect to `display` (XAUTHORITY must be set in the environment).
+    pub fn new(display: &str) -> anyhow::Result<XTest> {
+        let xlib = x11_dl::xlib::Xlib::open().map_err(|e| anyhow::anyhow!("libX11: {e}"))?;
+        let xtst = x11_dl::xtest::Xf86vmode::open().map_err(|e| anyhow::anyhow!("libXtst: {e}"))?;
+        let name = std::ffi::CString::new(display)?;
+        unsafe {
+            let dpy = (xlib.XOpenDisplay)(name.as_ptr());
+            if dpy.is_null() {
+                anyhow::bail!("can't open X display {display}");
+            }
+            let (mut a, mut b, mut c, mut d) = (0, 0, 0, 0);
+            if (xtst.XTestQueryExtension)(dpy, &mut a, &mut b, &mut c, &mut d) == 0 {
+                (xlib.XCloseDisplay)(dpy);
+                anyhow::bail!("the X display {display} has no XTEST extension");
+            }
+            let screen = (xlib.XDefaultScreen)(dpy);
+            let (w, h) = ((xlib.XDisplayWidth)(dpy, screen), (xlib.XDisplayHeight)(dpy, screen));
+            Ok(XTest { xlib, xtst, dpy, screen, w, h, held: Default::default() })
+        }
+    }
+
+    fn button(&mut self, b: u32, down: bool) {
+        if down {
+            self.held.insert((true, b));
+        } else {
+            self.held.remove(&(true, b));
+        }
+        unsafe {
+            (self.xtst.XTestFakeButtonEvent)(self.dpy, b, down as i32, 0);
+        }
+    }
+
+    fn click(&mut self, b: u32, times: u32) {
+        for _ in 0..times {
+            unsafe {
+                (self.xtst.XTestFakeButtonEvent)(self.dpy, b, 1, 0);
+                (self.xtst.XTestFakeButtonEvent)(self.dpy, b, 0, 0);
+            }
+        }
+    }
+
+    pub fn apply(&mut self, ev: &InputEvent) {
+        match ev {
+            InputEvent::Move { x, y } => unsafe {
+                let px = (x.clamp(0.0, 1.0) * (self.w - 1) as f64).round() as i32;
+                let py = (y.clamp(0.0, 1.0) * (self.h - 1) as f64).round() as i32;
+                (self.xtst.XTestFakeMotionEvent)(self.dpy, self.screen, px, py, 0);
+            },
+            InputEvent::MoveBy { dx, dy } => unsafe {
+                (self.xtst.XTestFakeRelativeMotionEvent)(
+                    self.dpy,
+                    self.screen,
+                    dx.clamp(-2000.0, 2000.0) as i32,
+                    dy.clamp(-2000.0, 2000.0) as i32,
+                    0,
+                );
+            },
+            InputEvent::Button { b, d } => {
+                // X buttons: 1 left, 2 middle, 3 right, 8 back, 9 forward.
+                let xb = match b {
+                    0 => 1,
+                    1 => 2,
+                    2 => 3,
+                    3 => 8,
+                    4 => 9,
+                    _ => return,
+                };
+                self.button(xb, *d);
+            }
+            InputEvent::Wheel { dx, dy } => {
+                // Wheel notches are buttons 4/5 (vertical) and 6/7 (horizontal).
+                let n = |v: f64| v.abs().ceil().min(10.0) as u32;
+                if *dy != 0.0 {
+                    self.click(if *dy > 0.0 { 5 } else { 4 }, n(*dy));
+                }
+                if *dx != 0.0 {
+                    self.click(if *dx > 0.0 { 7 } else { 6 }, n(*dx));
+                }
+            }
+            InputEvent::Key { code, d } => {
+                if let Some(k) = keys::lookup(code) {
+                    // X keycodes are evdev codes + 8 with the evdev keymap
+                    // that Xvfb, Xvnc and Xwayland use.
+                    let kc = k.evdev as u32 + 8;
+                    if *d {
+                        self.held.insert((false, kc));
+                    } else {
+                        self.held.remove(&(false, kc));
+                    }
+                    unsafe {
+                        (self.xtst.XTestFakeKeyEvent)(self.dpy, kc, *d as i32, 0);
+                    }
+                }
+            }
+            InputEvent::ReleaseAll => self.release_all(),
+        }
+        unsafe {
+            (self.xlib.XFlush)(self.dpy);
+        }
+    }
+
+    fn release_all(&mut self) {
+        for (is_button, code) in std::mem::take(&mut self.held) {
+            unsafe {
+                if is_button {
+                    (self.xtst.XTestFakeButtonEvent)(self.dpy, code, 0, 0);
+                } else {
+                    (self.xtst.XTestFakeKeyEvent)(self.dpy, code, 0, 0);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for XTest {
+    fn drop(&mut self) {
+        self.release_all();
+        unsafe {
+            (self.xlib.XFlush)(self.dpy);
+            (self.xlib.XCloseDisplay)(self.dpy);
+        }
+    }
+}
+
+/// Where the stream host sends input: the console's input stack, or a
+/// background session's virtual display.
+pub enum Input {
+    Native(Injector),
+    #[cfg(target_os = "linux")]
+    X(Box<XTest>),
+}
+
+impl Input {
+    pub fn apply(&mut self, ev: &InputEvent) {
+        match self {
+            Input::Native(i) => i.apply(ev),
+            #[cfg(target_os = "linux")]
+            Input::X(x) => x.apply(ev),
+        }
+    }
+}
+
 // ------------------------------------------------------------ Windows (SendInput)
 
 #[cfg(windows)]

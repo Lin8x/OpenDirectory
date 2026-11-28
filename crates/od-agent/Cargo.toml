@@ -36,3 +36,6 @@ windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Securit
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
+# libX11/libXtst loaded at run time (XTEST input for background sessions),
+# so the agent still runs on servers without X libraries.
+x11-dl = "2.21"

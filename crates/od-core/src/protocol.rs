@@ -182,6 +182,47 @@ pub struct StreamOptions {
     /// Allow keyboard and mouse input (off gives a view-only session).
     #[serde(default = "yes")]
     pub input: bool,
+    /// Background mode: stream a separate, hidden desktop session instead of
+    /// the console. The signed-in user's screen is never captured or touched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<BackgroundOptions>,
+}
+
+/// The oldest Endpoint Agent that understands background mode. Older agents
+/// would ignore the option and stream the console, so the server refuses.
+pub const BACKGROUND_MIN_AGENT: &str = "0.14.0";
+
+/// A background (hidden) desktop session: its own virtual display and
+/// desktop session, invisible to whoever is at the console.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BackgroundOptions {
+    /// Whose account the session runs as: `console_user` (the signed-in
+    /// user, so their apps and settings are there), `system` (root), or the
+    /// name of a local account.
+    #[serde(default = "console_user")]
+    pub run_as: String,
+    /// Desktop environment to start: `auto`, `plasma`, `xfce`, `mate`,
+    /// `cinnamon`, `lxqt`, `openbox` or `xterm` (just a terminal).
+    #[serde(default = "auto")]
+    pub desktop: String,
+    #[serde(default = "bg_width")]
+    pub width: u32,
+    #[serde(default = "bg_height")]
+    pub height: u32,
+}
+fn console_user() -> String {
+    "console_user".into()
+}
+fn bg_width() -> u32 {
+    1920
+}
+fn bg_height() -> u32 {
+    1080
+}
+impl Default for BackgroundOptions {
+    fn default() -> Self {
+        BackgroundOptions { run_as: console_user(), desktop: auto(), width: bg_width(), height: bg_height() }
+    }
 }
 fn auto() -> String {
     "auto".into()
@@ -197,7 +238,7 @@ fn yes() -> bool {
 }
 impl Default for StreamOptions {
     fn default() -> Self {
-        StreamOptions { encoder: auto(), fps: fps(), bitrate_kbps: bitrate(), max_height: 0, input: true }
+        StreamOptions { encoder: auto(), fps: fps(), bitrate_kbps: bitrate(), max_height: 0, input: true, background: None }
     }
 }
 

@@ -30,6 +30,9 @@ pub enum Permission {
     ViewEndpoints,
     /// Open a remote desktop session (VNC, RDP or the low-latency stream).
     RemoteDesktop,
+    /// Background mode: a separate, hidden desktop session that the
+    /// signed-in user doesn't see. Doesn't include seeing their screen.
+    BackgroundSession,
     /// Open an interactive remote shell.
     RemoteShell,
     /// Refresh inventory, restart the agent, scan or install updates, message the user.
@@ -55,9 +58,10 @@ pub enum Permission {
 }
 
 impl Permission {
-    pub const ALL: [Permission; 13] = [
+    pub const ALL: [Permission; 14] = [
         Permission::ViewEndpoints,
         Permission::RemoteDesktop,
+        Permission::BackgroundSession,
         Permission::RemoteShell,
         Permission::EndpointActions,
         Permission::RunScripts,

@@ -37,13 +37,17 @@ fn shell_command(exec: Option<&od_core::manage::ContainerExec>, runtime: Option<
 pub fn spawn(req: ShellRequest, client: od_client::Client, rules: crate::enduser::SessionRules) {
     tokio::spawn(async move {
         let who = if req.requested_by.is_empty() { "An administrator".to_string() } else { req.requested_by.clone() };
-        if let Err(why) = rules.check(req.tunnel_port.is_some(), &who).await {
+        let background = req.stream.as_ref().is_some_and(|s| s.background.is_some());
+        let allowed = if background { rules.check_background() } else { rules.check(req.tunnel_port.is_some(), &who).await };
+        if let Err(why) = allowed {
             tracing::warn!("remote session from {who} refused: {why}");
-            // Tell the admin's terminal why, then hang up.
+            // Tell the admin's terminal (or stream viewer) why, then hang up.
             if let Ok(ws) = client.websocket(&format!("/agent/shell/{}", req.session_id)).await {
                 let (mut sink, _) = ws.split();
                 if req.tunnel_port.is_none() {
                     let _ = sink.send(WsMessage::Binary(format!("\r\n[{why}]\r\n").into_bytes().into())).await;
+                } else if req.stream.is_some() {
+                    let _ = sink.send(WsMessage::Binary(crate::stream::status(&why, true).into())).await;
                 }
                 let _ = sink.send(WsMessage::Close(None)).await;
             }

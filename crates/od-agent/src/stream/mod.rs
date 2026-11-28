@@ -17,6 +17,7 @@
 //! [Annex B access unit]`, flag 1 = keyframe), 3 = status or error (JSON).
 //! Browser to host: 10 = input event (JSON).
 
+mod background;
 mod input;
 mod keys;
 mod launch;
@@ -46,7 +47,7 @@ pub fn frame(kind: u8, payload: &[u8]) -> Vec<u8> {
     v
 }
 
-fn status(msg: &str, error: bool) -> Vec<u8> {
+pub(crate) fn status(msg: &str, error: bool) -> Vec<u8> {
     frame(STATUS, json!({ "message": msg, "error": error }).to_string().as_bytes())
 }
 
@@ -57,7 +58,25 @@ fn status(msg: &str, error: bool) -> Vec<u8> {
 pub async fn session(session: uuid::Uuid, opts: StreamOptions, client: od_client::Client) -> Result<()> {
     let ws = client.websocket(&format!("/agent/shell/{session}")).await?;
     let (mut sink, mut stream) = ws.split();
-    let host = match start_host(&opts).await {
+    // Background mode: a hidden session of its own, kept for as long as the
+    // viewer stays connected (dropping it stops everything started in it).
+    let bg = match &opts.background {
+        Some(b) => {
+            let _ = sink.send(WsMessage::Binary(status("Starting a background session on the endpoint...", false).into())).await;
+            match background::BackgroundSession::start(b).await {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    tracing::warn!("background session: {e:#}");
+                    let _ = sink.send(WsMessage::Binary(status(&format!("{e:#}"), true).into())).await;
+                    let _ = sink.send(WsMessage::Close(None)).await;
+                    return Err(e);
+                }
+            }
+        }
+        None => None,
+    };
+    let target = bg.as_ref().map(|b| (b.target(), b.describe()));
+    let host = match start_host(&opts, target.as_ref()).await {
         Ok(h) => h,
         Err(e) => {
             let _ = sink.send(WsMessage::Binary(status(&format!("{e:#}"), true).into())).await;
@@ -84,13 +103,13 @@ pub async fn session(session: uuid::Uuid, opts: StreamOptions, client: od_client
     Ok(())
 }
 
-async fn start_host(opts: &StreamOptions) -> Result<TcpStream> {
+async fn start_host(opts: &StreamOptions, target: Option<&(background::Target, String)>) -> Result<TcpStream> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let port = listener.local_addr()?.port();
     let token = hex::encode(rand::random::<[u8; 16]>());
     let opts_json = serde_json::to_string(opts)?;
     let exe = std::env::current_exe()?;
-    let args = vec![
+    let mut args = vec![
         "stream-host".to_string(),
         "--connect".into(),
         format!("127.0.0.1:{port}"),
@@ -99,6 +118,10 @@ async fn start_host(opts: &StreamOptions) -> Result<TcpStream> {
         "--options".into(),
         hex::encode(opts_json.as_bytes()),
     ];
+    if let Some((t, describe)) = target {
+        args.extend(["--display".into(), t.display.clone(), "--xauthority".into(), t.xauthority.clone()]);
+        args.extend(["--session-label".into(), describe.clone()]);
+    }
     let mut child = launch::in_console_session(&exe, &args).await?;
     let accepted = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
@@ -128,8 +151,21 @@ async fn start_host(opts: &StreamOptions) -> Result<TcpStream> {
 // ------------------------------------------------------------ host side
 
 /// Entry point of `opendirectory-agent stream-host`.
-pub async fn host_main(connect: String, token: String, options_hex: String) -> Result<()> {
+/// With `display`, capture and control that X display (a background
+/// session) instead of the console.
+pub async fn host_main(
+    connect: String,
+    token: String,
+    options_hex: String,
+    display: Option<String>,
+    xauthority: Option<String>,
+    session_label: Option<String>,
+) -> Result<()> {
     let opts: StreamOptions = serde_json::from_slice(&hex::decode(options_hex)?)?;
+    if let Some(x) = &xauthority {
+        // Before any threads read the environment; libX11 reads it too.
+        std::env::set_var("XAUTHORITY", x);
+    }
     let mut tcp = TcpStream::connect(&connect).await.context("connect to the agent")?;
     tcp.write_all(format!("{token}\n").as_bytes()).await?;
     let (mut rd, wr) = tcp.into_split();
@@ -143,14 +179,28 @@ pub async fn host_main(connect: String, token: String, options_hex: String) -> R
         }
     };
     let encoder = pick_encoder(&ffmpeg, &opts.encoder).await;
-    let capture = Capture::detect().await?;
-    let mut injector = if opts.input { input::Injector::new().map_err(|e| tracing::warn!("input: {e:#}")).ok() } else { None };
+    let capture = match &display {
+        Some(d) => Capture::X11 { display: d.clone(), xauthority: xauthority.clone() },
+        None => Capture::detect().await?,
+    };
+    let mut injector: Option<input::Input> = if !opts.input {
+        None
+    } else {
+        match &display {
+            #[cfg(target_os = "linux")]
+            Some(d) => input::XTest::new(d).map(|x| input::Input::X(Box::new(x))).map_err(|e| tracing::warn!("input: {e:#}")).ok(),
+            #[cfg(not(target_os = "linux"))]
+            Some(_) => None,
+            None => input::Injector::new().map(input::Input::Native).map_err(|e| tracing::warn!("input: {e:#}")).ok(),
+        }
+    };
     let hello = json!({
         "encoder": encoder.label(),
         "capture": capture.label(),
         "input": injector.is_some(),
         "input_note": if opts.input && injector.is_none() { Some(input::UNAVAILABLE) } else { None },
         "fps": opts.fps.clamp(10, 240),
+        "background": session_label,
     });
     wr.lock().await.write_all(&frame(HELLO, hello.to_string().as_bytes())).await?;
 

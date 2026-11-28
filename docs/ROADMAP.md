@@ -83,6 +83,7 @@
 - Two-factor sign-in (TOTP) with a domain policy to require it, Reset two-factor for admins and `admin reset-mfa` for break-glass.
 - Web console served by the desktop app's built-in server as well as standalone and Docker servers.
 - Remote desktop in the browser: a low-latency stream encoded on the endpoint's GPU (NVENC, AMF, Quick Sync, VAAPI, VideoToolbox, software fallback) with keyboard, mouse and game mode on Windows and Linux; RDP through guacd; VNC with noVNC.
+- Background mode: a hidden desktop session the signed-in user doesn't see. On Linux the agent runs a virtual display (Xvfb, Xvnc, or headless KWin with rootful Xwayland) with its own desktop session, streamed with XTEST input; on Windows Server it's a separate RDS session over browser RDP. Its own delegable permission (Background session), a Remote tools GPO switch, and background.open/close audit events. Needs agent 0.14.0.
 
 ## Next
 
@@ -90,5 +91,5 @@
 2. **Revert removed settings.** When a setting leaves a GPO, return the endpoint to its previous value.
 3. **Windows certificate store import** for auto-enrolled certificates, and EAP-TLS in the RADIUS server.
 4. **Over-the-air MDM.** Apple MDM (needs an APNs certificate) and Android Enterprise.
-5. **Remote desktop follow-ups.** Audio in the low-latency stream, multi-monitor selection, keyboard and mouse control on macOS (the stream is view-only there today), and clipboard sync. Browser RDP through guacd still needs testing against real Windows hosts.
+5. **Remote desktop follow-ups.** Audio in the low-latency stream, multi-monitor selection, keyboard and mouse control on macOS (the stream is view-only there today), and clipboard sync. Browser RDP through guacd still needs testing against real Windows hosts. Background mode: a just-in-time local account for Windows Server background sessions (today the operator signs in with their own), keeping a background session alive across reconnects, and a GNOME (Wayland-only) desktop option.
 7. **DHCP failover** between primary and replica, and automatic promotion with a witness.

@@ -37,6 +37,8 @@ struct Session {
     stream: Option<od_core::protocol::StreamOptions>,
     /// Exec into this container instead of a host shell (endpoint management).
     exec: Option<od_core::manage::ContainerExec>,
+    /// A background (hidden) desktop session, for the audit log.
+    background: bool,
     delivered: bool,
     to_admin: Option<Tx>,
     to_agent: Option<Tx>,
@@ -120,11 +122,13 @@ pub struct Opened {
 
 pub async fn open(State(s): State<AppState>, admin: Operator, Path(id): Path<Uuid>, Json(inp): Json<OpenInput>) -> ApiResult<Json<Opened>> {
     let e = super::endpoints::visible(&s, &admin, id)?;
-    Ok(Json(start_session(&s, &admin, &e, inp.cols, inp.rows, inp.tunnel_port, inp.stream)?))
+    Ok(Json(start_session(&s, &admin, &e, inp.cols, inp.rows, inp.tunnel_port, inp.stream, false)?))
 }
 
 /// Check permissions and policy, then queue a shell or tunnel session for
-/// the endpoint's agent to pick up.
+/// the endpoint's agent to pick up. `rdp_background` marks a browser RDP
+/// session opened as a background session (Windows Server).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_session(
     s: &AppState,
     admin: &Operator,
@@ -133,9 +137,22 @@ pub(crate) fn start_session(
     rows: u16,
     tunnel_port: Option<u16>,
     stream: Option<od_core::protocol::StreamOptions>,
+    rdp_background: bool,
 ) -> ApiResult<Opened> {
     let id = e.id;
-    admin.need_endpoint(e, if tunnel_port.is_some() { Permission::RemoteDesktop } else { Permission::RemoteShell })?;
+    let stream = if tunnel_port == Some(od_core::protocol::STREAM_PORT) { Some(stream.unwrap_or_default()) } else { None };
+    let bg_stream = stream.as_ref().and_then(|o| o.background.clone());
+    let background = rdp_background || bg_stream.is_some();
+    if background {
+        // Background mode is its own right: an operator can have it without
+        // being able to see the signed-in user's screen, and the other way round.
+        admin.need_endpoint(e, Permission::BackgroundSession)?;
+        if let Some(b) = &bg_stream {
+            check_background(admin, e, b)?;
+        }
+    } else {
+        admin.need_endpoint(e, if tunnel_port.is_some() { Permission::RemoteDesktop } else { Permission::RemoteShell })?;
+    }
     // Delegated operators reach only the remote desktop services, not any
     // port on the endpoint's loopback.
     if !admin.access.domain_admin && tunnel_port.is_some_and(|p| !DESKTOP_PORTS.contains(&p)) {
@@ -146,9 +163,12 @@ pub(crate) fn start_session(
     }
     // Remote tools can be turned off per endpoint or platform by GPO.
     for st in super::policies::endpoint_settings(s, e)? {
-        if let od_core::policy::Setting::RemoteTools { remote_shell, remote_desktop } = st {
+        if let od_core::policy::Setting::RemoteTools { remote_shell, remote_desktop, background_sessions } = st {
             if tunnel_port.is_some() && !remote_desktop {
                 return Err(ApiError::forbidden("Remote desktop is turned off for this endpoint by the Remote tools GPO setting"));
+            }
+            if background && !background_sessions {
+                return Err(ApiError::forbidden("Background mode is turned off for this endpoint by the Remote tools GPO setting"));
             }
             if tunnel_port.is_none() && !remote_shell {
                 return Err(ApiError::forbidden("Remote shell is turned off for this endpoint by the Remote tools GPO setting"));
@@ -168,8 +188,9 @@ pub(crate) fn start_session(
             cols: cols.clamp(20, 400),
             rows: rows.clamp(5, 200),
             tunnel_port: tunnel_port.filter(|p| *p > 0),
-            stream: if tunnel_port == Some(od_core::protocol::STREAM_PORT) { Some(stream.unwrap_or_default()) } else { None },
+            stream,
             exec: None,
+            background,
             delivered: false,
             to_admin: None,
             to_agent: None,
@@ -179,6 +200,19 @@ pub(crate) fn start_session(
     );
     s.hub.wake(id);
     match tunnel_port {
+        _ if background => {
+            let detail = match &bg_stream {
+                Some(b) => format!(
+                    "Background desktop session (hidden from the signed-in user) as {}, {} desktop, {}x{}",
+                    if b.run_as == "console_user" || b.run_as.is_empty() { "the console user" } else { b.run_as.as_str() },
+                    b.desktop,
+                    b.width,
+                    b.height
+                ),
+                None => "Background desktop session over Remote Desktop (separate RDS session)".into(),
+            };
+            s.db.audit(admin.name(), "background.open", &e.hostname, &detail)
+        }
         Some(p) => s.db.audit(admin.name(), "tunnel.open", &e.hostname, &format!("TCP tunnel to port {p} ({})", port_name(p))),
         None => s.db.audit(admin.name(), "shell.open", &e.hostname, "Interactive remote shell"),
     }
@@ -216,6 +250,7 @@ pub(crate) fn start_exec(
             tunnel_port: None,
             stream: None,
             exec: Some(exec),
+            background: false,
             delivered: false,
             to_admin: None,
             to_agent: None,
@@ -225,6 +260,45 @@ pub(crate) fn start_exec(
     );
     s.hub.wake(e.id);
     Ok(Opened { session_id, ticket })
+}
+
+/// Background stream sessions: which endpoints can run them, and who may
+/// choose which account they run as.
+fn check_background(admin: &Operator, e: &od_core::Endpoint, b: &od_core::protocol::BackgroundOptions) -> ApiResult<()> {
+    use od_core::OsFamily;
+    match e.os {
+        OsFamily::Linux => {}
+        OsFamily::Windows => {
+            return Err(ApiError::bad_request(
+                "On Windows, background mode is a separate Remote Desktop session: choose Background mode with the RDP protocol.",
+            ))
+        }
+        _ => {
+            return Err(ApiError::bad_request(
+                "Background mode isn't available for this platform. macOS has no supported way for a management agent to start a second, hidden desktop session.",
+            ))
+        }
+    }
+    if !od_core::policy::version_at_least(&e.agent_version, od_core::protocol::BACKGROUND_MIN_AGENT) {
+        return Err(ApiError::bad_request(format!(
+            "Background mode needs Endpoint Agent {} or later; this endpoint runs {}. Update the agent first.",
+            od_core::protocol::BACKGROUND_MIN_AGENT,
+            if e.agent_version.is_empty() { "an unknown version" } else { &e.agent_version }
+        )));
+    }
+    let run_as = b.run_as.trim();
+    if !(run_as.is_empty() || run_as == "console_user" || run_as == "system")
+        && !run_as.chars().all(|c| c.is_ascii_alphanumeric() || "._-@".contains(c))
+    {
+        return Err(ApiError::bad_request("That isn't a valid account name"));
+    }
+    // A session as root is as powerful as a root shell.
+    if matches!(run_as, "system" | "root" | "0") {
+        admin
+            .need_endpoint(e, Permission::RemoteShell)
+            .map_err(|_| ApiError::forbidden("Running a background session as root needs the Remote shell permission too"))?;
+    }
+    Ok(())
 }
 
 /// Check and use up a session's one-time ticket.
@@ -349,7 +423,8 @@ where
             let _ = t.send(Message::Close(None));
         }
         if is_admin {
-            s.db.audit(&sess.admin, "shell.close", &sess.host, &format!("{} min", started.elapsed().as_secs().div_ceil(60)));
+            let action = if sess.background { "background.close" } else { "shell.close" };
+            s.db.audit(&sess.admin, action, &sess.host, &format!("{} min", started.elapsed().as_secs().div_ceil(60)));
         }
     }
     writer.abort();
